@@ -10,9 +10,9 @@ func TestLeaseForProfile(t *testing.T) {
 		wantAutoLease  bool
 		wantErr        bool
 	}{
-		{"personal", false, true, true, false},
-		{"default", false, true, true, false},
-		{"standard", false, true, true, false},
+		{"personal", true, true, true, false},
+		{"default", true, true, true, false},
+		{"standard", true, true, true, false},
 		{"team", true, true, true, false},
 		{"strict", true, false, false, false},
 		{"bogus", false, false, false, true},

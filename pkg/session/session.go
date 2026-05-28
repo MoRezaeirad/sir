@@ -86,6 +86,14 @@ type State struct {
 	// decision latency. Transient: never persisted or hashed.
 	DecisionStartedAt time.Time `json:"-"`
 
+	// ThinkingGuardActive is set per hook invocation when the host is Claude
+	// Code with extended thinking enabled. The thinking guard degrades an
+	// interactive ask to a deny on that path (an ask mid-thinking-turn wedges
+	// the conversation), and ledger writers consult this so the recorded
+	// decision matches the agent-visible deny. Transient: never persisted or
+	// hashed — it is recomputed from the environment on every invocation.
+	ThinkingGuardActive bool `json:"-"`
+
 	// MCPAuthorityChangeAt is when an approved MCP server's trust footing last
 	// changed this session (binary/config drift). Used to correlate a later
 	// privileged action into the mcp_change_then_privileged_use detection.

@@ -23,15 +23,19 @@ import (
 )
 
 // baseWirePayload covers the union of fields all three agents' hook
-// payloads contain. Individual fields that only one agent emits
-// (model, turn_id, transcript_path, timestamp) are accepted for
-// forward-compat but not propagated into HookPayload.
+// payloads contain. Single-agent fields (model, turn_id, timestamp) are
+// accepted for forward-compat but not propagated into HookPayload;
+// transcript_path is propagated because the thinking guard relies on it.
 type baseWirePayload struct {
 	SessionID     string                 `json:"session_id"`
 	HookEventName string                 `json:"hook_event_name"`
 	ToolName      string                 `json:"tool_name"`
 	ToolInput     map[string]interface{} `json:"tool_input"`
 	ToolUseID     string                 `json:"tool_use_id"`
+
+	// TranscriptPath is Claude Code's path to the conversation transcript.
+	// Accepted for thinking detection; agents that omit it leave it empty.
+	TranscriptPath string `json:"transcript_path,omitempty"`
 
 	// Claude Code emits tool_output as a plain string.
 	ToolOutput string `json:"tool_output,omitempty"`
@@ -64,14 +68,15 @@ func baseParseHookPayload(spec *AgentSpec, raw []byte) (*HookPayload, error) {
 	}
 
 	return &HookPayload{
-		SessionID:     wire.SessionID,
-		HookEventName: baseNormalizeEventName(spec, wire.HookEventName),
-		ToolName:      baseNormalizeToolName(spec, wire.ToolName),
-		ToolInput:     wire.ToolInput,
-		ToolUseID:     wire.ToolUseID,
-		ToolOutput:    toolOutput,
-		CWD:           wire.CWD,
-		AgentID:       spec.ID,
+		SessionID:      wire.SessionID,
+		HookEventName:  baseNormalizeEventName(spec, wire.HookEventName),
+		ToolName:       baseNormalizeToolName(spec, wire.ToolName),
+		ToolInput:      wire.ToolInput,
+		ToolUseID:      wire.ToolUseID,
+		ToolOutput:     toolOutput,
+		CWD:            wire.CWD,
+		AgentID:        spec.ID,
+		TranscriptPath: wire.TranscriptPath,
 	}, nil
 }
 

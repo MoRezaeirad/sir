@@ -139,6 +139,21 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		}()
 	}
 
+	// Thinking-aware transport guard (Claude Code): an interactive "ask" while
+	// extended thinking is active corrupts the thinking stream and wedges the
+	// conversation, so degrade ask->deny-with-guidance to keep the turn linear.
+	// The degrade is computed once and stashed on the session so the wire guard
+	// (this defer) and every ledger writer agree on a single answer. Registered
+	// after the observe defer so that under observe mode the observe downgrade
+	// (deny->allow) runs last and still wins (defers are LIFO).
+	thinkingDegrade := thinkingDegradeActive(ag, payload)
+	state.ThinkingGuardActive = thinkingDegrade
+	defer func() {
+		if err == nil {
+			applyThinkingGuard(resp, thinkingDegrade)
+		}
+	}()
+
 	intent := MapToolToIntent(payload.ToolName, payload.ToolInput, l)
 	labels := labelsForEvaluation(payload, intent, l, projectRoot)
 

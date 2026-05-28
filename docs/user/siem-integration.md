@@ -137,10 +137,11 @@ where decisions are recorded as `would_allow` / `would_ask` / `would_deny`
 with detection IDs but nothing blocks.
 
 Policy profiles tune the friction/strictness tradeoff: `personal` (raw secret
-reads prompt once, turn-scoped taint), `team` (raw secret reads are denied and
-the agent uses the redacted `sir secret view` instead, so values never enter
-the model context), and `strict` (team plus no delegation, no auto-lease, and a
-minimal host allowlist). Choose one with `sir policy init --profile <name>`.
+reads are denied and the agent uses the redacted `sir secret view` inline, so
+values never enter the model context; delegation and auto-lease stay on),
+`team` (same secret handling as personal), and `strict` (team plus no
+delegation, no auto-lease, and a minimal host allowlist). Choose one with
+`sir policy init --profile <name>`.
 
 When `auto_lease_approved_hosts` is enabled (default for fresh installs, off in
 the strict profile and in managed mode), sir turns an *observed* egress

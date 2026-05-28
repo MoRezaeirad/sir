@@ -24,6 +24,10 @@ type SubagentPayload struct {
 	HookEventName string   `json:"hook_event_name"`
 	AgentName     string   `json:"agent_name,omitempty"`
 	Tools         []string `json:"tools,omitempty"`
+	// CWD and TranscriptPath drive the thinking guard so an interactive
+	// delegation ask cannot wedge a thinking-enabled Claude session.
+	CWD            string `json:"cwd,omitempty"`
+	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // EvaluateSubagentStart is the SubagentStart hook handler.
@@ -39,6 +43,15 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 	var payload SubagentPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return fmt.Errorf("unmarshal payload: %w", err)
+	}
+
+	// An interactive ask suspends and resumes the assistant turn; under Claude
+	// extended thinking that resume wedges the conversation. Degrade delegation
+	// asks to deny when thinking is active so SubagentStart can't brick a turn.
+	degrade := thinkingDegradeActive(ag, &HookPayload{CWD: payload.CWD, TranscriptPath: payload.TranscriptPath})
+	askLedgerDecision := "ask"
+	if degrade {
+		askLedgerDecision = "deny"
 	}
 
 	var resp *HookResponse
@@ -128,7 +141,7 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 				Decision: policy.VerdictAsk,
 				Reason:   FormatAskPostureElevated("delegate", fmt.Sprintf("delegate to sub-agent: %s", payload.AgentName), string(state.Posture), state.MCPInjectionSignals),
 			}
-			logSubagentDecision(projectRoot, payload.AgentName, "ask", "tainted/elevated/pending-injection session", state, ag)
+			logSubagentDecision(projectRoot, payload.AgentName, askLedgerDecision, "tainted/elevated/pending-injection session", state, ag)
 			return nil
 		}
 
@@ -152,7 +165,7 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 					"Review the delegation carefully.",
 				),
 			}
-			logSubagentDecision(projectRoot, payload.AgentName, "ask", "untrusted content + dangerous tools", state, ag)
+			logSubagentDecision(projectRoot, payload.AgentName, askLedgerDecision, "untrusted content + dangerous tools", state, ag)
 			return nil
 		}
 
@@ -164,6 +177,9 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 		return fmt.Errorf("subagent-start: %w", lockErr)
 	}
 
+	// Degrade an interactive ask to a thinking-safe deny on the wire, matching
+	// the decision already recorded in the ledger above.
+	applyThinkingGuard(resp, degrade)
 	if resp != nil {
 		return writeSubagentResponse(os.Stdout, resp, ag)
 	}

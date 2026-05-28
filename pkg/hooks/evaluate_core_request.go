@@ -62,6 +62,12 @@ func promptKey(verb policy.Verb, target string) string {
 }
 
 func appendEvaluationLedgerEntry(projectRoot string, payload *HookPayload, intent Intent, labels core.Label, decision policy.Verdict, reason string, state *session.State, observe bool, ag agent.Agent) {
+	// Fold in the thinking-guard degrade (ask -> deny) so the recorded decision
+	// matches the agent-visible wire decision when the guard fired.
+	if degraded := thinkingDegradedLedgerDecision(state, decision); degraded != decision {
+		decision = degraded
+		reason = thinkingGuardLedgerReason
+	}
 	recorded := decision
 	if observe {
 		recorded = observeRecordedDecision(decision)

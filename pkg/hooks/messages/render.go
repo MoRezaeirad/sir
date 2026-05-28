@@ -142,6 +142,39 @@ func FormatAskSensitive(target string, scope string) string {
 	return b.String()
 }
 
+// FormatThinkingGuardDeny renders a deny that stands in for an interactive
+// "ask" sir would otherwise have emitted. Claude Code corrupts its extended-
+// thinking stream when a tool call is paused for interactive approval mid-turn
+// (API 400: "thinking blocks ... cannot be modified"), wedging the whole
+// conversation. To keep the turn linear, sir blocks instead of prompting and
+// preserves the original ask guidance so the developer can approve out of band
+// and retry. originalReason is the ask message that would have been shown.
+func FormatThinkingGuardDeny(originalReason string) string {
+	var b strings.Builder
+	b.WriteString(colorize(colorBold+colorRed, "× deny"))
+	b.WriteString(" · interactive approval suppressed (thinking-safe)")
+	b.WriteString("\n\n")
+	b.WriteString("  reason: Claude Code has extended thinking enabled. An interactive\n")
+	b.WriteString("          approval prompt mid-turn corrupts the thinking stream and\n")
+	b.WriteString("          wedges the whole conversation, so sir blocked instead of\n")
+	b.WriteString("          prompting.\n\n")
+	b.WriteString("  fix:    Approve from YOUR terminal, then tell the agent to retry:\n")
+	b.WriteString("          ")
+	b.WriteString(colorize(colorDim, "sir approve --last"))
+	b.WriteString("\n          Or disable extended thinking (/config) to restore inline prompts.\n")
+	if strings.TrimSpace(originalReason) != "" {
+		b.WriteString("\n  original request:\n")
+		for _, line := range strings.Split(strings.TrimRight(originalReason, "\n"), "\n") {
+			b.WriteString("    ")
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n  details: ")
+	b.WriteString(colorize(colorDim, "sir why"))
+	return b.String()
+}
+
 func FormatFatal(action, consequence, remedy string) string {
 	var b strings.Builder
 	b.WriteString(colorize(colorBoldRed, "\u00d7 deny"))

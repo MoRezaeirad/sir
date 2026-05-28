@@ -300,9 +300,16 @@ func cmdPathProtection(projectRoot string, args []string, protect bool) {
 func leaseForProfile(profile string) (*lease.Lease, error) {
 	switch profile {
 	case "default", "standard", "personal":
-		// Low-friction balanced profile: a raw secret read prompts once
-		// (turn-scoped taint), approvals auto-lease, delegation allowed.
-		return lease.DefaultLease(), nil
+		// Low-friction balanced profile: a raw secret read is denied and the
+		// agent gets the redacted `sir secret view` (key names, values masked)
+		// inline, so secret values never enter the model context. A deny keeps
+		// the turn linear — unlike an interactive prompt, it never suspends a
+		// thinking-enabled session mid-turn — so the common case is both lower
+		// friction and safer. A genuine raw read escalates via `sir approve`.
+		// Delegation is allowed and approvals auto-lease.
+		l := lease.DefaultLease()
+		l.DenyRawSecretReads = true
+		return l, nil
 	case "team":
 		// Most companies: raw secret reads are denied and the agent uses the
 		// redacted `sir secret view` instead, so secret values never enter the

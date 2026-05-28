@@ -59,6 +59,11 @@ type HookPayload struct {
 	ToolOutput    string // PostToolUse only
 	CWD           string
 	AgentID       AgentID
+
+	// TranscriptPath is the path to the host agent's conversation transcript
+	// (Claude Code emits transcript_path). Optional; empty when the agent does
+	// not provide one. Used to detect whether extended thinking is active.
+	TranscriptPath string
 }
 
 // Verdict is sir's internal decision for a tool call. Adapters translate this

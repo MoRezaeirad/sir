@@ -29,6 +29,9 @@ func FormatFatal(action, consequence, remedy string) string {
 	return hookmessages.FormatFatal(action, consequence, remedy)
 }
 func FormatDenyAll(reason string) string { return hookmessages.FormatDenyAll(reason) }
+func FormatThinkingGuardDeny(originalReason string) string {
+	return hookmessages.FormatThinkingGuardDeny(originalReason)
+}
 
 // Hook posture and session lifecycle.
 func FormatHookTamper(file string) string     { return hookmessages.FormatHookTamper(file) }

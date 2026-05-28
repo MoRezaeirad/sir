@@ -33,7 +33,7 @@ func evaluateMCPCapabilityScope(payload *HookPayload, l *lease.Lease, state *ses
 			ToolName: payload.ToolName,
 			Verb:     "mcp_scope",
 			Target:   serverName,
-			Decision: string(policy.VerdictAsk),
+			Decision: string(thinkingDegradedLedgerDecision(state, policy.VerdictAsk)),
 			Reason:   reason,
 		}
 		if err := ledger.Append(projectRoot, entry); err != nil {
