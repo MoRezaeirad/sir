@@ -7,6 +7,19 @@ sir is experimental. Each release listed here is a snapshot of the "sandbox in r
 
 This file tracks shipped releases only. Historical planning notes, launch copy, and exploratory findings live in git history rather than on the production repo surface.
 
+## v0.1.1 — 2026-05-28 — thinking-safe asks and lower-friction secret reads
+
+This release stops sir from wedging Claude Code sessions that have extended thinking enabled, and makes the default profile's handling of secret reads both quieter and safer.
+
+**Thinking-safe enforcement**
+
+- An interactive approval prompt mid-turn corrupted Claude Code's extended-thinking stream (API 400: "thinking blocks ... cannot be modified"), freezing the whole conversation. sir now detects active thinking (via `alwaysThinkingEnabled` settings or thinking blocks in the transcript) and degrades any interactive ask to a deny-with-guidance, keeping the turn linear so it can never brick. Coverage spans core policy asks (sensitive reads, push, posture, egress), delegation, MCP onboarding/binary-drift/capability-scope, and `SubagentStart`.
+- The degrade is a Go-side narrowing (ask → deny) that never widens a verdict; observe mode still downgrades to allow. The ledger and the agent-visible decision agree, so `sir explain`/`sir why`/`sir friction` report the deny that actually happened.
+
+**Lower-friction secret reads by default**
+
+- The default (`personal`/`standard`) profile now denies raw secret reads and hands back the redacted `sir secret view` (key names, values masked) inline — previously team/strict-only. A deny keeps secret values out of the model context and avoids an interactive prompt, so the common case is both lower friction and safer. A genuine raw read still escalates through `sir approve`. Existing installs adopt this by re-running `sir policy init --profile personal`.
+
 ## v0.1.0 — 2026-05-28 — friction reduction, behavior detections, and CLI/docs overhaul
 
 This release makes sir quiet during normal coding and loud on dangerous transitions: friction is now measurable and reducible, detections are causal rather than command-string matches, and the CLI/docs surface was reworked. Legacy command names are kept as aliases.
