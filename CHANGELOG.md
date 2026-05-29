@@ -7,6 +7,29 @@ sir is experimental. Each release listed here is a snapshot of the "sandbox in r
 
 This file tracks shipped releases only. Historical planning notes, launch copy, and exploratory findings live in git history rather than on the production repo surface.
 
+## v0.1.2 — 2026-05-29 — block less unless necessary: friction reduction + security hardening
+
+This release lowers the friction sir imposes on routine coding while preserving the security floor. Every change is a Go-side narrowing or a lease/oracle gate that never widens a Rust deny, never weakens fail-closed, and never leaks a secret.
+
+**Less blocking on clean sessions**
+
+- External network egress and DNS lookups on a *clean* session (no secret in context) now prompt for approval instead of being hard-blocked, on the `personal`/`team` profiles. `strict`/`managed` keep the hard block, and a session that carries secret context still denies outright — the hard wall is reserved for when a secret is actually in play.
+- One approval, then quiet: an already-approved host is silent on a clean session, and approving an `npx <pkg>`, a push to an unapproved remote, or a routine MCP binary-drift once stops it re-prompting for the rest of the session (a *different* package/remote/hash still asks). A targeted read of a provably-non-secret environment variable (`printenv PATH`) is silent under `personal`.
+- A `personal → team → strict → managed` profile gradient (`sir policy init --profile <p>`) tunes where that line sits; `personal` is the lowest-friction default. The MCP onboarding re-ask counter is off by default, with a first-touch checkpoint on a freshly-approved server and a heightened-posture floor (secret/injection/no capability scope) preserved.
+
+**Security hardening**
+
+- The credential scanner now detects connection-string / URI-embedded credentials (e.g. database URLs), closing a class of secret the structured-prefix and high-entropy scanners missed.
+- Observe-only rollouts no longer misreport enforced security events as hypothetical, and the security floor — a credential leak to an untrusted MCP server, or egress while a secret is in context — now stays *enforced* even under observe mode rather than being silently allowed (two latent observe-mode bugs fixed).
+- The degraded Go-fallback's forbidden-verb check is now structural and fails closed: a corrupted or tampered lease can never downgrade a hard deny to a prompt.
+
+**Detection and UX**
+
+- An additive `sir.signal_ids` SIEM field carries every detection that fired for a decision (primary first) for correlation, alongside the single primary `sir.detection_id` that still drives routing.
+- `sir why` is now an instant verdict / why / did-data-leave / fix answer, split from the full forensic `sir explain`. `sir install` now warns Claude Code users that extended thinking turns approval prompts into denies (approve from your terminal, or disable thinking).
+
+Existing installs adopt the new defaults by re-running `sir install`, and choose a posture with `sir policy init --profile <personal|team|strict|managed>`.
+
 ## v0.1.1 — 2026-05-28 — thinking-safe asks and lower-friction secret reads
 
 This release stops sir from wedging Claude Code sessions that have extended thinking enabled, and makes the default profile's handling of secret reads both quieter and safer.
