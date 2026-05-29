@@ -7,6 +7,15 @@ sir is experimental. Each release listed here is a snapshot of the "sandbox in r
 
 This file tracks shipped releases only. Historical planning notes, launch copy, and exploratory findings live in git history rather than on the production repo surface.
 
+## v0.1.3 — 2026-05-29 — monotonic secret taint, deny-raw-read default, relay auth
+
+Closes a turn-boundary secret-laundering gap, makes the advertised secret-read default hold for a bare `sir install`, and hardens the central Slack relay. Every change is a Go-side narrowing or a lease/oracle gate that never widens a Rust deny, never weakens fail-closed, and never leaks a secret.
+
+- **Secret taint is now monotonic.** The turn-scoped `secret_session` deny floor clears on a turn boundary (instantly via `UserPromptSubmit`, or after the 30s gap), which previously dropped the taint entirely — a secret laundered through model context could be re-emitted a turn later with no friction (e.g. a silent `push origin`). A per-session high-water mark now persists once a session has ever been secret-labeled, so crossing a boundary *downgrades* egress/push to an approval prompt instead of silently reverting to the clean baseline. It only ever tightens (`allow → ask`), never widens a deny; `sir unlock` clears it. Sessions from an older build are backfilled at the downgrade so the gap does not reopen on upgrade.
+- **Fresh-install default matches the personal profile.** A bare `sir install` now seeds the personal raw-secret-read default (deny + redacted `sir secret view`), matching `sir policy init --profile personal`; previously the quickstart left raw reads at *ask*. Existing operator leases and managed mode are untouched. `sir setup` now offers the full `personal → team → strict → managed` gradient.
+- **Central Slack relay hardening.** `sir relay` gains shared-secret ingest auth (`SIR_RELAY_TOKEN`, constant-time) on `/v1/detections` and `/stats`, Slack request-signature verification (`SIR_SLACK_SIGNING_SECRET`, `v0` HMAC, 5-minute replay window) on `/slack/interactions`, per-source-IP rate limiting, and a loopback-default bind. Backward compatible: unset secrets keep prior behavior with a loud startup warning.
+- **Docs.** The threat model gains a raw-secret-read coverage matrix (covered: the `Read` tool and lexical shell read programs; out of scope: interpreter one-liners, arbitrary scripts, obfuscation, MCP output), a context-laundering table, a relay trust-boundary section, and calibrated turn-boundary / default-posture language. New installs get the deny+redact default automatically; an existing install preserves its current lease on re-install, so adopt the new posture explicitly with `sir policy init --profile personal` (or `team`/`strict`/`managed`).
+
 ## v0.1.2 — 2026-05-29 — block less unless necessary: friction reduction + security hardening
 
 This release lowers the friction sir imposes on routine coding while preserving the security floor. Every change is a Go-side narrowing or a lease/oracle gate that never widens a Rust deny, never weakens fail-closed, and never leaks a secret.
