@@ -30,7 +30,32 @@ echo ""
 echo -e "${RED}This action is irreversible. All sir log history will be lost.${NC}"
 echo ""
 echo -n "Type 'delete' to confirm removal of ALL sir data: "
-read -r CONFIRM
+# Resolve the confirmation across every invocation style:
+#
+#   1. SIR_UNINSTALL_YES=1                     -> confirm non-interactively (automation)
+#   2. stdin has data       (read succeeds)    -> use it
+#        - `printf 'delete' | bash uninstall.sh`  : the pipe carries the answer
+#        - interactive `bash uninstall.sh`        : stdin is the terminal
+#   3. stdin is empty/EOF, /dev/tty readable    -> prompt the controlling terminal
+#        - `curl -fsSL .../uninstall.sh | bash`   : stdin is the consumed curl
+#          stream (EOF), so step 2's read fails and we ask the real terminal
+#   4. neither available                        -> CONFIRM stays empty -> cancel
+#
+# Order matters: try stdin BEFORE /dev/tty so a piped confirmation is never
+# ignored in favor of the terminal (that was the bug — it hung waiting for tty
+# input while a `delete` sat unread on the pipe). `|| true`/`2>/dev/null` keep
+# `set -e` from aborting on EOF or an unreadable /dev/tty so we reach the
+# explicit cancel below instead of dying mid-prompt.
+CONFIRM=""
+if [ "${SIR_UNINSTALL_YES:-}" = "1" ]; then
+    CONFIRM="delete"
+elif read -r CONFIRM; then
+    : # got the answer from stdin (piped data, or an interactive terminal)
+elif { read -r CONFIRM < /dev/tty; } 2>/dev/null; then
+    : # stdin was empty (curl|bash) — prompt the controlling terminal instead
+else
+    CONFIRM="" # nothing readable anywhere: fall through to the cancel below
+fi
 
 if [ "$CONFIRM" != "delete" ]; then
     echo "Uninstall cancelled."
