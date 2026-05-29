@@ -24,6 +24,7 @@ type wireEvalRequest struct {
 	Labels               []Label `json:"labels"`
 	DerivedLabels        []Label `json:"derived_labels"`
 	SessionSecret        bool    `json:"session_secret"`
+	SessionWasSecret     bool    `json:"session_was_secret"`
 	SessionUntrustedRead bool    `json:"session_untrusted_read"`
 	IsPostureFile        bool    `json:"is_posture_file"`
 	IsSensitivePath      bool    `json:"is_sensitive_path"`
@@ -62,6 +63,7 @@ func buildWireEvalRequest(req *Request) wireEvalRequest {
 		Labels:               nonNilLabels(req.Intent.Labels),
 		DerivedLabels:        nonNilLabels(req.Intent.DerivedLabels),
 		SessionSecret:        req.Session.SecretSession,
+		SessionWasSecret:     req.Session.WasSecret,
 		SessionUntrustedRead: req.Session.RecentlyReadUntrusted,
 		IsPostureFile:        req.Intent.IsPosture,
 		IsSensitivePath:      req.Intent.IsSensitive,

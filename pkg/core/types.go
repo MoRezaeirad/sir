@@ -44,7 +44,12 @@ type Label struct {
 
 // SessionInfo is the session context sent to mister-core.
 type SessionInfo struct {
-	SecretSession         bool   `json:"secret_session"`
+	SecretSession bool `json:"secret_session"`
+	// WasSecret is the monotonic high-water mark: true if the session has ever
+	// been secret-labeled, even after the turn-scoped SecretSession flag clears
+	// on a turn boundary. Carried to the oracle as session_was_secret so egress
+	// and pushes re-prompt instead of silently reverting to the clean baseline.
+	WasSecret             bool   `json:"was_secret"`
 	RecentlyReadUntrusted bool   `json:"recently_read_untrusted"`
 	DenyAll               bool   `json:"deny_all"`
 	ApprovalScope         string `json:"approval_scope,omitempty"`

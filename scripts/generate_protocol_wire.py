@@ -22,6 +22,7 @@ REQUEST_FIELD_EXPRESSIONS = {
     "labels": "nonNilLabels(req.Intent.Labels)",
     "derived_labels": "nonNilLabels(req.Intent.DerivedLabels)",
     "session_secret": "req.Session.SecretSession",
+    "session_was_secret": "req.Session.WasSecret",
     "session_untrusted_read": "req.Session.RecentlyReadUntrusted",
     "is_posture_file": "req.Intent.IsPosture",
     "is_sensitive_path": "req.Intent.IsSensitive",

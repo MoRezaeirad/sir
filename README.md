@@ -58,7 +58,7 @@ flowchart LR
     class N stop
 ```
 
-The decision is **stateful**, not a static rule list. Reading `.env` labels the session `SECRET`; the very next external call in that turn is denied — same tool, different verdict, because the session changed between them. That is [information flow control](mister-core/src/ifc.rs).
+The decision is **stateful**, not a static rule list. A raw read of `.env` is denied by default and returns a redacted key view, so the value never enters context; but once a secret *does* enter the session — an approved raw read, an env-var read, MCP content — the session is labeled `SECRET` and the very next external call in that turn is denied. Same tool, different verdict, because the session changed between them. That is [information flow control](mister-core/src/ifc.rs).
 
 sir is built to **block as little as possible**. Routine work — reads, edits, tests, commits, loopback requests, pushing to your `origin` — runs untouched. Genuinely-risky-but-clean actions (a first `curl` to a new host, a `dig`, a push to a new remote, an `npx <pkg>`, a drifted MCP binary after a routine update) *prompt once* instead of blocking, and an approval sticks for the rest of the session so the same action never asks twice. Only the transitions that actually leak or tamper — egress while a secret is in context, a credential heading to an untrusted MCP server, posture-file changes, a wedged control plane — are denied outright. A `personal → team → strict → managed` profile gradient (`sir policy init --profile <p>`) tunes exactly where that line sits: `personal` is the lowest-friction default, `strict`/`managed` keep the hard egress wall.
 
@@ -107,7 +107,7 @@ sir verify       # binary integrity vs the install-time manifest
 sir log verify   # walk the ledger hash chain, report the first corruption
 ```
 
-Try the core protection yourself, in one turn: **Ask the agent to read `.env`**, then have it run `curl https://httpbin.org/get`. sir taints the session on the read and denies the egress — `sir why` gives the instant verdict, `sir explain --last` the full causal chain. (On a *clean* session with no secret in context, that same `curl` merely prompts for approval — the hard deny is reserved for when a secret is actually in play.)
+Try the core protection yourself: **ask the agent to read `.env`**. On a default install sir denies the raw read and hands back a redacted key view (names only, values masked) — the secret never enters the model's context. Approve a genuine raw read with `sir approve` and the session is now tainted `SECRET`; the very next `curl https://httpbin.org/get` in that turn is denied. `sir why` gives the instant verdict, `sir explain --last` the full causal chain. (On a *clean* session with no secret in context, that same `curl` merely prompts for approval — the hard deny is reserved for when a secret is actually in play.)
 
 ## Commands
 
@@ -140,7 +140,7 @@ Run `sir <command> --help` for details on any command, or `sir help` for the ful
 
 ## Honest limits
 
-sir is a hook- and tool-boundary layer, not a host firewall. If a tool executor ignores the hook response, sir cannot stop it. MCP injection detection is regex-based and can be evaded by encoding or paraphrasing. Turn boundaries use a 30-second gap heuristic; shell classification is prefix-aware, not full POSIX. The default lease intentionally allows push-to-origin, commit, loopback, and delegation — tighten with `sir trust` or a managed policy. If `mister-core` is missing from `PATH`, Go falls back to a deliberately *more restrictive* subset (parity-tested), and a tampered oracle triggers a hard deny on all tool calls. Model-internal reasoning is out of scope. `sir run` adds optional OS-level containment (network namespace on Linux, `sandbox-exec` on macOS) and is experimental.
+sir is a hook- and tool-boundary layer, not a host firewall. If a tool executor ignores the hook response, sir cannot stop it. MCP injection detection is regex-based and can be evaded by encoding or paraphrasing. Turn boundaries advance instantly on every user message (`UserPromptSubmit`), and also via a 30-second gap heuristic — so the turn-scoped secret deny floor can reset without any timing race. To keep that reset honest, secret taint is **monotonic**: a session that has *ever* held a secret keeps re-prompting external egress and pushes (an approval prompt, never a silent allow) across turn boundaries until you run `sir unlock`. What that re-prompt does *not* cover is a secret laundered through model context and re-emitted as fresh agent-authored bytes — see the threat model's context-laundering table. Shell classification is prefix-aware, not full POSIX. The default lease intentionally allows push-to-origin, commit, loopback, and delegation — tighten with `sir trust` or a managed policy. If `mister-core` is missing from `PATH`, Go falls back to a deliberately *more restrictive* subset (parity-tested), and a tampered oracle triggers a hard deny on all tool calls. Model-internal reasoning is out of scope. Hook-layer policy (the default `sir install`) is advisory enforcement; OS-level *prevention* exists only under `sir run`, which adds optional containment (network namespace on Linux, `sandbox-exec` on macOS) and is experimental.
 
 ## Documentation
 

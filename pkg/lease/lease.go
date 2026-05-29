@@ -116,8 +116,12 @@ type Lease struct {
 	// DenyRawSecretReads, when true, denies a raw read of a sensitive file and
 	// directs the agent to the redacted `sir secret view` instead. This is a
 	// Go-side restriction (it narrows the oracle's ask to deny, never widens),
-	// used by the team and strict profiles so secret values never enter the
-	// model context without an explicit, separate approval.
+	// so secret values never enter the model context without an explicit,
+	// separate approval. It is the advertised default for a fresh `sir install`
+	// (the personal profile) and is on for every profile (personal -> team ->
+	// strict -> managed); see leaseForProfile. DefaultLease() leaves it off so it
+	// stays a neutral base for internal callers and tests; the install and
+	// profile layers turn it on.
 	DenyRawSecretReads bool `json:"deny_raw_secret_reads,omitempty"`
 
 	// --- Friction-reduction capabilities (the personal -> team -> strict ->

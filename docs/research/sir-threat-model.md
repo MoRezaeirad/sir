@@ -66,12 +66,44 @@ sir **does** detect post-install binary tampering: `mister-core` is hash-verifie
 
 **Mitigations:**
 
-- The read is asked before execution.
-- Approval marks the turn or session as secret.
+- By default (every shipped profile, personal → managed) a raw read of a sensitive file is **denied**, and the agent gets the redacted `sir secret view` (key names, values masked) inline — so credential values never enter model context. A deliberate raw read escalates via `sir approve`; that approval marks the turn or session secret.
 - Secret posture blocks untrusted egress and unapproved pushes.
+- Secret taint is **monotonic**. The live secret flag is turn-scoped and clears on a turn boundary (instantly on the next user message, or after a 30s gap), but a per-session high-water mark persists. Crossing a turn boundary therefore *downgrades* the deny floor to an approval prompt on egress and pushes — it never silently reverts to the clean-session baseline (which would allow `push origin`). `sir unlock` is the explicit, logged way to clear the high-water mark.
+- File/data lineage is independent of the turn counter: a secret copied or renamed into a file carries a derived-secret label that still blocks a later push, even across turn boundaries.
 - `sir unlock` and explicit allowlists are visible, logged escape hatches.
 
-**Residual risk:** sir does not follow secrets through model reasoning, paraphrase, or arbitrary child processes.
+**Residual risk:** sir does not follow secrets through model reasoning, paraphrase, or arbitrary child processes. Concretely, lineage tracks secrets that move *through the filesystem*; it cannot see a secret that is laundered through model context and re-emitted as fresh agent-authored bytes a turn later. The boundary between what is and is not caught across a turn boundary:
+
+| Path | Across a turn boundary |
+|------|------------------------|
+| Read `.env` → next turn `curl`/push with the value inline | **Re-prompted** (high-water mark asks; not a hard deny, and the value itself is invisible to sir) |
+| `cp .env leak.txt` → next turn push `leak.txt` | **Still denied** (the file carries a derived-secret lineage label) |
+| Read `.env` → same turn `curl` | **Denied** (live secret-session deny floor) |
+
+The first row is the honest residual: a context-laundered secret re-emitted inline is gated by an approval prompt, not blocked outright, because sir never observes the secret bytes on disk. The monotonic high-water mark guarantees that prompt fires instead of a silent allow; it does not — and cannot — recover the hard deny for data sir never saw.
+
+#### Raw secret-read coverage (deny + redact)
+
+The deny-raw-read gate fires on a classified *sensitive read* — verb `read_ref`
+with a sensitive target. That covers two entry vectors and is explicit about
+what it does not:
+
+| Read vector | Covered? |
+|-------------|----------|
+| `Read` tool on a sensitive path | **Yes** — denied + redacted view |
+| Bash via a known read program reading a sensitive path — `cat`, `tac`, `nl`, `head`, `tail`, `less`, `more`, `bat`/`batcat`, `xxd`, `hexdump`, `od`, `sed`, `awk`/`gawk`, `grep`, `rg`, `ag`, `ack`, `strings`, `file` (flag-aware; see `pkg/hooks/classify/reads.go`) | **Yes** — denied + redacted view |
+| Interpreter one-liners that open the file themselves — `python -c "open('.env').read()"`, `node -e ...`, `ruby -e ...`, `perl -e ...` | **No** — the file argument is inside interpreter source, not a classified read; content is invisible to sir |
+| A script or arbitrary binary that reads the file (`./run.sh` that cats `.env`) | **No** — sir sees the program invocation, not its file I/O |
+| A read program not on the list, or obfuscated past the lexical classifier | **No** — prefix-aware shell classification, not full POSIX |
+| Secrets arriving in **MCP tool output** | Not this gate — covered separately by MCP argument/response scanning and session taint (see *MCP injection and credential leakage*) |
+
+This is intentionally a *content-never-enters-context* control for the common
+read paths, not a complete read interceptor. The vectors marked **No** fall back
+to the downstream floors: if such a read does taint the session (e.g. an
+approved read, an env-var read, or MCP content), the secret-session egress wall
+and lineage tracking still gate the exit. Widening this matrix (more read
+programs, interpreter heuristics) is tracked as ongoing hardening; the honest
+boundary is documented here rather than implied.
 
 ### Supply-chain posture tamper
 
@@ -133,7 +165,7 @@ Being explicit about what sir does not cover matters more than claiming broad pr
 - **Unrecognized child-process behavior below the shell classifier** — the shell classifier is lexical and can be evaded by novel wrappers.
 - **Complete host containment on every platform** — `sir run` is macOS and Linux only, and still experimental.
 - **Same-user OS-level protection** without help from the host agent or operating system.
-- **Turn-boundary precision** — sir uses a 30-second gap heuristic to approximate turn boundaries, which can be wrong under unusual pacing.
+- **Turn-boundary precision** — sir advances turns instantly on each user message and falls back to a 30-second gap heuristic, which can be wrong under unusual pacing. The monotonic secret high-water mark bounds the blast radius of an imprecise boundary: a stale or premature turn advance downgrades the deny floor to an approval prompt, never to a silent allow.
 - **The default lease**, which is deliberately permissive to reduce developer friction and is not a hardened profile.
 
 > **Note:** If you find a way to violate one of the in-scope guarantees above, that is a security bug and we want to hear about it. See the verification path below.

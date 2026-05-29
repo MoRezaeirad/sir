@@ -39,6 +39,11 @@ pub struct EvalRequest {
     pub labels: Vec<Label>,
     pub derived_labels: Vec<Label>,
     pub session_secret: bool,
+    /// High-water mark: true if the session has *ever* been secret-labeled this
+    /// session, even if the turn-scoped `session_secret` flag has since cleared
+    /// on a turn boundary. Secret taint is monotonic: egress/push re-prompts
+    /// (ask) instead of silently reverting to the clean-session baseline.
+    pub session_was_secret: bool,
     pub session_untrusted_read: bool,
     pub is_posture_file: bool,
     pub is_sensitive_path: bool,
@@ -122,6 +127,7 @@ impl EvalRequest {
         let target = require_str(&val, "target")?;
 
         let session_secret = opt_bool(&val, "session_secret")?;
+        let session_was_secret = opt_bool(&val, "session_was_secret")?;
         let session_untrusted_read = opt_bool(&val, "session_untrusted_read")?;
         let is_posture_file = opt_bool(&val, "is_posture_file")?;
         let is_sensitive_path = opt_bool(&val, "is_sensitive_path")?;
@@ -183,6 +189,7 @@ impl EvalRequest {
             labels,
             derived_labels,
             session_secret,
+            session_was_secret,
             session_untrusted_read,
             is_posture_file,
             is_sensitive_path,
@@ -308,6 +315,19 @@ mod tests {
         assert_eq!(req.labels[0].sensitivity, Sensitivity::Secret);
         assert_eq!(req.derived_labels.len(), 1);
         assert_eq!(req.derived_labels[0].sensitivity, Sensitivity::Restricted);
+    }
+
+    #[test]
+    fn test_eval_request_session_was_secret_defaults_false_and_parses() {
+        // Absent -> false (forward/backward compat with older Go callers).
+        let json = r#"{"tool_name":"Bash","verb":"push_origin","target":"origin"}"#;
+        let req = EvalRequest::from_json(json).unwrap();
+        assert!(!req.session_was_secret);
+
+        // Present -> honored.
+        let json = r#"{"tool_name":"Bash","verb":"push_origin","target":"origin","session_was_secret":true}"#;
+        let req = EvalRequest::from_json(json).unwrap();
+        assert!(req.session_was_secret);
     }
 
     #[test]

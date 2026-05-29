@@ -198,6 +198,7 @@ func (s *State) HasTransientRestrictions() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.SecretSession ||
+		s.SessionEverSecret ||
 		s.RecentlyReadUntrusted ||
 		s.PendingInjectionAlert ||
 		s.Posture == policy.PostureStateElevated ||
@@ -212,6 +213,9 @@ func (s *State) ClearTransientRestrictions() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clearSecretSessionLocked()
+	// `sir unlock` is the explicit, logged way to clear the monotonic secret
+	// high-water mark — turn boundaries downgrade but never clear it.
+	s.SessionEverSecret = false
 	s.RecentlyReadUntrusted = false
 	s.PendingInjectionAlert = false
 	s.InjectionAlertDetail = ""

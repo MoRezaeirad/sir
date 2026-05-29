@@ -39,6 +39,7 @@ func buildCoreRequest(projectRoot string, payload *HookPayload, intent Intent, l
 		},
 		Session: core.SessionInfo{
 			SecretSession:         state.SecretSession,
+			WasSecret:             state.SessionEverSecret,
 			RecentlyReadUntrusted: state.RecentlyReadUntrusted,
 			DenyAll:               state.DenyAll,
 			ApprovalScope:         string(state.ApprovalScope),

@@ -29,6 +29,7 @@ type State struct {
 	ProjectRoot           string               `json:"project_root"`
 	StartedAt             time.Time            `json:"started_at"`
 	SecretSession         bool                 `json:"secret_session"`
+	SessionEverSecret     bool                 `json:"session_ever_secret,omitempty"` // monotonic high-water mark: true once secret-labeled, cleared only by `sir unlock`
 	SecretSessionSince    time.Time            `json:"secret_session_since,omitempty"`
 	ApprovalScope         policy.ApprovalScope `json:"approval_scope,omitempty"` // "session" (default) or "turn"
 	TurnCounter           int                  `json:"turn_counter"`

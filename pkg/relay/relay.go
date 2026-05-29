@@ -12,13 +12,19 @@ package relay
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,16 +39,33 @@ const (
 	maxIngestBytes       = 64 * 1024
 	maxInteractionBytes  = 64 * 1024
 	forwardClientTimeout = 3 * time.Second
+
+	// relayTokenHeader is the alternative to "Authorization: Bearer <token>" for
+	// the shared-secret that authenticates workstation -> relay ingest.
+	relayTokenHeader = "X-Sir-Relay-Token" // #nosec G101 -- header name, not a credential
+
+	// slackMaxSkew bounds how stale a Slack-signed request may be, per Slack's
+	// signing guidance, to blunt replay of a captured interaction payload.
+	slackMaxSkew = 5 * time.Minute
+
+	// defaultRateLimit / defaultRateWindow give a generous per-source ceiling so
+	// a single noisy or hostile client cannot flood ingest/interactions. The
+	// fleet dedups upstream, so legitimate traffic stays well under this.
+	defaultRateLimit  = 240
+	defaultRateWindow = time.Minute
 )
 
 // Relay forwards curated detection alerts to a Slack webhook with fleet-wide
 // dedup and digesting. The zero value is not usable; construct with New.
 type Relay struct {
-	webhook     string
-	client      *http.Client
-	dedupWindow time.Duration
-	digestEvery time.Duration
-	logger      *log.Logger
+	webhook            string
+	client             *http.Client
+	dedupWindow        time.Duration
+	digestEvery        time.Duration
+	logger             *log.Logger
+	ingestToken        string
+	slackSigningSecret string
+	limiter            *rateLimiter
 
 	mu           sync.Mutex
 	seen         map[string]time.Time // dedup_key -> last forwarded
@@ -50,6 +73,7 @@ type Relay struct {
 	forwarded    int
 	suppressed   int
 	interactions int
+	rejected     int
 }
 
 // Options configure a Relay. Zero values fall back to defaults.
@@ -60,6 +84,21 @@ type Options struct {
 	// Logger, when set, receives an audit line for every forwarded alert and
 	// every button interaction. nil disables audit logging (useful in tests).
 	Logger *log.Logger
+
+	// IngestToken, when non-empty, is the shared secret a workstation must
+	// present (Authorization: Bearer <token>, or X-Sir-Relay-Token) on
+	// /v1/detections and /stats. Empty leaves ingest unauthenticated — the
+	// caller should warn the operator. Compared in constant time.
+	IngestToken string
+	// SlackSigningSecret, when non-empty, makes /slack/interactions verify the
+	// X-Slack-Signature / X-Slack-Request-Timestamp HMAC before acting. Empty
+	// skips verification (legacy behavior; the caller should warn).
+	SlackSigningSecret string
+	// RateLimit / RateWindow bound requests per source IP. RateLimit <= 0 uses
+	// the default ceiling; it is never fully off (the relay is a public-ish
+	// surface).
+	RateLimit  int
+	RateWindow time.Duration
 }
 
 // New constructs a Relay that forwards to the given Slack webhook URL.
@@ -72,13 +111,16 @@ func New(webhook string, opts Options) (*Relay, error) {
 		return nil, fmt.Errorf("relay: invalid Slack webhook URL: %w", err)
 	}
 	r := &Relay{
-		webhook:     webhook,
-		client:      opts.Client,
-		dedupWindow: opts.DedupWindow,
-		digestEvery: opts.DigestEvery,
-		logger:      opts.Logger,
-		seen:        make(map[string]time.Time),
-		digest:      make(map[string]int),
+		webhook:            webhook,
+		client:             opts.Client,
+		dedupWindow:        opts.DedupWindow,
+		digestEvery:        opts.DigestEvery,
+		logger:             opts.Logger,
+		ingestToken:        strings.TrimSpace(opts.IngestToken),
+		slackSigningSecret: strings.TrimSpace(opts.SlackSigningSecret),
+		limiter:            newRateLimiter(opts.RateLimit, opts.RateWindow),
+		seen:               make(map[string]time.Time),
+		digest:             make(map[string]int),
 	}
 	if r.client == nil {
 		r.client = &http.Client{Timeout: forwardClientTimeout}
@@ -90,6 +132,130 @@ func New(webhook string, opts Options) (*Relay, error) {
 		r.digestEvery = defaultDigestEvery
 	}
 	return r, nil
+}
+
+// --- request authentication, Slack signature, and per-source rate limiting ---
+
+// rateLimiter is a fixed-window per-key counter. Standard library only.
+type rateLimiter struct {
+	mu     sync.Mutex
+	limit  int
+	window time.Duration
+	hits   map[string]*windowCount
+}
+
+type windowCount struct {
+	start time.Time
+	count int
+}
+
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	if limit <= 0 {
+		limit = defaultRateLimit
+	}
+	if window <= 0 {
+		window = defaultRateWindow
+	}
+	return &rateLimiter{limit: limit, window: window, hits: make(map[string]*windowCount)}
+}
+
+// allow records a hit for key and reports whether it is within the window's
+// budget. A nil limiter allows everything.
+func (rl *rateLimiter) allow(key string) bool {
+	if rl == nil {
+		return true
+	}
+	now := time.Now()
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	wc := rl.hits[key]
+	if wc == nil || now.Sub(wc.start) >= rl.window {
+		// Opportunistic cleanup so the map cannot grow without bound.
+		if len(rl.hits) > 4096 {
+			for k, v := range rl.hits {
+				if now.Sub(v.start) >= rl.window {
+					delete(rl.hits, k)
+				}
+			}
+		}
+		rl.hits[key] = &windowCount{start: now, count: 1}
+		return true
+	}
+	if wc.count >= rl.limit {
+		return false
+	}
+	wc.count++
+	return true
+}
+
+// sourceKey returns the remote IP (without port) for rate-limit bucketing,
+// falling back to the raw RemoteAddr when it cannot be split.
+func sourceKey(req *http.Request) string {
+	if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		return host
+	}
+	return req.RemoteAddr
+}
+
+// rateLimited writes 429 and returns true when the source has exceeded its
+// budget.
+func (r *Relay) rateLimited(w http.ResponseWriter, req *http.Request) bool {
+	if r.limiter.allow(sourceKey(req)) {
+		return false
+	}
+	r.mu.Lock()
+	r.rejected++
+	r.mu.Unlock()
+	http.Error(w, "rate limited", http.StatusTooManyRequests)
+	return true
+}
+
+// ingestAuthorized reports whether the request carries the configured ingest
+// token. When no token is configured it returns true (unauthenticated mode).
+func (r *Relay) ingestAuthorized(req *http.Request) bool {
+	if r.ingestToken == "" {
+		return true
+	}
+	got := bearerToken(req)
+	if got == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(r.ingestToken)) == 1
+}
+
+func bearerToken(req *http.Request) string {
+	if h := req.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	return strings.TrimSpace(req.Header.Get(relayTokenHeader))
+}
+
+// verifySlackSignature validates Slack's v0 HMAC-SHA256 signature over the raw
+// body. An empty secret skips verification (returns true). It enforces the
+// timestamp skew window to blunt replay.
+func verifySlackSignature(secret, timestamp, signature string, body []byte, now time.Time) bool {
+	if secret == "" {
+		return true
+	}
+	if timestamp == "" || signature == "" {
+		return false
+	}
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	skew := now.Sub(time.Unix(ts, 0))
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > slackMaxSkew {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("v0:" + timestamp + ":"))
+	mac.Write(body)
+	expected := "v0=" + hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
 // Handler returns the relay's HTTP routes:
@@ -106,14 +272,24 @@ func (r *Relay) Handler() http.Handler {
 	return mux
 }
 
-func (r *Relay) handleStats(w http.ResponseWriter, _ *http.Request) {
+func (r *Relay) handleStats(w http.ResponseWriter, req *http.Request) {
+	if r.rateLimited(w, req) {
+		return
+	}
+	// Stats can reveal fleet detection volume; gate it behind the same shared
+	// secret as ingest when one is configured.
+	if !r.ingestAuthorized(req) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	fwd, sup := r.Stats()
 	r.mu.Lock()
 	inter := r.interactions
+	rej := r.rejected
 	r.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]int{
-		"forwarded": fwd, "suppressed": sup, "interactions": inter,
+		"forwarded": fwd, "suppressed": sup, "interactions": inter, "rejected": rej,
 	})
 }
 
@@ -160,6 +336,16 @@ func (r *Relay) Run(ctx context.Context) {
 func (r *Relay) handleIngest(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.rateLimited(w, req) {
+		return
+	}
+	if !r.ingestAuthorized(req) {
+		r.mu.Lock()
+		r.rejected++
+		r.mu.Unlock()
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(req.Body, maxIngestBytes))
@@ -214,9 +400,26 @@ func (r *Relay) handleInteraction(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.rateLimited(w, req) {
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(req.Body, maxInteractionBytes))
 	if err != nil {
 		w.WriteHeader(http.StatusOK) // always ack; never wedge Slack
+		return
+	}
+	// Reject forged interactions before acting on them. When a signing secret is
+	// configured an unsigned/invalid request is not from Slack, so 401 it rather
+	// than echoing a command back. (No secret configured -> verification is
+	// skipped for backward compatibility; the operator is warned at startup.)
+	if !verifySlackSignature(r.slackSigningSecret,
+		req.Header.Get("X-Slack-Request-Timestamp"),
+		req.Header.Get("X-Slack-Signature"),
+		body, time.Now()) {
+		r.mu.Lock()
+		r.rejected++
+		r.mu.Unlock()
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
 	// Slack posts interactions as form-encoded with a JSON "payload" field.

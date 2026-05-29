@@ -44,6 +44,14 @@ func cmdInstall(projectRoot, mode string) {
 			l = existingLease
 		} else if existingLeaseErr != nil && !os.IsNotExist(existingLeaseErr) {
 			fatal("load existing lease: %v", existingLeaseErr)
+		} else {
+			// Fresh install, no prior lease: seed the personal-profile default so
+			// the README quickstart (`sir install`) gets the advertised behavior
+			// without a separate `sir policy init`. Raw secret reads are denied and
+			// the agent gets the redacted `sir secret view` inline, so credential
+			// values never enter model context. `sir policy init --profile <p>`
+			// re-profiles; an existing operator lease is preserved untouched.
+			l.DenyRawSecretReads = true
 		}
 		l.ObserveOnly = mode == "observe"
 	}
@@ -276,7 +284,7 @@ func cmdInstall(projectRoot, mode string) {
 		fmt.Println("  Run `sir doctor` inside any active agent session to clear deny-all manually.")
 	}
 
-	fmt.Printf("sir installed successfully (%s mode)\n", l.Mode)
+	fmt.Printf("sir installed successfully — %s profile, %s\n", describeProfile(l), describeEnforcement(l))
 	if policy != nil {
 		fmt.Printf("  Managed policy: %s (%s)\n", policy.PolicyVersion, policy.ManagedPolicySourcePath())
 	}
@@ -288,7 +296,11 @@ func cmdInstall(projectRoot, mode string) {
 	fmt.Printf("  Lease:   %s\n", leasePath)
 	fmt.Println()
 	fmt.Println("What sir watches:")
-	fmt.Println("  * .env, *.pem, .aws/, .ssh/ — asks before reading")
+	if l.DenyRawSecretReads {
+		fmt.Println("  * .env, *.pem, .aws/, .ssh/ — raw reads denied; redacted key view returned (sir secret view)")
+	} else {
+		fmt.Println("  * .env, *.pem, .aws/, .ssh/ — asks before reading")
+	}
 	fmt.Println("  * External network + git push — blocked if secrets in session")
 	fmt.Println("  * postinstall scripts — hashed before/after npm/pip/cargo install")
 	fmt.Println("  * Hook config changes — auto-restored and session halted")
@@ -326,6 +338,27 @@ func cmdInstall(projectRoot, mode string) {
 	fmt.Println()
 	fmt.Println("See it work now:  sir demo        (60-second tour of what sir catches)")
 	fmt.Println("Check anytime:    sir status      ·  if blocked: sir why  (full chain: sir explain)")
+}
+
+// describeProfile returns a human label for the lease's profile axis
+// (personal -> team -> strict -> managed), which is orthogonal to the
+// guard/observe enforcement axis. Mode carries the profile for team/strict/
+// managed; a plain "guard" lease is the low-friction personal default.
+func describeProfile(l *lease.Lease) string {
+	switch l.Mode {
+	case "managed", "strict", "team":
+		return l.Mode
+	default:
+		return "personal"
+	}
+}
+
+// describeEnforcement reports the guard/observe axis in plain language.
+func describeEnforcement(l *lease.Lease) string {
+	if l.ObserveOnly {
+		return "observe (records would_allow/ask/deny, blocks nothing)"
+	}
+	return "guard (enforcing)"
 }
 
 // resolveMCPTrustPostureForInstall returns the posture to use for this

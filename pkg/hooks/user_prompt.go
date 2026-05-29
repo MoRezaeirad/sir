@@ -55,14 +55,16 @@ func EvaluateUserPrompt(projectRoot string, ag agent.Agent) error {
 		wasSecret := state.SecretSession
 		state.AdvanceTurnByHook()
 
-		// Log turn advancement to ledger if it cleared secrets
+		// Log turn advancement to ledger if it downgraded the secret floor.
+		// The turn-scoped deny floor clears, but the monotonic high-water mark
+		// persists so egress/push still re-prompt (taint persists across turns).
 		if wasSecret && !state.SecretSession {
 			entry := &ledger.Entry{
 				ToolName: "sir-hook",
 				Verb:     "turn_advance",
 				Target:   "user_prompt",
 				Decision: "allow",
-				Reason:   "turn-scoped secret cleared on new user message",
+				Reason:   "turn-scoped secret floor downgraded on new user message; egress/push still re-prompt (taint persists across turns)",
 			}
 			if logErr := ledger.Append(projectRoot, entry); logErr != nil {
 				fmt.Fprintf(os.Stderr, "sir: ledger append error: %v\n", logErr)

@@ -78,6 +78,12 @@ func localEvaluateNetwork(req *Request, effectiveLabels []Label) *Response {
 		if deniesFlowToVerb(effectiveLabels, req.Intent.Verb) {
 			return denyFlowResponse()
 		}
+		// High-water mark: the turn-scoped secret flag has cleared but the
+		// session held a secret earlier. Mirror the oracle — re-prompt instead
+		// of silently allowing (taint is monotonic across turns).
+		if req.Session.WasSecret {
+			return &Response{Decision: policy.VerdictAsk, Reason: "This session previously contained credentials. Push to approved remote requires approval."}
+		}
 	case policy.VerbNetAllowlisted:
 		if deniesFlowToVerb(effectiveLabels, req.Intent.Verb) {
 			return denyFlowResponse()

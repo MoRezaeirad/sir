@@ -12,6 +12,7 @@ func (s *State) MarkSecretSession() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.SecretSession = true
+	s.SessionEverSecret = true
 	if s.SecretSessionSince.IsZero() {
 		s.SecretSessionSince = time.Now()
 	}
@@ -26,6 +27,7 @@ func (s *State) MarkSecretSessionWithScope(scope policy.ApprovalScope) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.SecretSession = true
+	s.SessionEverSecret = true
 	if s.SecretSessionSince.IsZero() {
 		s.SecretSessionSince = time.Now()
 	}
@@ -53,7 +55,7 @@ func (s *State) MaybeAdvanceTurn(now time.Time) {
 		s.TurnCounter++
 		s.clearTurnEvidenceLocked()
 		if s.SecretSession && s.ApprovalScope == policy.ApprovalScopeTurn && s.TurnCounter > s.SecretApprovalTurn {
-			s.clearSecretSessionLocked()
+			s.downgradeSecretSessionLocked()
 		}
 	}
 	s.LastToolCallAt = now
@@ -68,7 +70,7 @@ func (s *State) AdvanceTurnByHook() {
 	s.TurnAdvancedByHook = true
 	s.clearTurnEvidenceLocked()
 	if s.SecretSession && s.ApprovalScope == policy.ApprovalScopeTurn && s.TurnCounter > s.SecretApprovalTurn {
-		s.clearSecretSessionLocked()
+		s.downgradeSecretSessionLocked()
 	}
 }
 
@@ -79,7 +81,7 @@ func (s *State) IncrementTurn() {
 	s.TurnCounter++
 	s.clearTurnEvidenceLocked()
 	if s.SecretSession && s.ApprovalScope == policy.ApprovalScopeTurn && s.TurnCounter > s.SecretApprovalTurn {
-		s.clearSecretSessionLocked()
+		s.downgradeSecretSessionLocked()
 	}
 }
 
@@ -90,10 +92,27 @@ func (s *State) ClearSecretSession() {
 	s.clearSecretSessionLocked()
 }
 
-// clearSecretSessionLocked clears the secret flag. Caller must hold s.mu.
+// clearSecretSessionLocked clears the turn-scoped secret flag. Caller must hold
+// s.mu. It deliberately does NOT clear SessionEverSecret: secret taint is
+// monotonic, so a turn boundary downgrades the deny floor to an ask-on-egress
+// posture rather than dropping the taint entirely. Only ClearTransientRestrictions
+// (i.e. `sir unlock`) clears the high-water mark.
 func (s *State) clearSecretSessionLocked() {
 	s.SecretSession = false
 	s.SecretSessionSince = time.Time{}
 	s.ApprovalScope = ""
 	s.SecretApprovalTurn = 0
+}
+
+// downgradeSecretSessionLocked records the monotonic high-water mark and then
+// clears the turn-scoped secret flag. The turn-advance paths use this instead of
+// clearSecretSessionLocked so the was-secret posture survives the boundary even
+// for a session loaded from disk before SessionEverSecret existed: such a session
+// has SecretSession=true but SessionEverSecret=false, and MarkSecretSession never
+// ran in this process to set the mark. Capturing it at the downgrade closes that
+// upgrade gap (without mutating state on load, which would break the session
+// integrity hash). Caller must hold s.mu.
+func (s *State) downgradeSecretSessionLocked() {
+	s.SessionEverSecret = true
+	s.clearSecretSessionLocked()
 }

@@ -67,8 +67,10 @@ AWS_SECRET_ACCESS_KEY=EXAMPLE_AWS_SECRET_ACCESS_KEY
 		fatal("write CLAUDE.md: %v", err)
 	}
 
-	// Load default lease and set up session
+	// Load the fresh-install default lease (personal profile: raw secret reads
+	// are denied and a redacted view is returned).
 	l := lease.DefaultLease()
+	l.DenyRawSecretReads = true
 
 	fmt.Println("--- Detection 1: Secret Access Control ---")
 	fmt.Println()
@@ -89,14 +91,17 @@ AWS_SECRET_ACCESS_KEY=EXAMPLE_AWS_SECRET_ACCESS_KEY
 	fmt.Printf("  Verb:   %s\n", intent1.Verb)
 	fmt.Printf("  Sensitive: %v\n", intent1.IsSensitive)
 	fmt.Println()
-	fmt.Println("  Verdict: ASK — sir prompts the developer before allowing access.")
-	fmt.Println("           If approved, the session is labeled as carrying secret data.")
+	fmt.Println("  Verdict: DENY + REDACT — sir denies the raw read and returns a")
+	fmt.Println("           redacted key view (names only, values masked), so the secret")
+	fmt.Println("           never enters model context. A deliberate raw read escalates")
+	fmt.Println("           via `sir approve`; that approval labels the session secret.")
 	fmt.Println()
 
 	fmt.Println("--- Detection 2: Egress Blocking ---")
 	fmt.Println()
-	fmt.Println("Scenario: After reading .env, a prompt injection tells Claude to")
-	fmt.Println("          send your secrets to an external host.")
+	fmt.Println("Scenario: a secret has entered the session (an approved raw read, an")
+	fmt.Println("          env-var read, or MCP content), and a prompt injection tells")
+	fmt.Println("          Claude to send it to an external host.")
 	fmt.Println()
 
 	curlPayload := &hooks.HookPayload{

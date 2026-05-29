@@ -115,6 +115,7 @@ mod tests {
             labels: vec![],
             derived_labels: vec![],
             session_secret: false,
+            session_was_secret: false,
             session_untrusted_read: false,
             is_posture_file: false,
             is_sensitive_path: false,
@@ -268,6 +269,64 @@ mod tests {
         let req = make_request("push_remote");
         let result = evaluate(&req, &default_lease(), &clean_session());
         assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    // --- High-water mark (was-secret, turn-scoped flag cleared) ---
+
+    #[test]
+    fn test_push_origin_was_secret_asks_not_allows() {
+        // The turn-scoped secret flag has cleared (session_secret=false) but the
+        // session held a secret earlier (session_was_secret=true). push_origin
+        // would silently allow on a truly clean session; the high-water mark
+        // forces a re-approval instead.
+        let mut req = make_request("push_origin");
+        req.session_was_secret = true;
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+        assert!(result.reason.contains("previously held secret"));
+    }
+
+    #[test]
+    fn test_push_remote_was_secret_asks() {
+        let mut req = make_request("push_remote");
+        req.session_was_secret = true;
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    #[test]
+    fn test_net_external_was_secret_still_at_least_asks() {
+        // net_external is handled by the network guardrail before the secret
+        // guard; a was-secret session must never silently allow egress.
+        let mut req = make_request("net_external");
+        req.session_was_secret = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_ne!(result.verdict, Verdict::Allow);
+    }
+
+    #[test]
+    fn test_was_secret_never_widens_a_forbidding_lease() {
+        // A lease that forbids push must still deny even when only the
+        // high-water mark (not the live secret flag) is set.
+        let mut req = make_request("push_origin");
+        req.session_was_secret = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.push(Verb::PushOrigin);
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+    }
+
+    #[test]
+    fn test_live_secret_beats_was_secret_for_push_remote() {
+        // When the live secret flag is set, push_remote is a hard deny — the
+        // was-secret downgrade must not soften it.
+        let mut req = make_request("push_remote");
+        req.session_secret = true;
+        req.session_was_secret = true;
+        let result = evaluate(&req, &default_lease(), &secret_session());
+        assert_eq!(result.verdict, Verdict::Deny);
     }
 
     #[test]

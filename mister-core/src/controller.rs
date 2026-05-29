@@ -78,6 +78,7 @@ mod tests {
             labels: vec![],
             derived_labels: vec![],
             session_secret: false,
+            session_was_secret: false,
             session_untrusted_read: false,
             is_posture_file: false,
             is_sensitive_path: false,

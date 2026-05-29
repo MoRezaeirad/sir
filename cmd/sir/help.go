@@ -18,7 +18,7 @@ var passthroughCommands = map[string]bool{
 var commandHelp = map[string]string{
 	"install":      "sir install [--agent claude|codex|gemini] [--observe] [--no-rebaseline]\n  Set up sir hooks for installed agents.\n  --observe records would_allow/ask/deny without blocking (observe-only rollout).",
 	"uninstall":    "sir uninstall [--agent claude|codex|gemini]\n  Remove sir hooks from one or all agents. State under ~/.sir is preserved for\n  forensic review. To also remove binaries and all state, run uninstall.sh.",
-	"setup":        "sir setup [--personal|--team|--strict] [--yes]\n  Guided first-run: choose a policy profile, then install hooks.",
+	"setup":        "sir setup [--personal|--team|--strict|--managed] [--yes]\n  Guided first-run: choose a policy profile, then install hooks.",
 	"status":       "sir status [--json] [--agents]\n  Show whether sir is active and what it currently sees.",
 	"doctor":       "sir doctor [--json]\n  Diagnose sir's health and auto-repair (clears deny-all, restores baselines).",
 	"verify":       "sir verify\n  Verify binary integrity against the install-time manifest.",
@@ -43,7 +43,7 @@ var commandHelp = map[string]string{
 	"posture":      "sir posture [--json]\n  Show install, policy, MCP, runtime, and ledger posture.",
 	"capabilities": "sir capabilities [--json]\n  Show per-agent support and hook coverage.",
 	"approvals":    "sir approvals [--json]\n  Show pending asks, retry grants, and everything you've approved.",
-	"relay":        "sir relay [--addr :8787] [--dedup 10m] [--digest 1h]\n  Run the central Slack relay (needs SIR_SLACK_WEBHOOK).",
+	"relay":        "sir relay [--addr 127.0.0.1:8787] [--dedup 10m] [--digest 1h]\n  Run the central Slack relay (needs SIR_SLACK_WEBHOOK). Binds loopback by default;\n  set SIR_RELAY_TOKEN (ingest auth) and SIR_SLACK_SIGNING_SECRET (Slack signature) before exposing it.",
 	"demo":         "sir demo\n  Run a 60-second tour of what sir blocks.",
 }
 

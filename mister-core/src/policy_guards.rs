@@ -177,37 +177,63 @@ pub(super) fn evaluate_secret_session_guards(
     _session: &SessionState,
     verb: Verb,
 ) -> Option<PolicyResult> {
-    if !req.session_secret {
-        return None;
+    if req.session_secret {
+        return match verb {
+            Verb::NetExternal => Some(policy_result(
+                Verdict::Deny,
+                "session carries secret data; external network egress blocked",
+                RiskTier::R4,
+            )),
+            Verb::PushOrigin => Some(policy_result(
+                Verdict::Ask,
+                "Git push to approved remote while session contains credentials.",
+                RiskTier::R3,
+            )),
+            Verb::PushRemote => Some(policy_result(
+                Verdict::Deny,
+                "Git push to unapproved remote blocked — your session contains credentials.",
+                RiskTier::R4,
+            )),
+            Verb::NetLocal => Some(policy_result(
+                Verdict::Allow,
+                "Loopback network access allowed.",
+                RiskTier::R0,
+            )),
+            Verb::NetAllowlisted => Some(policy_result(
+                Verdict::Allow,
+                "Approved host network access allowed.",
+                RiskTier::R1,
+            )),
+            _ => None,
+        };
     }
-    match verb {
-        Verb::NetExternal => Some(policy_result(
-            Verdict::Deny,
-            "session carries secret data; external network egress blocked",
-            RiskTier::R4,
-        )),
-        Verb::PushOrigin => Some(policy_result(
-            Verdict::Ask,
-            "Git push to approved remote while session contains credentials.",
-            RiskTier::R3,
-        )),
-        Verb::PushRemote => Some(policy_result(
-            Verdict::Deny,
-            "Git push to unapproved remote blocked — your session contains credentials.",
-            RiskTier::R4,
-        )),
-        Verb::NetLocal => Some(policy_result(
-            Verdict::Allow,
-            "Loopback network access allowed.",
-            RiskTier::R0,
-        )),
-        Verb::NetAllowlisted => Some(policy_result(
-            Verdict::Allow,
-            "Approved host network access allowed.",
-            RiskTier::R1,
-        )),
-        _ => None,
+
+    // High-water mark (monotonic secret taint). The turn-scoped `session_secret`
+    // deny floor clears on a turn boundary (instantly on the next user message),
+    // but a session that *ever* held secret data must not silently revert to the
+    // clean-session baseline — a secret laundered through model context can be
+    // re-emitted as agent-authored bytes a turn later. So a push from a
+    // was-secret session re-prompts (ask) instead of being silently allowed.
+    //
+    // This only ever TIGHTENS (allow -> ask); it never widens a deny:
+    //   - net_external / dns_lookup are already forced to >= ask earlier by
+    //     evaluate_network_guardrails (and to deny under a forbidding lease),
+    //     so they never reach this branch — no need to re-handle them here.
+    //   - a lease that forbids push is decided by the forbidden-verb check that
+    //     runs before this guard, so the deny stands.
+    // The explicit, logged way to clear the high-water mark is `sir unlock`.
+    if req.session_was_secret {
+        return match verb {
+            Verb::PushOrigin | Verb::PushRemote => Some(policy_result(
+                Verdict::Ask,
+                "session previously held secret data this session; re-approve this push (taint persists across turns)",
+                RiskTier::R3,
+            )),
+            _ => None,
+        };
     }
+
+    None
 }
 
 pub(super) fn evaluate_delegation_guardrails(

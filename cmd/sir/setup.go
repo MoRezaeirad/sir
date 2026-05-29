@@ -13,14 +13,18 @@ func cmdSetup(projectRoot string, args []string) {
 		switch arg {
 		case "--yes", "-y":
 			yes = true
+		case "--personal", "--default", "--standard":
+			profile = "personal"
+		case "--team":
+			profile = "team"
 		case "--strict":
 			profile = "strict"
-		case "--default", "--standard":
-			profile = "default"
+		case "--managed":
+			profile = "managed"
 		case "--no-install":
 			runInstall = false
 		default:
-			fatal("usage: sir setup [--strict|--default] [--no-install] [--yes]")
+			fatal("usage: sir setup [--personal|--team|--strict|--managed] [--no-install] [--yes]")
 		}
 	}
 	fmt.Println("sir setup")
@@ -29,25 +33,25 @@ func cmdSetup(projectRoot string, args []string) {
 		if yes {
 			profile = "strict"
 		} else {
-			fmt.Print("Policy profile [strict/default] (strict): ")
+			fmt.Print("Policy profile [personal/team/strict/managed] (strict): ")
 			var answer string
 			fmt.Scanln(&answer)
 			answer = strings.TrimSpace(strings.ToLower(answer))
 			switch answer {
 			case "", "strict":
 				profile = "strict"
-			case "default", "standard":
-				profile = "default"
+			case "personal", "default", "standard":
+				profile = "personal"
+			case "team":
+				profile = "team"
+			case "managed":
+				profile = "managed"
 			default:
-				fatal("unknown profile: %s", answer)
+				fatal("unknown profile: %s (valid: personal, team, strict, managed)", answer)
 			}
 		}
 	}
-	if profile == "strict" {
-		cmdPolicyInit(projectRoot, []string{"--strict", "--yes"})
-	} else {
-		cmdPolicyInit(projectRoot, []string{"--default", "--yes"})
-	}
+	cmdPolicyInit(projectRoot, []string{"--profile", profile, "--yes"})
 	if runInstall {
 		if yes {
 			cmdInstall(projectRoot, "guard")

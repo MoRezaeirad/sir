@@ -78,7 +78,8 @@ func TestPublicContractParity(t *testing.T) {
 		requireContainsFile(t, root, "README.md", "sir doctor", "README verification doctor command")
 		requireContainsFile(t, root, "README.md", "sir log verify", "README verification log verify command")
 		requireContainsFile(t, root, "README.md", "sir install            # auto-detect supported agents already on this machine", "README auto-detect install guidance")
-		requireContainsFile(t, root, "README.md", "Ask the agent to read `.env`", "README secret-read check")
+		requireContainsFile(t, root, "README.md", "ask the agent to read `.env`", "README secret-read check")
+		requireContainsFile(t, root, "README.md", "denies the raw read", "README deny-raw-read default narrative")
 		requireContainsFile(t, root, "README.md", "curl https://httpbin.org/get", "README blocked egress check")
 	})
 

@@ -67,6 +67,73 @@ func TestCmdInstall_WritesLease(t *testing.T) {
 	}
 }
 
+// TestCmdInstall_FreshLeaseDeniesRawSecretReads pins the advertised quickstart
+// default: a bare `sir install` on a project with no prior lease must seed the
+// personal-profile behavior (raw secret reads denied + redacted view), not the
+// neutral DefaultLease() that leaves DenyRawSecretReads off. Regression guard
+// for the gap where `sir install` and `sir policy init --profile personal`
+// disagreed on the raw-secret-read default.
+func TestCmdInstall_FreshLeaseDeniesRawSecretReads(t *testing.T) {
+	env := newTestEnv(t)
+
+	for _, f := range []string{".claude/hooks/hooks.json", ".claude/settings.json", "CLAUDE.md", ".mcp.json"} {
+		dir := filepath.Join(env.projectRoot, filepath.Dir(f))
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(env.projectRoot, f), []byte("{}"), 0o644)
+	}
+
+	origArgs := os.Args
+	os.Args = []string{"sir", "install", "--yes"}
+	defer func() { os.Args = origArgs }()
+
+	cmdInstall(env.projectRoot, "guard")
+
+	l, err := lease.Load(env.leasePath)
+	if err != nil {
+		t.Fatalf("expected lease to be created: %v", err)
+	}
+	if !l.DenyRawSecretReads {
+		t.Error("fresh `sir install` must deny raw secret reads (personal-profile default), got false")
+	}
+	if got := describeProfile(l); got != "personal" {
+		t.Errorf("fresh install profile = %q, want personal", got)
+	}
+}
+
+// TestCmdInstall_PreservesExistingLeaseRawSecretChoice confirms a re-run of
+// `sir install` does NOT override an operator who deliberately disabled the
+// raw-secret-read gate on an existing lease.
+func TestCmdInstall_PreservesExistingLeaseRawSecretChoice(t *testing.T) {
+	env := newTestEnv(t)
+
+	for _, f := range []string{".claude/hooks/hooks.json", ".claude/settings.json", "CLAUDE.md", ".mcp.json"} {
+		dir := filepath.Join(env.projectRoot, filepath.Dir(f))
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(env.projectRoot, f), []byte("{}"), 0o644)
+	}
+
+	// Seed an existing lease that opts out of the gate.
+	existing := lease.DefaultLease()
+	existing.DenyRawSecretReads = false
+	if err := existing.Save(env.leasePath); err != nil {
+		t.Fatalf("seed existing lease: %v", err)
+	}
+
+	origArgs := os.Args
+	os.Args = []string{"sir", "install", "--yes"}
+	defer func() { os.Args = origArgs }()
+
+	cmdInstall(env.projectRoot, "guard")
+
+	l, err := lease.Load(env.leasePath)
+	if err != nil {
+		t.Fatalf("load lease: %v", err)
+	}
+	if l.DenyRawSecretReads {
+		t.Error("re-running install must preserve an existing lease's DenyRawSecretReads=false, but it was flipped on")
+	}
+}
+
 func TestCmdInstall_ObserveMode(t *testing.T) {
 	env := newTestEnv(t)
 

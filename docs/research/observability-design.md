@@ -20,6 +20,14 @@ When `SIR_OTLP_ENDPOINT` is set, the policy-decision code paths emit their ledge
 
 Not every ledger append site is wired into the exporter. Hook-lifecycle telemetry (PreToolUse / PostToolUse / hook-tamper / credential / injection / sentinel-mutation) is emitted; a few non-hook append sites — session-summary rollups, CLI allowlist changes, and some config-change bookkeeping — are recorded in the local ledger but not in the OTLP stream. When a compliance dashboard needs 100% coverage, the authoritative source is the local hash-chained ledger file, with OTLP as the live-tailing fan-out.
 
+### Central Slack relay trust boundary
+
+`sir relay` is the optional operator-run service that workstations point `SIR_SLACK_RELAY` at; it deduplicates fleet alerts, renders curated Block Kit messages, posts digests, and acknowledges button clicks, keeping webhook secrets and per-event spam off individual machines. It never executes commands on a workstation — interaction replies only echo the suggested command in the HTTP response body, and authoritative policy still flows through the managed-policy channel, not the relay. It is still a network surface, so:
+
+- **Authenticate ingest.** Set `SIR_RELAY_TOKEN` on the relay and on every workstation; `/v1/detections` and `/stats` then require the shared secret (`Authorization: Bearer <token>`), compared in constant time. Unset leaves ingest open and the relay warns at startup.
+- **Verify Slack interactions.** Set `SIR_SLACK_SIGNING_SECRET` to your Slack app's signing secret; `/slack/interactions` then verifies the `v0` HMAC over the raw body within a 5-minute skew window and rejects unsigned, forged, or replayed requests.
+- **Bind tightly.** The relay binds `127.0.0.1` by default; a non-loopback bind requires an explicit `--addr`. Do not expose it directly to the internet — front it with a reverse proxy or mTLS. Per-source-IP rate limiting is always on.
+
 ## Tier 3 — detection
 
 sir enforces at two distinct moments. PreToolUse decisions run *before* the tool executes and can block or ask for approval. PostToolUse and lifecycle checks run *immediately after* the tool returns, before the agent processes the output, and can raise posture, taint the session, or deny the next call. Both moments feed the same ledger and the same alert taxonomy.

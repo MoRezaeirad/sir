@@ -23,7 +23,8 @@ const maxInlineRedactBytes = 1 << 20 // 1 MiB
 const maxInlineRedactKeys = 24
 
 // evaluateRawSecretReadGate denies a raw read of a sensitive file when the
-// active profile (team/strict) forbids it, and hands back a redacted view (key
+// active lease sets DenyRawSecretReads (the default for a fresh install and for
+// every profile, personal -> managed), and hands back a redacted view (key
 // names with values masked) inline in the deny reason. The agent gets the
 // information it needs to keep working — which keys exist — while raw values
 // never enter the model context. This is a Go-side restriction: it narrows the

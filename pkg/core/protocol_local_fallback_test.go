@@ -232,6 +232,40 @@ func TestLocalEvaluate_PushOrigin_NoSecret_Allow(t *testing.T) {
 	}
 }
 
+// TestLocalEvaluate_PushOrigin_WasSecret_Ask locks in the monotonic high-water
+// mark in the Go fallback: the turn-scoped secret flag has cleared
+// (SecretSession=false) but the session held a secret earlier this session
+// (WasSecret=true). A truly clean session would silently allow push_origin; the
+// high-water mark must downgrade that to an approval prompt, mirroring the
+// oracle (see mister-core/src/policy.rs test_push_origin_was_secret_asks).
+func TestLocalEvaluate_PushOrigin_WasSecret_Ask(t *testing.T) {
+	req := &Request{
+		Intent:  Intent{Verb: "push_origin", Target: "origin"},
+		Session: SessionInfo{SecretSession: false, WasSecret: true},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Errorf("push_origin (was-secret): decision = %q, want ask", resp.Decision)
+	}
+}
+
+// TestEncodeMSTR1_CarriesWasSecret confirms the high-water mark is serialized
+// onto the wire as session_was_secret so the oracle can act on it.
+func TestEncodeMSTR1_CarriesWasSecret(t *testing.T) {
+	req := &Request{
+		ToolName: "Bash",
+		Intent:   Intent{Verb: "push_origin", Target: "origin"},
+		Session:  SessionInfo{WasSecret: true},
+	}
+	wire := buildWireEvalRequest(req)
+	if !wire.SessionWasSecret {
+		t.Error("buildWireEvalRequest must carry WasSecret as session_was_secret")
+	}
+}
+
 func TestLocalEvaluate_Delegate_WithSecret_Deny(t *testing.T) {
 	// Secret session: deny (parity with mister-core policy.rs).
 	// The Go fallback must never be more permissive than Rust.

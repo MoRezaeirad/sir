@@ -64,6 +64,17 @@ func eventRoutesToSlack(ev LogEvent) bool {
 // off Slack and webhook URLs off individual machines.
 const SlackRelayEnvVar = "SIR_SLACK_RELAY" // #nosec G101 -- env var name, not a credential
 
+// SlackRelayTokenEnvVar names the shared secret a workstation presents to an
+// operator-run relay's /v1/detections endpoint (sent as "Authorization: Bearer
+// <token>"). Set the same value on the relay (its own SIR_RELAY_TOKEN) to
+// require authenticated ingest. Optional: unset leaves ingest unauthenticated.
+const SlackRelayTokenEnvVar = "SIR_RELAY_TOKEN" // #nosec G101 -- env var name, not a credential
+
+// SlackSigningSecretEnvVar names the Slack app signing secret the relay uses to
+// verify /slack/interactions requests. Relay-side only; workstations never use
+// it.
+const SlackSigningSecretEnvVar = "SIR_SLACK_SIGNING_SECRET" // #nosec G101 -- env var name, not a credential
+
 // SlackAction is a suggested next step the relay can render as an interactive
 // button. Command is the exact sir command; the relay decides how to surface
 // it (button, link, copy-paste).
@@ -106,6 +117,7 @@ type SlackRelay struct {
 	structured bool
 	client     *http.Client
 	enabled    bool
+	token      string // shared secret for authenticated relay ingest (structured mode only)
 }
 
 // NewSlackRelay constructs a relay, preferring the central relay endpoint over
@@ -114,7 +126,9 @@ type SlackRelay struct {
 // so a bounded synchronous post is acceptable on those infrequent events.
 func NewSlackRelay() *SlackRelay {
 	if relay := strings.TrimSpace(os.Getenv(SlackRelayEnvVar)); relay != "" {
-		return newSlackRelayWithMode(relay, true, &http.Client{Timeout: 1500 * time.Millisecond})
+		r := newSlackRelayWithMode(relay, true, &http.Client{Timeout: 1500 * time.Millisecond})
+		r.token = strings.TrimSpace(os.Getenv(SlackRelayTokenEnvVar))
+		return r
 	}
 	return newSlackRelayWithMode(strings.TrimSpace(os.Getenv(SlackWebhookEnvVar)), false, &http.Client{Timeout: 1500 * time.Millisecond})
 }
@@ -176,6 +190,9 @@ func (r *SlackRelay) MaybeNotify(ev LogEvent) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if r.structured && r.token != "" {
+		req.Header.Set("Authorization", "Bearer "+r.token)
+	}
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return

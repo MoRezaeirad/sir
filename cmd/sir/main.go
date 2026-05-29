@@ -159,7 +159,7 @@ A security runtime for AI coding agents (Claude Code, Codex, and Gemini CLI).
 Invisible during normal work. Loud at the exits.
 
 Get started
-  sir setup [--strict|--default]  Guided first-run setup for policy + hooks
+  sir setup [--personal|--team|--strict|--managed]  Guided first-run setup for policy + hooks
   sir install [--agent <id>] [--observe] [--no-rebaseline]
                                  Auto-detect installed agents and set up hooks
                                  (--agent: claude, codex, gemini)
@@ -222,7 +222,7 @@ Maintenance
   sir completion bash|zsh|fish   Print a shell completion script
 
 	Advanced
-	  sir relay [--addr :8787]       Run the central Slack relay (dedup, digest, buttons)
+	  sir relay [--addr 127.0.0.1:8787]  Run the central Slack relay (dedup, digest, buttons; auth via SIR_RELAY_TOKEN + SIR_SLACK_SIGNING_SECRET)
 	  sir mcp-proxy <command>        Wrap an MCP server with OS-level MCP hardening
 	  sir run <agent>               Host-agent containment launcher
 	  sir launch <agent>            Alias for sir run

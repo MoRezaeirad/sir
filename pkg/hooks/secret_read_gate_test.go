@@ -45,7 +45,7 @@ func TestRawSecretReadGate_InlineRedactedView(t *testing.T) {
 func TestRawSecretReadGate_DeniesUnderTeamProfile(t *testing.T) {
 	projectRoot := t.TempDir()
 	l := lease.DefaultLease()
-	l.DenyRawSecretReads = true // team/strict
+	l.DenyRawSecretReads = true // every profile (personal -> managed) and the fresh-install default
 	state := newTestSession(t, projectRoot)
 
 	payload := &HookPayload{
@@ -69,9 +69,13 @@ func TestRawSecretReadGate_DeniesUnderTeamProfile(t *testing.T) {
 	}
 }
 
-func TestRawSecretReadGate_NotDeniedUnderPersonalProfile(t *testing.T) {
+func TestRawSecretReadGate_NotFiredWhenDisabled(t *testing.T) {
 	projectRoot := t.TempDir()
-	l := lease.DefaultLease() // DenyRawSecretReads false
+	// Gate-off path: a lease that explicitly opts out of DenyRawSecretReads (e.g.
+	// an operator who re-enabled raw reads). Every shipped profile, including
+	// personal, sets DenyRawSecretReads=true; this exercises the disabled branch.
+	l := lease.DefaultLease()
+	l.DenyRawSecretReads = false
 	state := newTestSession(t, projectRoot)
 
 	payload := &HookPayload{
@@ -83,10 +87,10 @@ func TestRawSecretReadGate_NotDeniedUnderPersonalProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("evaluatePayload: %v", err)
 	}
-	// Personal profile: the gate does not fire (a sensitive read prompts, it is
-	// not hard-denied by this gate).
+	// Gate disabled: a sensitive read prompts (oracle ask), it is not hard-denied
+	// by this gate.
 	if resp.Decision == "deny" && strings.Contains(resp.Reason, "denies raw secret reads") {
-		t.Errorf("personal profile should not hard-deny raw secret reads via the gate: %s", resp.Reason)
+		t.Errorf("gate must not fire when DenyRawSecretReads is false: %s", resp.Reason)
 	}
 }
 
