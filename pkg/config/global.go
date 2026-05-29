@@ -89,6 +89,22 @@ type Config struct {
 	// `sir mcp-proxy` + OS sandbox.
 	MCPDeepVerbGating bool `json:"mcp_deep_verb_gating,omitempty"`
 
+	// InstallAgents is the remembered set of host-agent IDs the user chose
+	// in the `sir install` interactive selector ("remember this choice").
+	// When non-empty, a bare `sir install` (no --agent flag, no override)
+	// installs for exactly these agents instead of re-prompting or
+	// auto-detecting all. Values are agent IDs ("claude", "codex",
+	// "gemini"). Empty/absent means "no remembered preference" — fall back
+	// to interactive selection on a TTY, or auto-detect-all otherwise.
+	//
+	// This is a friction-reduction convenience, not a security control:
+	// it only narrows which agents get hooks, and an explicit --agent flag
+	// always overrides it. Persisted via Save during `sir install`, which
+	// is user-initiated and out-of-band of any agent session (see the
+	// PostureFiles note in cmd/sir/install.go), so it does not route
+	// through the agent-write posture gate.
+	InstallAgents []string `json:"install_agents,omitempty"`
+
 	// UpdatedAt is a local timestamp recorded on Save. Used for telemetry
 	// and diagnostic commands (`sir doctor`) to surface recent config
 	// writes. Not load-bearing for any policy decision.

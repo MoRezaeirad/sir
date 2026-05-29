@@ -41,7 +41,27 @@ func main() {
 				mode = "guard"
 			}
 		}
-		cmdInstall(projectRoot, mode)
+		// --global routes through the step-by-step wizard, which scopes the
+		// install (this repo / a directory of repos / everywhere) and then
+		// performs the same hook install underneath. --forget is a standalone
+		// maintenance action and takes precedence over --global so
+		// `sir install --global --forget` still just clears the preference.
+		if hasFlag(os.Args[2:], "--global") && !hasFlag(os.Args[2:], "--forget") {
+			cmdWizard(projectRoot, mode, os.Args[2:])
+		} else {
+			cmdInstall(projectRoot, mode)
+		}
+	case "wizard":
+		mode := "guard"
+		for _, arg := range os.Args[2:] {
+			switch arg {
+			case "observe", "--observe":
+				mode = "observe"
+			case "--guard":
+				mode = "guard"
+			}
+		}
+		cmdWizard(projectRoot, mode, os.Args[2:])
 	case "setup":
 		cmdSetup(projectRoot, os.Args[2:])
 	case "uninstall":
@@ -160,9 +180,18 @@ Invisible during normal work. Loud at the exits.
 
 Get started
   sir setup [--personal|--team|--strict|--managed]  Guided first-run setup for policy + hooks
-  sir install [--agent <id>] [--observe] [--no-rebaseline]
-                                 Auto-detect installed agents and set up hooks
+  sir wizard                     Step-by-step setup: pick agents + scope, then install
+  sir install [--agent <id>] [--observe] [--no-rebaseline] [--global] [--forget]
+                                 Set up sir hooks for installed agents.
+                                 With no --agent on a terminal, prompts an
+                                 interactive multi-select (Space toggles, last
+                                 row remembers the choice for next time).
+                                 Non-interactive (--yes / CI / piped) falls back
+                                 to all detected agents. An explicit --agent
+                                 always overrides the remembered choice.
                                  (--agent: claude, codex, gemini)
+                                 --global runs the wizard (agent + scope select).
+                                 --forget clears the remembered agent choice.
                                  --observe records would_allow/ask/deny and
                                  detections without blocking (observe-only
                                  rollout); enable enforcement later without

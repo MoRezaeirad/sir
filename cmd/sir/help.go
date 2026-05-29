@@ -16,7 +16,8 @@ var passthroughCommands = map[string]bool{
 // commandHelp is concise per-command help shown for `sir <cmd> --help`. Keeping
 // it here means `--help` never executes a (possibly destructive) command.
 var commandHelp = map[string]string{
-	"install":      "sir install [--agent claude|codex|gemini] [--observe] [--no-rebaseline]\n  Set up sir hooks for installed agents.\n  --observe records would_allow/ask/deny without blocking (observe-only rollout).",
+	"install":      "sir install [--agent claude|codex|gemini] [--observe] [--no-rebaseline] [--global] [--forget]\n  Set up sir hooks for installed agents.\n  With no --agent on a terminal, prompts an interactive multi-select (Space to\n  toggle, last row remembers the choice). Non-interactive falls back to all\n  detected agents. --agent always overrides the remembered choice.\n  --observe records would_allow/ask/deny without blocking (observe-only rollout).\n  --global runs the step-by-step wizard (same as `sir wizard`).\n  --forget clears the remembered agent choice.",
+	"wizard":       "sir wizard [--observe]\n  Step-by-step setup: choose which agents to protect and how widely (this repo,\n  a directory of repos, or everywhere), then install. sir's hooks are global, so\n  once installed they cover every repo including future clones.",
 	"uninstall":    "sir uninstall [--agent claude|codex|gemini]\n  Remove sir hooks from one or all agents. State under ~/.sir is preserved for\n  forensic review. To also remove binaries and all state, run uninstall.sh.",
 	"setup":        "sir setup [--personal|--team|--strict|--managed] [--yes]\n  Guided first-run: choose a policy profile, then install hooks.",
 	"status":       "sir status [--json] [--agents]\n  Show whether sir is active and what it currently sees.",

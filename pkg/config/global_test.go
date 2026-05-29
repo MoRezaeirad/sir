@@ -109,6 +109,31 @@ func TestSaveAndLoad_Roundtrip(t *testing.T) {
 	}
 }
 
+// TestSaveAndLoad_InstallAgentsRoundtrip pins the remembered-agent preference
+// added for the `sir install` interactive selector: it persists and reloads
+// intact, and absence reads back as empty (so a fresh config has no remembered
+// choice).
+func TestSaveAndLoad_InstallAgentsRoundtrip(t *testing.T) {
+	withHome(t)
+	c := &Config{MCPTrustPosture: PostureStandard, InstallAgents: []string{"claude", "gemini"}}
+	if err := c.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, _, err := Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := loaded.InstallAgents; len(got) != 2 || got[0] != "claude" || got[1] != "gemini" {
+		t.Fatalf("InstallAgents = %v, want [claude gemini]", got)
+	}
+
+	// Defaults (no file) must report no remembered preference.
+	d := Defaults()
+	if len(d.InstallAgents) != 0 {
+		t.Fatalf("Defaults().InstallAgents = %v, want empty", d.InstallAgents)
+	}
+}
+
 func TestIsFirstInstall(t *testing.T) {
 	home := withHome(t)
 	first, err := IsFirstInstall()

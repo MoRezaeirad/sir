@@ -14,7 +14,7 @@ func TestSelectAgentsForInstall_DefaultUsesDetectedAgentsOnly(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(home, ".gemini"))
 	mustMkdirAll(t, filepath.Join(home, ".codex"))
 
-	agents, err := selectAgentsForInstall("")
+	agents, err := selectAgentsForInstall("", false)
 	if err != nil {
 		t.Fatalf("selectAgentsForInstall: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestSelectAgentsForInstall_DefaultUsesDetectedAgentsOnly(t *testing.T) {
 func TestSelectAgentsForInstall_DefaultErrorsWhenNothingDetected(t *testing.T) {
 	installDetectionHome(t)
 
-	_, err := selectAgentsForInstall("")
+	_, err := selectAgentsForInstall("", false)
 	if err == nil {
 		t.Fatal("expected error when no supported agents are detected")
 	}
@@ -38,7 +38,7 @@ func TestSelectAgentsForInstall_DefaultErrorsWhenNothingDetected(t *testing.T) {
 func TestSelectAgentsForInstall_ExplicitAgentRequiresDetection(t *testing.T) {
 	installDetectionHome(t)
 
-	_, err := selectAgentsForInstall("codex")
+	_, err := selectAgentsForInstall("codex", false)
 	if err == nil {
 		t.Fatal("expected error when explicit agent is not detected")
 	}
@@ -51,7 +51,7 @@ func TestSelectAgentsForInstall_ExplicitAgentUsesDetectedSurface(t *testing.T) {
 	home := installDetectionHome(t)
 	mustMkdirAll(t, filepath.Join(home, ".gemini"))
 
-	agents, err := selectAgentsForInstall("gemini")
+	agents, err := selectAgentsForInstall("gemini", false)
 	if err != nil {
 		t.Fatalf("selectAgentsForInstall: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestSelectAgentsForInstall_ExplicitAgentUsesDetectedSurface(t *testing.T) {
 func TestSelectAgentsForInstall_ExplicitUnknownAgent(t *testing.T) {
 	installDetectionHome(t)
 
-	_, err := selectAgentsForInstall("cursor")
+	_, err := selectAgentsForInstall("cursor", false)
 	if err == nil {
 		t.Fatal("expected unknown agent error")
 	}

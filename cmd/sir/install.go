@@ -19,6 +19,27 @@ func cmdInstall(projectRoot, mode string) {
 	}
 
 	opts := parseInstallOptions(os.Args[2:])
+
+	// --forget clears the remembered agent preference and returns. It is a
+	// standalone maintenance action, not part of a real install run.
+	if opts.forget {
+		forgetRememberedInstallAgents()
+		return
+	}
+
+	// CLI path: no caller-supplied agent set or MCP scope, so install resolves
+	// them from flags/detection exactly as before.
+	runInstall(projectRoot, mode, opts, nil, nil)
+}
+
+// runInstall is the install body shared by the CLI (cmdInstall) and the
+// wizard. agentsOverride, when non-nil, pins the exact set of agents to
+// install for (bypassing flag/detection resolution); scopeOverride, when
+// non-nil, pins MCP discovery scope. The wizard uses both so it can install a
+// chosen *set* of agents in one pass while still discovering project-local
+// `.mcp.json` — which the per-`--agent` scoping deliberately excludes (see
+// mcpScopesForAgent) and which a per-agent install loop would therefore skip.
+func runInstall(projectRoot, mode string, opts installOptions, agentsOverride []agent.Agent, scopeOverride map[mcpConfigScope]bool) {
 	policy, err := loadManagedPolicyForCLI()
 	if err != nil {
 		fatal("load managed policy: %v", err)
@@ -60,7 +81,11 @@ func cmdInstall(projectRoot, mode string) {
 	// doctor, and rewrite all operate on the same source-aware view. In managed
 	// mode the manifest lease is the trust anchor, so local discovery must not
 	// widen approved_mcp_servers.
-	mcpReport := discoverMCPInventoryForScopes(projectRoot, mcpScopesForAgent(opts.explicitAgent))
+	mcpScopes := mcpScopesForAgent(opts.explicitAgent)
+	if scopeOverride != nil {
+		mcpScopes = scopeOverride
+	}
+	mcpReport := discoverMCPInventoryForScopes(projectRoot, mcpScopes)
 	if len(mcpReport.Errors) > 0 {
 		for _, invErr := range mcpReport.Errors {
 			fmt.Fprintf(os.Stderr, "warning: could not parse %s: %v\n", invErr.Path, invErr.Err)
@@ -163,9 +188,12 @@ func cmdInstall(projectRoot, mode string) {
 	// Resolve the set of agents to install for. The default path auto-detects
 	// the supported agents already present on the machine; explicit selection
 	// stays fail-closed.
-	agents, err := selectAgentsForInstall(opts.explicitAgent)
-	if err != nil {
-		fatal("%v", err)
+	agents := agentsOverride
+	if agents == nil {
+		agents, err = selectAgentsForInstall(opts.explicitAgent, opts.skipPreview)
+		if err != nil {
+			fatal("%v", err)
+		}
 	}
 
 	// Detection summary before any prompt.
