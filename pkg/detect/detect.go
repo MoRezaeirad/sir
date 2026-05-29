@@ -211,76 +211,131 @@ func promoteRoute(r Route) Route {
 	}
 }
 
-func classifyBase(s Signal) (Detection, bool) {
+// detectionRules is the ordered set of causal detection predicates. Classify
+// returns the FIRST match (highest-signal); Signals returns ALL matches as
+// secondary correlation tags. Keeping both behaviors driven by one ordered
+// table is what guarantees the primary detection and the signal_ids can never
+// drift apart. Order = priority: control-plane first, friction last.
+var detectionRules = []func(s Signal) (Detection, bool){
 	// Control-plane integrity is the most severe class: sir itself is
-	// compromised or wedged. Deny-all posture and unrestored tamper both
-	// qualify.
-	if s.DenyAll {
-		return Detection{ControlPlaneIntegrityFailure, SeverityHigh, RouteSlack}, true
-	}
-	if isTamperAlert(s.AlertType) && !s.TamperRestored && integrityCritical(s.AlertType) {
-		return Detection{ControlPlaneIntegrityFailure, SeverityHigh, RouteSlack}, true
-	}
-
-	// Posture tamper (restored or lower-criticality) — control-plane state
-	// changed outside sir's managed path.
-	if isTamperAlert(s.AlertType) {
-		return Detection{AgentPostureTamper, SeverityHigh, RouteSlack}, true
-	}
-
+	// compromised or wedged. Deny-all posture and unrestored tamper both qualify.
+	func(s Signal) (Detection, bool) {
+		if s.DenyAll {
+			return Detection{ControlPlaneIntegrityFailure, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	func(s Signal) (Detection, bool) {
+		if isTamperAlert(s.AlertType) && !s.TamperRestored && integrityCritical(s.AlertType) {
+			return Detection{ControlPlaneIntegrityFailure, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	// Posture tamper (restored or lower-criticality).
+	func(s Signal) (Detection, bool) {
+		if isTamperAlert(s.AlertType) {
+			return Detection{AgentPostureTamper, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
 	// Credential exposure in tool/MCP output.
-	if s.AlertType == "credential_in_output" || s.AlertType == "mcp_credential" || s.Verb == "credential_detected" || s.Verb == "mcp_credential_leak" {
-		return Detection{CredentialInToolOutput, SeverityHigh, RouteSlack}, true
-	}
-
-	// MCP injection followed by an action under taint.
-	if s.AlertType == "mcp_injection" || s.Verb == "mcp_injection_detected" {
-		return Detection{MCPInjectionThenAction, SeverityHigh, RouteSlack}, true
-	}
-	if (s.InjectionAlert || s.MCPTaint) && blocked(s.Verdict) {
-		return Detection{MCPInjectionThenAction, SeverityHigh, RouteSlack}, true
-	}
-
-	// Compound: an MCP trust change followed by privileged authority use. This
-	// outranks a bare drift because the changed server was actually exercised.
-	if s.RecentMCPChange && isPrivilegedVerb(s.Verb) {
-		return Detection{MCPChangeThenPrivilegedUse, SeverityHigh, RouteSlack}, true
-	}
-
+	func(s Signal) (Detection, bool) {
+		if s.AlertType == "credential_in_output" || s.AlertType == "mcp_credential" || s.Verb == "credential_detected" || s.Verb == "mcp_credential_leak" {
+			return Detection{CredentialInToolOutput, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	// MCP injection followed by an action under taint (explicit signal).
+	func(s Signal) (Detection, bool) {
+		if s.AlertType == "mcp_injection" || s.Verb == "mcp_injection_detected" {
+			return Detection{MCPInjectionThenAction, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	// MCP injection followed by a blocked action under taint.
+	func(s Signal) (Detection, bool) {
+		if (s.InjectionAlert || s.MCPTaint) && blocked(s.Verdict) {
+			return Detection{MCPInjectionThenAction, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	// Compound: an MCP trust change followed by privileged authority use.
+	func(s Signal) (Detection, bool) {
+		if s.RecentMCPChange && isPrivilegedVerb(s.Verb) {
+			return Detection{MCPChangeThenPrivilegedUse, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
 	// MCP binary/config drift.
-	if s.AlertType == "mcp_binary_drift" || s.Verb == "mcp_binary_drift" {
-		return Detection{MCPBinaryOrConfigDrift, SeverityHigh, RouteSlack}, true
-	}
-
+	func(s Signal) (Detection, bool) {
+		if s.AlertType == "mcp_binary_drift" || s.Verb == "mcp_binary_drift" {
+			return Detection{MCPBinaryOrConfigDrift, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
 	// Package install that mutates control-plane posture.
-	if s.Verb == "persistence" && s.PostureMutation {
-		return Detection{PackageInstallPostureMutation, SeverityHigh, RouteSlack}, true
-	}
-
-	// Secret context reaching an external sink. These are the headline
-	// causal detections. They are SIEM by default and escalate to Slack only
-	// when the target is unusual or the attempt repeats — so a developer
-	// pushing to a known origin under secret taint does not page security.
-	if (s.SecretSession || s.DerivedFromSecret) && blocked(s.Verdict) {
-		if isExternalEgressVerb(s.Verb) {
+	func(s Signal) (Detection, bool) {
+		if s.Verb == "persistence" && s.PostureMutation {
+			return Detection{PackageInstallPostureMutation, SeverityHigh, RouteSlack}, true
+		}
+		return Detection{}, false
+	},
+	// Secret context reaching an external sink (egress / push).
+	func(s Signal) (Detection, bool) {
+		if (s.SecretSession || s.DerivedFromSecret) && blocked(s.Verdict) && isExternalEgressVerb(s.Verb) {
 			return Detection{SecretToExternalEgress, SeverityHigh, egressRoute(s)}, true
 		}
-		if isPushVerb(s.Verb) {
+		return Detection{}, false
+	},
+	func(s Signal) (Detection, bool) {
+		if (s.SecretSession || s.DerivedFromSecret) && blocked(s.Verdict) && isPushVerb(s.Verb) {
 			return Detection{SecretToPushRemote, SeverityHigh, egressRoute(s)}, true
 		}
-	}
-
+		return Detection{}, false
+	},
 	// New MCP server exercised inside its onboarding window.
-	if s.NewMCPServer || s.Verb == "mcp_onboarding" {
-		return Detection{NewMCPServerUsed, SeverityMedium, RouteSIEM}, true
-	}
-
+	func(s Signal) (Detection, bool) {
+		if s.NewMCPServer || s.Verb == "mcp_onboarding" {
+			return Detection{NewMCPServerUsed, SeverityMedium, RouteSIEM}, true
+		}
+		return Detection{}, false
+	},
 	// Repeated denied/asked intent — developer-facing friction only.
-	if s.RepeatedCount >= 1 && blocked(s.Verdict) {
-		return Detection{RepeatedDeniedIntent, SeverityLow, RouteLocal}, true
-	}
+	func(s Signal) (Detection, bool) {
+		if s.RepeatedCount >= 1 && blocked(s.Verdict) {
+			return Detection{RepeatedDeniedIntent, SeverityLow, RouteLocal}, true
+		}
+		return Detection{}, false
+	},
+}
 
+func classifyBase(s Signal) (Detection, bool) {
+	for _, rule := range detectionRules {
+		if d, ok := rule(s); ok {
+			return d, true
+		}
+	}
 	return Detection{}, false
+}
+
+// Signals returns every detection ID that fires for s, in priority order and
+// deduplicated — the primary (Classify) ID first, followed by any secondary
+// correlation tags. It is the source of the additive sir.signal_ids SIEM field:
+// analysts get the full causal picture (e.g. an MCP-injection action that is
+// ALSO a secret egress) while routing still keys on the single primary
+// detection. Returns nil when nothing fires (the common, quiet case).
+func Signals(s Signal) []ID {
+	var ids []ID
+	seen := make(map[ID]bool, 3)
+	for _, rule := range detectionRules {
+		d, ok := rule(s)
+		if !ok || seen[d.ID] {
+			continue
+		}
+		seen[d.ID] = true
+		ids = append(ids, d.ID)
+	}
+	return ids
 }
 
 // egressRoute escalates a secret-egress detection to Slack only when the sink

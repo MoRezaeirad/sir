@@ -43,11 +43,16 @@ type Entry struct {
 	// repetition). It is transient: not persisted and not hashed, set at stamp
 	// time and consumed by the same-process telemetry/Slack emit.
 	DetectionRoute string `json:"-"`
-	Evidence       string `json:"evidence,omitempty"`     // optional redacted investigation evidence
-	Agent          string `json:"agent,omitempty"`        // target agent id for tamper alerts
-	DiffSummary    string `json:"diff_summary,omitempty"` // concise diff summary for posture alerts
-	Restored       bool   `json:"restored,omitempty"`     // whether auto-restore succeeded
-	LatencyMs      int    `json:"latency_ms,omitempty"`   // sir decision latency in ms (perf metric)
+	// SignalIDs are the additive secondary correlation tags (DETECT-1): every
+	// detection that fired for this decision, primary first. Transient like
+	// DetectionRoute — set at stamp time, emitted as sir.signal_ids, never
+	// hashed or persisted.
+	SignalIDs   []string `json:"-"`
+	Evidence    string   `json:"evidence,omitempty"`     // optional redacted investigation evidence
+	Agent       string   `json:"agent,omitempty"`        // target agent id for tamper alerts
+	DiffSummary string   `json:"diff_summary,omitempty"` // concise diff summary for posture alerts
+	Restored    bool     `json:"restored,omitempty"`     // whether auto-restore succeeded
+	LatencyMs   int      `json:"latency_ms,omitempty"`   // sir decision latency in ms (perf metric)
 }
 
 const (

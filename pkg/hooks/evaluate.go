@@ -23,6 +23,14 @@ type HookPayload = agent.HookPayload
 type HookResponse struct {
 	Decision policy.Verdict
 	Reason   string
+	// Floor marks a verdict that observe mode must NOT downgrade to allow. The
+	// security floor — a credential leak heading to an untrusted MCP server, or
+	// egress while the session carries secret context — is active exfiltration,
+	// not a hypothetical "would block" worth silently allowing during an
+	// observe-only rollout. Control-plane integrity (deny-all, session/lease
+	// integrity) is already evaluated before observe is registered; Floor
+	// extends that protection to the secret-exfil floor inside the gate chain.
+	Floor bool
 }
 
 // Evaluate is the PreToolUse hook handler.
@@ -229,6 +237,62 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		}
 	}
 
+	// NETALLOW-1: an already-allowlisted host asks on a clean session but is
+	// silently allowed under a *secret* session (an inverted gradient — the
+	// safer-context case is noisier). When the profile enables it and the
+	// session posture is clean, drop the redundant prompt. This narrows an ask
+	// to an allow for a host the operator already approved; the oracle's IFC
+	// flow check already ran, and it never touches a deny. Gated by profile
+	// (off in strict/managed) and the clean-context guard.
+	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbNetAllowlisted &&
+		l != nil && l.SilentApprovedHosts && autoLeaseSafeContext(state) {
+		coreResp.Decision = policy.VerdictAllow
+		coreResp.Reason = "approved host on a clean session — silent by policy (sir policy show)"
+	}
+
+	// NPX-1: an ephemeral package (npx) approved earlier this session stops
+	// re-prompting. The first run still asks; on observed approval PostToolUse
+	// records it, and subsequent runs of the SAME package under clean posture
+	// are silent. Gated by profile (ReuseSessionApprovals) and clean context.
+	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbRunEphemeral &&
+		l != nil && l.ReuseSessionApprovals && autoLeaseSafeContext(state) {
+		if state.EphemeralApproved(intent.Target) {
+			coreResp.Decision = policy.VerdictAllow
+			coreResp.Reason = "ephemeral package approved earlier this session (sir policy show)"
+		} else {
+			state.MarkPendingEphemeralApproval(intent.Target)
+		}
+	}
+
+	// REMOTE-1: a git push to a remote approved earlier this session stops
+	// re-prompting (the exact-target ask re-asks today because grants key on
+	// verb+target). First push still asks; on observed approval PostToolUse
+	// records the remote, and subsequent pushes to the SAME remote under clean
+	// posture are silent. Gated by profile (AutoLeaseApprovedRemotes).
+	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushRemote &&
+		intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+		if state.PushRemoteApproved(intent.RemoteName) {
+			coreResp.Decision = policy.VerdictAllow
+			coreResp.Reason = "git remote approved earlier this session (sir policy show)"
+		} else {
+			state.MarkPendingPushRemote(intent.RemoteName)
+		}
+	}
+
+	// ENV-1: a targeted read of a provably-non-secret env var (`printenv PATH`)
+	// is silent-allowed under the personal profile — but ONLY the prompt is
+	// suppressed. The PostToolUse env-read taint path is left entirely untouched,
+	// so the secret-session kill-switch stays armed for any env read whose value
+	// turns out to be secret. Bulk dumps and any non-allowlisted var keep the ask
+	// (fail-closed). Gated by NarrowEnvReads (personal only) and clean context.
+	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbEnvRead &&
+		l != nil && l.NarrowEnvReads && autoLeaseSafeContext(state) {
+		if v, ok := singleSafeEnvVarRead(intent.Target); ok {
+			coreResp.Decision = policy.VerdictAllow
+			coreResp.Reason = "read of non-secret environment variable " + v + " (policy: narrow-env-reads); taint stays armed for any secret-bearing read"
+		}
+	}
+
 	hookResp := applyCoreEvaluationResult(coreResp, intent, labels, state, ag)
 	overlayPendingInjectionWarning(hookResp, pendingInjectionDetail)
 
@@ -244,7 +308,12 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
-	appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, coreResp.Decision, coreResp.Reason, state, l.ObserveOnly, ag)
+	// A Floor verdict (secret-context egress, etc.) is enforced on the wire even
+	// under observe mode, so it must be recorded as a REAL deny — not would_deny
+	// — or `sir why`, friction metrics, and SIEM would misreport an enforced
+	// security event as hypothetical during an observe rollout.
+	recordObserve := l.ObserveOnly && !hookResp.Floor
+	appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, coreResp.Decision, coreResp.Reason, state, recordObserve, ag)
 
 	return hookResp, nil
 }

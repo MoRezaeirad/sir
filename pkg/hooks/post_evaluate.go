@@ -178,10 +178,34 @@ func postEvaluatePayload(payload *PostHookPayload, l *lease.Lease, state *sessio
 
 	if !alertFired {
 		applyAutoLeaseOnApproval(payload, l, state, projectRoot, ag)
+		promoteSessionApprovalsOnPost(payload, l, state)
 		applyPostEvaluateAllowTrace(payload, state, projectRoot, ag, sensitiveTarget != "")
 	}
 
 	return &HookResponse{Decision: policy.VerdictAllow}, nil
+}
+
+// promoteSessionApprovalsOnPost redeems the per-session reuse markers when a
+// previously-asked action is observed to have executed (a PostToolUse only
+// fires if the developer approved). It backs MCPDRIFT-1 (an acknowledged MCP
+// binary-drift hash) and NPX-1 (an approved ephemeral package), so the same
+// action stops re-prompting for the rest of the session. Gated by the profile
+// (ReuseSessionApprovals) and a clean posture — never under secret/tainted
+// context, mirroring auto-lease.
+func promoteSessionApprovalsOnPost(payload *PostHookPayload, l *lease.Lease, state *session.State) {
+	if l == nil || !autoLeaseSafeContext(state) {
+		return
+	}
+	if l.ReuseSessionApprovals && isToolMCP(payload.ToolName) {
+		state.PromotePendingMCPDriftAck(extractMCPServerName(payload.ToolName))
+	}
+	intent := MapToolToIntent(payload.ToolName, payload.ToolInput, l)
+	if l.ReuseSessionApprovals && intent.Verb == policy.VerbRunEphemeral {
+		state.PromotePendingEphemeralApproval(intent.Target)
+	}
+	if l.AutoLeaseApprovedRemotes && intent.Verb == policy.VerbPushRemote && intent.RemoteName != "" {
+		state.PromotePendingPushRemote(intent.RemoteName)
+	}
 }
 
 // checkPendingInstall re-hashes sentinel files after an install and returns changed files.

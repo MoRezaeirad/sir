@@ -50,6 +50,7 @@ func buildLogEvent(entry *ledger.Entry, state *session.State) telemetry.LogEvent
 		LedgerHash:        entry.EntryHash,
 		AlertType:         entry.AlertType,
 		DetectionID:       entry.DetectionID,
+		SignalIDs:         entry.SignalIDs,
 		Route:             entry.DetectionRoute,
 		Severity:          entry.Severity,
 		Evidence:          entry.Evidence,

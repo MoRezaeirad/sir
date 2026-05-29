@@ -22,21 +22,23 @@ use mister_shared::{EvalRequest, EvalResponse};
 ///
 /// mister-core makes the policy decision and returns the verdict.
 pub fn evaluate(req: &EvalRequest, lease: &Lease, session: &SessionState) -> EvalResponse {
-    // Run the policy evaluation.
+    // Run the policy evaluation. The oracle always returns the TRUE verdict.
+    //
+    // Observe-only mode is intentionally NOT applied here. Observe is a
+    // policy-application concern owned by the Go hook layer, which downgrades
+    // the wire verdict to allow while recording the true would_* verdict in the
+    // ledger (and exempts the security floor — credential leaks, secret egress).
+    // If the core downgraded the verdict itself, the Go layer would only ever
+    // see "allow" and the ledger would record would_allow for everything,
+    // defeating the entire purpose of an observe rollout (learning what *would*
+    // block). The pure oracle stays observe-agnostic; `lease.observe_only` is
+    // still accepted in the lease for compatibility but is not consulted here.
     let policy_result = policy::evaluate(req, lease, session);
     let effective_labels = req.effective_labels();
 
-    // In observe-only mode, all deny/ask verdicts become allow (but we still
-    // generate the receipt with the original verdict for logging).
-    let effective_verdict = if lease.observe_only {
-        mister_shared::Verdict::Allow
-    } else {
-        policy_result.verdict
-    };
-
-    // Generate the receipt.
+    // Generate the receipt with the true policy verdict.
     proof::generate_receipt(
-        effective_verdict,
+        policy_result.verdict,
         policy_result.reason,
         policy_result.risk_tier,
         effective_labels,
@@ -118,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_observe_only() {
+    fn test_pipeline_observe_only_is_not_applied_by_core() {
         let mut lease = default_lease();
         lease.observe_only = true;
 
@@ -126,9 +128,11 @@ mod tests {
         req.session_secret = true;
 
         let resp = evaluate(&req, &lease, &clean_session());
-        // Even though net_external with secret would normally be denied,
-        // observe-only mode allows everything.
-        assert_eq!(resp.verdict, Verdict::Allow);
+        // The pure oracle is observe-agnostic: it returns the TRUE verdict even
+        // under observe_only. The Go hook layer applies the observe downgrade
+        // (and records the true would_* verdict), so the core must not pre-empt
+        // it by returning allow. net_external under a secret session is a Deny.
+        assert_eq!(resp.verdict, Verdict::Deny);
     }
 
     #[test]

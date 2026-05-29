@@ -25,7 +25,7 @@ var commandHelp = map[string]string{
 	"version":      "sir version [--check]\n  Show sir's version. --check compares with the latest GitHub release.",
 	"update":       "sir update\n  Check for a newer release and print the exact, verified upgrade command.\n  It does not self-modify the binary (a deliberate choice for a security tool).",
 	"explain":      "sir explain [--last | --index N]\n  Explain a decision with its full causal chain and recovery options.",
-	"why":          "sir why\n  Explain the most recent decision (alias for `sir explain --last`).",
+	"why":          "sir why\n  Instant answer for the most recent decision: verdict, why, whether data left, and the fix. Use `sir explain --last` for the full causal chain.",
 	"approve":      "sir approve --last [--once|--session|--ttl <dur>]\n  Turn the last ask into a scoped, expiring lease.\n  sir approve host|remote|mcp|path <x>   explicit grant",
 	"unlock":       "sir unlock\n  Clear transient runtime restrictions (secret-session lock) and restore operability.",
 	"allow-host":   "sir allow-host <host> [--ttl <dur>] [--remove] [--yes]\n  Allow (or with --remove, revoke) network egress to a host.",

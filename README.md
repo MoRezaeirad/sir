@@ -60,6 +60,8 @@ flowchart LR
 
 The decision is **stateful**, not a static rule list. Reading `.env` labels the session `SECRET`; the very next external call in that turn is denied — same tool, different verdict, because the session changed between them. That is [information flow control](mister-core/src/ifc.rs).
 
+sir is built to **block as little as possible**. Routine work — reads, edits, tests, commits, loopback requests, pushing to your `origin` — runs untouched. Genuinely-risky-but-clean actions (a first `curl` to a new host, a `dig`, a push to a new remote, an `npx <pkg>`, a drifted MCP binary after a routine update) *prompt once* instead of blocking, and an approval sticks for the rest of the session so the same action never asks twice. Only the transitions that actually leak or tamper — egress while a secret is in context, a credential heading to an untrusted MCP server, posture-file changes, a wedged control plane — are denied outright. A `personal → team → strict → managed` profile gradient (`sir policy init --profile <p>`) tunes exactly where that line sits: `personal` is the lowest-friction default, `strict`/`managed` keep the hard egress wall.
+
 ## What it catches
 
 - **Secret → exit.** A secret read taints every later write, commit, or push attempt in the turn — tool-agnostic.
@@ -105,7 +107,7 @@ sir verify       # binary integrity vs the install-time manifest
 sir log verify   # walk the ledger hash chain, report the first corruption
 ```
 
-Try the core protection yourself, in one turn: **Ask the agent to read `.env`**, then have it run `curl https://httpbin.org/get`. sir taints the session on the read and denies the egress — `sir explain --last` shows the causal chain.
+Try the core protection yourself, in one turn: **Ask the agent to read `.env`**, then have it run `curl https://httpbin.org/get`. sir taints the session on the read and denies the egress — `sir why` gives the instant verdict, `sir explain --last` the full causal chain. (On a *clean* session with no secret in context, that same `curl` merely prompts for approval — the hard deny is reserved for when a secret is actually in play.)
 
 ## Commands
 

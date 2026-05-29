@@ -169,10 +169,13 @@ func TestDefaultLease_VerbClassifications(t *testing.T) {
 		}
 	}
 
-	forbiddenVerbs := []policy.Verb{policy.VerbNetExternal}
-	for _, v := range forbiddenVerbs {
-		if !l.IsVerbForbidden(v) {
-			t.Errorf("verb %q should be in forbidden_verbs", v)
+	// NET-1/NET-2: the default (personal) lease no longer force-forbids external
+	// egress or DNS — on a clean session the oracle asks (no secret to exfil),
+	// and denies under a secret session. The strict/managed profiles add these
+	// back to forbidden_verbs for a hard block.
+	for _, v := range []policy.Verb{policy.VerbNetExternal, policy.VerbDnsLookup} {
+		if l.IsVerbForbidden(v) {
+			t.Errorf("verb %q must NOT be forbidden by default (NET-1/NET-2)", v)
 		}
 	}
 

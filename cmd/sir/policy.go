@@ -313,10 +313,14 @@ func leaseForProfile(profile string) (*lease.Lease, error) {
 	case "team":
 		// Most companies: raw secret reads are denied and the agent uses the
 		// redacted `sir secret view` instead, so secret values never enter the
-		// model context without an explicit, separate approval.
+		// model context without an explicit, separate approval. Conservative on
+		// the friction gradient: keeps the session-approval reuse and host/remote
+		// auto-lease, but NOT env-read narrowing (the riskiest reduction stays
+		// personal-only).
 		l := lease.DefaultLease()
 		l.Mode = "team"
 		l.DenyRawSecretReads = true
+		l.NarrowEnvReads = false
 		return l, nil
 	case "strict":
 		l := lease.DefaultLease()
@@ -325,7 +329,40 @@ func leaseForProfile(profile string) (*lease.Lease, error) {
 		l.ApprovedMCPServers = nil
 		l.AllowDelegation = false
 		l.AutoLeaseApprovedHosts = false
+		l.AutoLeaseApprovedRemotes = false
+		l.ReuseSessionApprovals = false
+		l.NarrowEnvReads = false
+		l.SilentApprovedHosts = false
 		l.DenyRawSecretReads = true
+		// Strict keeps the hard egress block (NET-1/NET-2 only relaxes
+		// personal/team): external egress and DNS are forbidden, so the oracle
+		// denies them even on a clean session.
+		l.ForbiddenVerbs = appendUniqueVerb(appendUniqueVerb(l.ForbiddenVerbs, policy.VerbNetExternal), policy.VerbDnsLookup)
+		l.ApprovedHosts = []string{"localhost", "127.0.0.1", "::1"}
+		l.AllowedVerbs = removeVerb(l.AllowedVerbs, policy.VerbPushOrigin)
+		l.AllowedVerbs = removeVerb(l.AllowedVerbs, policy.VerbDelegate)
+		l.AskVerbs = appendUniqueVerb(l.AskVerbs, policy.VerbPushOrigin)
+		l.AskVerbs = appendUniqueVerb(l.AskVerbs, policy.VerbDelegate)
+		return l, nil
+	case "managed":
+		// Org-managed deployments: identical lockdown to strict, but flagged
+		// so it pairs with the authenticated managed-policy channel
+		// (SIR_MANAGED_POLICY_PATH). Every friction reduction is off by default;
+		// an admin re-enables specific ones centrally. This is the conservative
+		// floor of the personal -> team -> strict -> managed gradient.
+		l := lease.DefaultLease()
+		l.Mode = "managed"
+		l.ApprovedRemotes = nil
+		l.ApprovedMCPServers = nil
+		l.AllowDelegation = false
+		l.AutoLeaseApprovedHosts = false
+		l.AutoLeaseApprovedRemotes = false
+		l.ReuseSessionApprovals = false
+		l.NarrowEnvReads = false
+		l.SilentApprovedHosts = false
+		l.DenyRawSecretReads = true
+		// Managed keeps the hard egress block (see strict).
+		l.ForbiddenVerbs = appendUniqueVerb(appendUniqueVerb(l.ForbiddenVerbs, policy.VerbNetExternal), policy.VerbDnsLookup)
 		l.ApprovedHosts = []string{"localhost", "127.0.0.1", "::1"}
 		l.AllowedVerbs = removeVerb(l.AllowedVerbs, policy.VerbPushOrigin)
 		l.AllowedVerbs = removeVerb(l.AllowedVerbs, policy.VerbDelegate)
@@ -333,7 +370,7 @@ func leaseForProfile(profile string) (*lease.Lease, error) {
 		l.AskVerbs = appendUniqueVerb(l.AskVerbs, policy.VerbDelegate)
 		return l, nil
 	default:
-		return nil, fmt.Errorf("unknown profile %q (valid: personal, team, strict)", profile)
+		return nil, fmt.Errorf("unknown profile %q (valid: personal, team, strict, managed)", profile)
 	}
 }
 

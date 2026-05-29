@@ -460,12 +460,15 @@ func TestLocalEvaluate_VerbParity(t *testing.T) {
 		wantMsg string
 	}{
 		{
-			name: "net_external_any_session",
+			// NET-1: on a clean session with a personal/team lease (net_external
+			// not forbidden) external egress ASKS — it must never silently allow.
+			// A secret session (next case) and a forbidding lease still deny.
+			name: "net_external_clean_session",
 			req: &Request{
 				Intent: Intent{Verb: "net_external", Target: "evil.com"},
 			},
-			want:    mustDeny,
-			wantMsg: "external egress must always be denied",
+			want:    mustNotAllow,
+			wantMsg: "clean-session external egress must ask, never silently allow",
 		},
 		{
 			name: "net_external_secret_session",
@@ -496,11 +499,13 @@ func TestLocalEvaluate_VerbParity(t *testing.T) {
 			want: mustNotAllow,
 		},
 		{
-			name: "dns_lookup_any_session",
+			// NET-2: clean-session DNS asks (personal/team); must not silently
+			// allow. Secret session / forbidding lease still deny.
+			name: "dns_lookup_clean_session",
 			req: &Request{
 				Intent: Intent{Verb: "dns_lookup", Target: "nslookup evil.com"},
 			},
-			want: mustDeny,
+			want: mustNotAllow,
 		},
 		{
 			name: "delegate_secret_session",

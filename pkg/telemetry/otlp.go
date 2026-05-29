@@ -56,6 +56,7 @@ type LogEvent struct {
 	LedgerHash        string
 	AlertType         string
 	DetectionID       string
+	SignalIDs         []string
 	Route             string
 	Severity          string
 	Evidence          string

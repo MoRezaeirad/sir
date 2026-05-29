@@ -53,8 +53,8 @@ When you need broader context, jump to [ARCHITECTURE.md](../../ARCHITECTURE.md) 
 This is the machine-checked summary of the core enforcement gradient. The matching parity test in `pkg/core/doc_parity_test.go` treats these rows as an executable, contributor-facing contract for the local fallback path.
 
 ```text
-net_external         → deny (always, regardless of session state)
-dns_lookup           → deny (same as net_external)
+net_external         → ask (deny if secret session)
+dns_lookup           → ask (deny if secret session)
 push_remote          → ask (deny if secret session)
 push_origin          → ask if secret session, allow otherwise
 net_allowlisted      → ask

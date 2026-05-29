@@ -3,12 +3,24 @@ package core
 import "github.com/somoore/sir/pkg/policy"
 
 // Request is the evaluation request sent to mister-core via MSTR/1.
+//
+// A Request is single-use and not safe for concurrent evaluation: the Go
+// fallback lazily parses LeaseJSON's forbidden_verbs once and caches it on the
+// request (see forbiddenVerbs), so it never re-parses the lease on a hot path.
 type Request struct {
 	Version   uint8       `json:"-"`
 	LeaseJSON []byte      `json:"-"`
 	ToolName  string      `json:"tool_name"`
 	Intent    Intent      `json:"intent"`
 	Session   SessionInfo `json:"session"`
+
+	// Cached structural parse of LeaseJSON's forbidden_verbs for the Go
+	// fallback. Transient (json:"-"), populated on first use by forbiddenVerbs.
+	// forbiddenParseErr fails closed: a lease that cannot be parsed structurally
+	// is treated as forbidding everything (deny), per corrupted-state-fails-closed.
+	forbiddenParsed    bool
+	forbiddenParseErr  bool
+	forbiddenVerbCache []policy.Verb
 }
 
 // Intent describes the classified intent of a tool call.

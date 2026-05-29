@@ -24,6 +24,13 @@ var outputPatterns = []Pattern{
 	{Name: "google_api_key", RedactionLabel: "google_api_key", RE: regexp.MustCompile(`AIza[0-9A-Za-z_\-]{35}`), Confidence: "high"},
 	{Name: "private_key_header", RedactionLabel: "pem_header", RE: regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----`), Confidence: "high"},
 	{Name: "openai_api_key", RedactionLabel: "openai_api_key", RE: regexp.MustCompile(`sk-[A-Za-z0-9_\-]{20,}`), Confidence: "high"},
+	// Connection strings / URIs that embed credentials in the userinfo:
+	// scheme://user:password@host (postgres, redis, mongodb, amqp, https, …).
+	// A URI carrying a `user:pass@` is almost always a real credential — the
+	// canonical scanner-blind exfil shape (e.g. postgres://svc:S3cr3t@db/prod)
+	// that the high-entropy heuristic deliberately skips because it contains
+	// "://". User may be empty (redis://:pass@host); password must be non-empty.
+	{Name: "uri_with_credentials", RedactionLabel: "uri_credentials", RE: regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:[^\s@/]+@[^\s/?#]+`), Confidence: "high"}, // #nosec G101 -- detection pattern, not a credential
 
 	// Medium confidence — broader formats with validators.
 	{Name: "jwt", RedactionLabel: "jwt", RE: regexp.MustCompile(`eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]+`), Confidence: "medium"},

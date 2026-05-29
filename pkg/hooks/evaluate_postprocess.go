@@ -35,8 +35,28 @@ func applyCoreEvaluationResult(coreResp *core.Response, intent Intent, labels co
 
 	if coreResp.Decision == policy.VerdictDeny {
 		hookResp.Reason = formatDenyReason(coreResp.Reason, intent, state, ag)
+		// Secret-context egress denied by the oracle is the canonical exfil
+		// shape; mark it Floor so observe mode never downgrades it to allow
+		// (OBSERVE-1). Clean-session egress denies are NOT floor — they carry no
+		// secret and remain observe-downgradable.
+		if isSecretExfilFloor(intent, state, labels) {
+			hookResp.Floor = true
+		}
 	}
 	return hookResp
+}
+
+// isSecretExfilFloor reports whether a denied verb is a secret-bearing egress —
+// the transition that observe mode must keep enforced. It is true only for the
+// hard exfil sinks (external egress, DNS, push to an unapproved remote) while
+// the session carries secret context or the target is secret-derived.
+func isSecretExfilFloor(intent Intent, state *session.State, labels core.Label) bool {
+	switch intent.Verb {
+	case policy.VerbNetExternal, policy.VerbDnsLookup, policy.VerbPushRemote:
+	default:
+		return false
+	}
+	return state.SecretSession || labels.Sensitivity == "secret"
 }
 
 func overlayPendingInjectionWarning(hookResp *HookResponse, pendingInjectionDetail string) {

@@ -125,7 +125,7 @@ func stampStatefulDetection(projectRoot string, payload *HookPayload, intent Int
 	if priorRepeats < 0 {
 		priorRepeats = 0
 	}
-	d, ok := detect.Classify(detect.Signal{
+	sig := detect.Signal{
 		Verb:              string(intent.Verb),
 		Verdict:           string(decision),
 		Sensitivity:       labels.Sensitivity,
@@ -137,13 +137,28 @@ func stampStatefulDetection(projectRoot string, payload *HookPayload, intent Int
 		RepeatedCount:     priorRepeats,
 		RecentMCPChange:   state.RecentMCPAuthorityChange(mcpAuthorityChangeWindow),
 		Suspicious:        state.IsSuspicious(),
-	})
+	}
+	d, ok := detect.Classify(sig)
 	if !ok {
 		return
 	}
 	entry.DetectionID = string(d.ID)
 	entry.DetectionRoute = d.Route.String()
+	entry.SignalIDs = detectIDsToStrings(detect.Signals(sig))
 	if entry.Severity == "" {
 		entry.Severity = string(d.Severity)
 	}
+}
+
+// detectIDsToStrings converts detection IDs to strings for the transient
+// entry.SignalIDs / sir.signal_ids telemetry field.
+func detectIDsToStrings(ids []detect.ID) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	return out
 }

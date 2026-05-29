@@ -245,7 +245,7 @@ func TestEvaluateMCPBinaryDrift_DefersToURLHostGate(t *testing.T) {
 	// VerbExecuteDryRun should still fire drift (pinning the gate's
 	// happy path so this test catches regressions in either direction).
 	if resp, handled := evaluateMCPBinaryDrift(Intent{Verb: "execute_dry_run"}, payload, l, state, projectRoot); !handled || resp.Decision != "ask" {
-		t.Fatalf("execute_dry_run intent should still trigger drift; handled=%v decision=%q", handled, resp)
+		t.Fatalf("execute_dry_run intent should still trigger drift; handled=%v decision=%q", handled, resp.Decision)
 	}
 
 	// VerbMcpNetworkUnapproved should NOT fire drift — the URL-host

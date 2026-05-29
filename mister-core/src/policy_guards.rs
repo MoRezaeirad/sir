@@ -110,7 +110,11 @@ pub(super) fn evaluate_preapproval_guards(req: &EvalRequest, verb: Verb) -> Opti
     }
 }
 
-pub(super) fn evaluate_network_guardrails(req: &EvalRequest, verb: Verb) -> Option<PolicyResult> {
+pub(super) fn evaluate_network_guardrails(
+    req: &EvalRequest,
+    lease: &Lease,
+    verb: Verb,
+) -> Option<PolicyResult> {
     match verb {
         Verb::DnsLookup => {
             if req.session_secret {
@@ -119,11 +123,21 @@ pub(super) fn evaluate_network_guardrails(req: &EvalRequest, verb: Verb) -> Opti
                     "DNS lookup blocked — your session contains credentials.",
                     RiskTier::R4,
                 ))
-            } else {
+            } else if lease.is_verb_forbidden(verb) {
                 Some(policy_result(
                     Verdict::Deny,
-                    "DNS lookup (outbound request) not allowed by default.",
+                    "DNS lookup (outbound request) not allowed by your security policy.",
                     RiskTier::R4,
+                ))
+            } else {
+                // NET-2: on a clean session (no secret in context) an outbound
+                // DNS lookup is an approval prompt, not a hard block — there is
+                // no exfil to prevent, only friction. The secret-session and
+                // forbidden (strict/managed) cases above still Deny.
+                Some(policy_result(
+                    Verdict::Ask,
+                    "DNS lookup (outbound request) requires approval.",
+                    RiskTier::R3,
                 ))
             }
         }
@@ -134,11 +148,23 @@ pub(super) fn evaluate_network_guardrails(req: &EvalRequest, verb: Verb) -> Opti
                     "Network requests blocked — your session contains credentials.",
                     RiskTier::R4,
                 ))
-            } else {
+            } else if lease.is_verb_forbidden(verb) {
                 Some(policy_result(
                     Verdict::Deny,
-                    "Network requests to external hosts are blocked by default.",
+                    "Network requests to external hosts are blocked by your security policy.",
                     RiskTier::R4,
+                ))
+            } else {
+                // NET-1: on a clean session, external egress is an approval
+                // prompt, not a hard block. A secret session is still denied
+                // here AND independently by evaluate_secret_session_guards
+                // (triple-guarded with policy_sinks), so this branch can never
+                // widen a secret-session deny — it only removes friction when
+                // there is provably no secret to exfiltrate.
+                Some(policy_result(
+                    Verdict::Ask,
+                    "External network request requires approval.",
+                    RiskTier::R3,
                 ))
             }
         }

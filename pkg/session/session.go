@@ -105,6 +105,27 @@ type State struct {
 	// consumes it to mint a short TTL host lease. Values are the mark time so
 	// stale markers are ignored.
 	PendingAutoLeaseHosts map[string]time.Time `json:"pending_auto_lease_hosts,omitempty"`
+
+	// PendingMCPDriftAck / AcknowledgedMCPDrift implement MCPDRIFT-1: a drifted
+	// MCP binary hash whose drift ask is awaiting observed approval is marked
+	// pending at PreToolUse and promoted to acknowledged at PostToolUse (the
+	// tool only runs if the developer approved). A later call with the SAME
+	// acknowledged hash skips the re-ask; a NEW (different) hash is absent here
+	// and still asks. Keyed server -> hash.
+	PendingMCPDriftAck   map[string]string `json:"pending_mcp_drift_ack,omitempty"`
+	AcknowledgedMCPDrift map[string]string `json:"acknowledged_mcp_drift,omitempty"`
+
+	// ApprovedEphemeralPackages implements NPX-1: ephemeral packages (npx) whose
+	// run was approved and observed this session, so the same package stops
+	// re-prompting. Cleared on secret-session entry. Keyed by resolved package.
+	ApprovedEphemeralPackages map[string]bool `json:"approved_ephemeral_packages,omitempty"`
+	PendingEphemeralApproval  map[string]bool `json:"pending_ephemeral_approval,omitempty"`
+
+	// ApprovedPushRemotes implements REMOTE-1: a git remote whose push was
+	// approved and observed this session stops re-prompting (session-scoped,
+	// clears with the session). Keyed by remote name.
+	ApprovedPushRemotes map[string]bool `json:"approved_push_remotes,omitempty"`
+	PendingPushRemote   map[string]bool `json:"pending_push_remote,omitempty"`
 }
 
 // ApprovalGrant records a manual approval for one retry or for a short-lived
@@ -194,6 +215,141 @@ func (s *State) ConsumePendingAutoLease(host string) bool {
 	}
 	delete(s.PendingAutoLeaseHosts, host)
 	return time.Since(markedAt) <= autoLeaseMarkWindow
+}
+
+// --- MCPDRIFT-1: per-session acknowledgment of a drifted MCP binary hash ---
+
+// MarkPendingMCPDriftAck records that a drift ask for (server, hash) is awaiting
+// observed approval. Lock-safe.
+func (s *State) MarkPendingMCPDriftAck(server, hash string) {
+	if server == "" || hash == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.PendingMCPDriftAck == nil {
+		s.PendingMCPDriftAck = make(map[string]string, 2)
+	}
+	s.PendingMCPDriftAck[server] = hash
+}
+
+// PromotePendingMCPDriftAck moves any pending drift ack for server into the
+// acknowledged set (called at PostToolUse, i.e. after the tool actually ran).
+// Lock-safe.
+func (s *State) PromotePendingMCPDriftAck(server string) {
+	if server == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	hash, ok := s.PendingMCPDriftAck[server]
+	if !ok {
+		return
+	}
+	delete(s.PendingMCPDriftAck, server)
+	if s.AcknowledgedMCPDrift == nil {
+		s.AcknowledgedMCPDrift = make(map[string]string, 2)
+	}
+	s.AcknowledgedMCPDrift[server] = hash
+}
+
+// MCPDriftAcknowledged reports whether (server, hash) was approved this session.
+// A new/different hash returns false and still asks. Lock-safe.
+func (s *State) MCPDriftAcknowledged(server, hash string) bool {
+	if server == "" || hash == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.AcknowledgedMCPDrift[server] == hash
+}
+
+// --- NPX-1: per-session reuse of an approved ephemeral (npx) package ---
+
+// MarkPendingEphemeralApproval records that an ephemeral-exec ask for pkg is
+// awaiting observed approval. Lock-safe.
+func (s *State) MarkPendingEphemeralApproval(pkg string) {
+	if pkg == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.PendingEphemeralApproval == nil {
+		s.PendingEphemeralApproval = make(map[string]bool, 2)
+	}
+	s.PendingEphemeralApproval[pkg] = true
+}
+
+// PromotePendingEphemeralApproval moves any pending ephemeral approval for pkg
+// into the approved set (called at PostToolUse). Lock-safe.
+func (s *State) PromotePendingEphemeralApproval(pkg string) {
+	if pkg == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.PendingEphemeralApproval[pkg] {
+		return
+	}
+	delete(s.PendingEphemeralApproval, pkg)
+	if s.ApprovedEphemeralPackages == nil {
+		s.ApprovedEphemeralPackages = make(map[string]bool, 2)
+	}
+	s.ApprovedEphemeralPackages[pkg] = true
+}
+
+// EphemeralApproved reports whether pkg was approved this session. Lock-safe.
+func (s *State) EphemeralApproved(pkg string) bool {
+	if pkg == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ApprovedEphemeralPackages[pkg]
+}
+
+// --- REMOTE-1: per-session reuse of an approved git push remote ---
+
+// MarkPendingPushRemote records that a push to remote is awaiting observed
+// approval. Lock-safe.
+func (s *State) MarkPendingPushRemote(remote string) {
+	if remote == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.PendingPushRemote == nil {
+		s.PendingPushRemote = make(map[string]bool, 2)
+	}
+	s.PendingPushRemote[remote] = true
+}
+
+// PromotePendingPushRemote moves any pending push remote into the approved set
+// (called at PostToolUse). Lock-safe.
+func (s *State) PromotePendingPushRemote(remote string) {
+	if remote == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.PendingPushRemote[remote] {
+		return
+	}
+	delete(s.PendingPushRemote, remote)
+	if s.ApprovedPushRemotes == nil {
+		s.ApprovedPushRemotes = make(map[string]bool, 2)
+	}
+	s.ApprovedPushRemotes[remote] = true
+}
+
+// PushRemoteApproved reports whether remote was approved this session. Lock-safe.
+func (s *State) PushRemoteApproved(remote string) bool {
+	if remote == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ApprovedPushRemotes[remote]
 }
 
 // PendingInstall tracks an in-progress install command for sentinel pre/post comparison.

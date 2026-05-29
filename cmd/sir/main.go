@@ -60,7 +60,11 @@ func main() {
 		cmdApprovals(projectRoot, os.Args[2:])
 	case "log", "ledger":
 		cmdLogLifecycle(projectRoot, os.Args[2:])
-	case "explain", "why":
+	case "why":
+		// UX-1: the instant answer — verdict / why / did-data-leave / fix in a
+		// few lines. The full causal chain lives in `sir explain`.
+		cmdWhy(projectRoot)
+	case "explain":
 		index := -1 // default: last entry
 		for i, arg := range os.Args[2:] {
 			if arg == "--last" {

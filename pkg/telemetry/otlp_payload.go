@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -156,6 +157,13 @@ func buildOTLPPayload(ev LogEvent, sessionID, agentID, agentName, version string
 	}
 	if ev.DetectionID != "" {
 		logAttrs = append(logAttrs, strAttr("sir.detection_id", ev.DetectionID))
+	}
+	// sir.signal_ids carries the secondary correlation tags (DETECT-1) — every
+	// detection that fired, not just the primary route. Emitted only when there
+	// is more than one signal, so the common single-detection case stays lean.
+	// Comma-joined: the values are stable enum IDs (no separators, no secrets).
+	if len(ev.SignalIDs) > 1 {
+		logAttrs = append(logAttrs, strAttr("sir.signal_ids", strings.Join(ev.SignalIDs, ",")))
 	}
 	if ev.Route != "" {
 		logAttrs = append(logAttrs, strAttr("sir.route", ev.Route))

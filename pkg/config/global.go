@@ -97,7 +97,15 @@ type Config struct {
 
 const (
 	defaultOnboardingWindowHours = 24
-	defaultOnboardingCallCount   = 20
+	// MCPONBOARD-1: the per-call onboarding counter is OFF by default (0). The
+	// gate's own comment admits the counter is "friction, not containment" — a
+	// patient attacker burns it trivially — so steady-state re-asking on an
+	// already-approved server is pure friction. The genuine protection (a
+	// first-touch checkpoint on a freshly-approved server's earliest call, and a
+	// forced checkpoint under heightened posture) is preserved in the hook gate
+	// independently of this counter. team/managed profiles can set a positive
+	// value to re-enable counter-based onboarding visibility.
+	defaultOnboardingCallCount = 0
 )
 
 // Defaults returns the baseline config applied when ~/.sir/config.json is

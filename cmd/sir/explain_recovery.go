@@ -28,8 +28,14 @@ func recoveryOptions(e ledger.Entry) []string {
 		opts = append(opts, "sir unlock                       — Clear transient runtime restrictions, then retry")
 
 	case "dns_lookup":
-		opts = append(opts, "DNS lookups are unconditionally blocked — they can encode data in hostnames.")
-		opts = append(opts, "Use curl or wget to an approved host instead. There is no `unlock` for DNS.")
+		if e.Decision == "deny" {
+			// Denied = secret session or a strict/managed profile that forbids DNS.
+			opts = append(opts, "DNS is blocked here — your session carries secrets, or this profile forbids it.")
+			opts = append(opts, "sir unlock                       — Clear transient secret taint, then retry (clean sessions prompt instead of blocking)")
+		} else {
+			opts = append(opts, "Approve the lookup when prompted  — clean-session DNS asks rather than blocks")
+			opts = append(opts, "Prefer curl/wget to an approved host where possible — DNS can encode data in hostnames")
+		}
 
 	case "read_ref":
 		if e.Decision == "ask" {

@@ -78,6 +78,46 @@ func TestEvaluateMCPOnboarding_FirstCallAsks(t *testing.T) {
 	}
 }
 
+// TestEvaluateMCPOnboarding_DefaultOffKeepsHeightenedFloor (MCPONBOARD-1) pins
+// the default-off behavior: with the per-call counter disabled (call_count=0),
+// a freshly-approved server with NO capability scope is still checkpointed for
+// its first few calls (the heightened floor preserves the first-call-exfil
+// checkpoint the red-team flagged), then goes quiet — instead of the old
+// fixed 20-call re-ask friction.
+func TestEvaluateMCPOnboarding_DefaultOffKeepsHeightenedFloor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+
+	writeOnboardingConfig(t, home, 24, 0) // counter OFF by default
+	l := seedApprovedLease(t, projectRoot, "fresh", time.Now().Add(-1*time.Minute))
+	state := newTestSession(t, projectRoot)
+
+	call := func() string {
+		resp, err := evaluatePayload(&HookPayload{
+			ToolName:  "mcp__fresh__action",
+			ToolInput: map[string]interface{}{"x": 1},
+			CWD:       projectRoot,
+		}, l, state, projectRoot)
+		if err != nil {
+			t.Fatalf("evaluatePayload: %v", err)
+		}
+		return string(resp.Decision)
+	}
+
+	// Unscoped server is heightened, so the first onboardingHeightenedFloor (3)
+	// calls are surfaced even with the counter disabled...
+	for i := 1; i <= 3; i++ {
+		if got := call(); got != "ask" {
+			t.Fatalf("call %d: want ask (heightened floor), got %q", i, got)
+		}
+	}
+	// ...then it goes quiet (the old default would have kept asking up to 20).
+	if got := call(); got != "allow" {
+		t.Fatalf("call 4: want allow (past the heightened floor), got %q", got)
+	}
+}
+
 func TestEvaluateMCPOnboarding_CountThresholdEndsGate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -47,6 +47,12 @@ func applyObserveMode(resp *HookResponse) {
 	if resp == nil {
 		return
 	}
+	// The security floor is never downgraded by observe: a credential leak or
+	// secret-context egress allowed "just to observe" is real exfiltration, not
+	// a would-block signal. These stay enforced even during an observe rollout.
+	if resp.Floor {
+		return
+	}
 	if resp.Decision == policy.VerdictDeny || resp.Decision == policy.VerdictAsk {
 		wouldBe := resp.Decision
 		resp.Decision = policy.VerdictAllow

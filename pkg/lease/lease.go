@@ -119,6 +119,39 @@ type Lease struct {
 	// used by the team and strict profiles so secret values never enter the
 	// model context without an explicit, separate approval.
 	DenyRawSecretReads bool `json:"deny_raw_secret_reads,omitempty"`
+
+	// --- Friction-reduction capabilities (the personal -> team -> strict ->
+	// managed gradient). Each gates one staged downgrade and is Go-side only:
+	// it narrows where sir would otherwise prompt, never widens an oracle deny.
+	// All default true on a fresh DefaultLease (the personal profile) and are
+	// turned off for stricter profiles. They are `omitempty`, so a lease loaded
+	// from an older install (without the field) reads false — upgrades never
+	// silently gain a downgrade until the operator re-profiles.
+
+	// AutoLeaseApprovedRemotes mirrors AutoLeaseApprovedHosts for git push: after
+	// an observed approval of a push to an unapproved remote, the same remote
+	// stops re-prompting for the session window. Never under secret/tainted
+	// posture; off in strict/managed (REMOTE-1).
+	AutoLeaseApprovedRemotes bool `json:"auto_lease_approved_remotes,omitempty"`
+
+	// ReuseSessionApprovals lets a once-approved, low-risk action stop re-asking
+	// for the rest of the session: an npx package by resolved name (NPX-1), or an
+	// acknowledged MCP binary-drift hash (MCPDRIFT-1). Cleared on secret-session
+	// entry. Off in strict/managed.
+	ReuseSessionApprovals bool `json:"reuse_session_approvals,omitempty"`
+
+	// NarrowEnvReads silent-allows a targeted read of a provably-non-secret env
+	// var (PATH/HOME/...) while keeping the ask for bulk dumps and credential-
+	// named vars. The session is still marked secret on every env read so the
+	// IFC kill-switch stays armed (ENV-1). The riskiest reduction, so it is on
+	// only for personal; team and stricter keep the ask.
+	NarrowEnvReads bool `json:"narrow_env_reads,omitempty"`
+
+	// SilentApprovedHosts allows an already-allowlisted host on a clean session
+	// without a prompt (it is already silently allowed under a secret session —
+	// this fixes the inverted gradient). The IFC flow check still runs. Off in
+	// strict/managed (NETALLOW-1).
+	SilentApprovedHosts bool `json:"silent_approved_hosts,omitempty"`
 }
 
 // DefaultLease returns the default lease for sir v1.
@@ -190,7 +223,12 @@ func DefaultLease() *Lease {
 			policy.VerbListFiles, policy.VerbSearchCode, policy.VerbCommit, policy.VerbNetLocal, policy.VerbPushOrigin,
 			policy.VerbDelegate, // Agent tool: allowed in clean sessions; blocked by policy if secret session or untrusted read
 		},
-		ForbiddenVerbs: []policy.Verb{policy.VerbNetExternal},
+		// NET-1/NET-2: external egress and DNS are NOT forbidden by default.
+		// On a clean session (no secret in context) they are an approval prompt,
+		// not a hard block — there is no exfil to prevent, only friction. The
+		// oracle still denies them under a secret session, and the strict/managed
+		// profiles add them back to ForbiddenVerbs to keep the hard block.
+		ForbiddenVerbs: []policy.Verb{},
 		AskVerbs:       []policy.Verb{policy.VerbPushRemote, policy.VerbNetAllowlisted, policy.VerbRunEphemeral, policy.VerbMcpUnapproved},
 
 		ApprovedRemotes:    []string{"origin"},
@@ -217,6 +255,13 @@ func DefaultLease() *Lease {
 		// existing leases (loaded without the field) default off, so upgrades
 		// do not silently change behavior.
 		AutoLeaseApprovedHosts: true,
+
+		// Friction-reduction gradient defaults (personal profile = lowest
+		// friction). Stricter profiles turn these off in leaseForProfile.
+		AutoLeaseApprovedRemotes: true,
+		ReuseSessionApprovals:    true,
+		NarrowEnvReads:           true,
+		SilentApprovedHosts:      true,
 	}
 }
 

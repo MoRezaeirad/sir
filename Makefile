@@ -58,6 +58,12 @@ bench:
 bench-check:
 	python3 scripts/check_bench_budget.py
 
+# Friction budget: assert a normal-coding session is silent (0 prompts/0 blocks)
+# and the everyday-command verdicts hold (FRICTION-1 / BUDGET-1). This is the
+# quantified "invisible on normal coding" SLO — run it after any policy change.
+friction-bench:
+	go test ./pkg/hooks/ -run 'TestFrictionBenchmark_NormalCodingIsSilent|TestBlockingBudget' -count=1 -v
+
 contributor-check:
 	bash scripts/check_review_context.sh
 

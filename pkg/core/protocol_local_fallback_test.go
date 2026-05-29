@@ -49,16 +49,26 @@ func TestLocalEvaluate_Sudo_Ask(t *testing.T) {
 	}
 }
 
-func TestLocalEvaluate_DNSLookup_Deny(t *testing.T) {
-	req := &Request{
-		Intent: Intent{Verb: "dns_lookup", Target: "nslookup evil.com"},
+func TestLocalEvaluate_DNSLookup_Gradient(t *testing.T) {
+	// NET-2 gradient: clean + not forbidden (personal/team) -> ask; forbidden
+	// (strict/managed) -> deny; secret session -> deny.
+	clean := &Request{Intent: Intent{Verb: "dns_lookup", Target: "nslookup evil.com"}}
+	if resp, _ := localEvaluate(clean); resp.Decision != "ask" {
+		t.Errorf("dns_lookup clean: decision = %q, want ask", resp.Decision)
 	}
-	resp, err := localEvaluate(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	forbidden := &Request{
+		Intent:    Intent{Verb: "dns_lookup", Target: "nslookup evil.com"},
+		LeaseJSON: []byte(`{"forbidden_verbs":["dns_lookup"]}`),
 	}
-	if resp.Decision != "deny" {
-		t.Errorf("dns_lookup: decision = %q, want deny", resp.Decision)
+	if resp, _ := localEvaluate(forbidden); resp.Decision != "deny" {
+		t.Errorf("dns_lookup forbidden: decision = %q, want deny", resp.Decision)
+	}
+	secret := &Request{
+		Intent:  Intent{Verb: "dns_lookup", Target: "nslookup evil.com"},
+		Session: SessionInfo{SecretSession: true},
+	}
+	if resp, _ := localEvaluate(secret); resp.Decision != "deny" {
+		t.Errorf("dns_lookup secret: decision = %q, want deny", resp.Decision)
 	}
 }
 
@@ -114,18 +124,55 @@ func TestLocalEvaluate_NetAllowlisted_Ask(t *testing.T) {
 	}
 }
 
-func TestLocalEvaluate_NetExternal_NoSecret_Deny(t *testing.T) {
-	// External network egress is denied by default regardless of session state
-	req := &Request{
+func TestLocalEvaluate_NetExternal_NoSecret_Asks(t *testing.T) {
+	// NET-1: on a clean session with a personal/team lease (net_external NOT
+	// forbidden) external egress is an approval prompt, not a hard block — there
+	// is no secret to exfiltrate. A forbidding lease (strict/managed) still
+	// denies.
+	clean := &Request{
 		Intent:  Intent{Verb: "net_external", Target: "example.com"},
 		Session: SessionInfo{SecretSession: false},
 	}
-	resp, err := localEvaluate(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if resp, _ := localEvaluate(clean); resp.Decision != "ask" {
+		t.Errorf("net_external (clean, not forbidden): decision = %q, want ask", resp.Decision)
 	}
-	if resp.Decision != "deny" {
-		t.Errorf("net_external (no secret): decision = %q, want deny", resp.Decision)
+	forbidden := &Request{
+		Intent:    Intent{Verb: "net_external", Target: "example.com"},
+		LeaseJSON: []byte(`{"forbidden_verbs":["net_external"]}`),
+	}
+	if resp, _ := localEvaluate(forbidden); resp.Decision != "deny" {
+		t.Errorf("net_external (forbidden): decision = %q, want deny", resp.Decision)
+	}
+}
+
+func TestLocalEvaluate_NetExternal_FailsClosedOnMalformedLease(t *testing.T) {
+	// A lease whose forbidden_verbs cannot be parsed structurally must DENY
+	// net_external (fail closed) — a corrupted/tampered lease must never silently
+	// downgrade the hard egress deny to an ask on the degraded fallback path.
+	for _, bad := range [][]byte{
+		[]byte(`{"forbidden_verbs": [ not json`),
+		[]byte(`{"forbidden_verbs": "net_external"}`), // wrong type
+		[]byte(`}{`),
+	} {
+		req := &Request{
+			Intent:    Intent{Verb: "net_external", Target: "example.com"},
+			LeaseJSON: bad,
+		}
+		if resp, _ := localEvaluate(req); resp.Decision != "deny" {
+			t.Errorf("malformed lease %q: net_external must fail closed to deny, got %q", bad, resp.Decision)
+		}
+	}
+}
+
+func TestLocalEvaluate_NetExternal_ForbiddenKeyIsStructural(t *testing.T) {
+	// "forbidden_verbs" text inside another field's VALUE must not be mistaken
+	// for the forbidden set; the real (empty) forbidden_verbs key governs -> ask.
+	req := &Request{
+		Intent:    Intent{Verb: "net_external", Target: "example.com"},
+		LeaseJSON: []byte(`{"mission":"\"forbidden_verbs\":[\"net_external\"]","forbidden_verbs":[]}`),
+	}
+	if resp, _ := localEvaluate(req); resp.Decision != "ask" {
+		t.Errorf("structural key match: empty real forbidden_verbs should ask, got %q", resp.Decision)
 	}
 }
 

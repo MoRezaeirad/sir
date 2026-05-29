@@ -50,6 +50,7 @@ sir uses the `sir.*` namespace so the attributes compose cleanly with OTLP resou
 | `sir.decision_latency_ms`     | PreToolUse decisions                       | integer ms sir's decision added — dashboard p50/p95 for the "invisible latency" SLO |
 | `sir.alert.type`              | alert entries                              | `credential_in_output` / `mcp_credential` / `mcp_injection` / `hook_tamper` / `sentinel_mutation` / `config_change_posture` / `posture_change` / `posture_change_session_end` / `elicitation_harvesting` |
 | `sir.detection_id`            | entries that match a detection             | stable behavior-detection ID (see below): `secret_to_external_egress` / `secret_to_push_remote` / `mcp_injection_then_action` / `new_mcp_server_used` / `mcp_binary_or_config_drift` / `agent_posture_tamper` / `package_install_posture_mutation` / `repeated_denied_intent` / `credential_in_tool_output` / `control_plane_integrity_failure` / `mcp_change_then_privileged_use` |
+| `sir.signal_ids`              | entries where more than one detection fired | comma-separated secondary correlation tags (same vocabulary as `sir.detection_id`), primary first — e.g. an MCP-injection action that is also a secret egress. Routing still keys on the single `sir.detection_id`; `sir.signal_ids` is for correlation only. |
 | `sir.route`                   | entries that match a detection             | computed escalation route incl. dynamic promotion: `silent` / `local` / `siem` / `slack` |
 | `sir.alert.severity`          | alert entries                              | `HIGH` / `MEDIUM` / `LOW`                                                      |
 | `sir.alert.agent.id`          | hook-tamper entries                        | `claude` / `gemini` / `codex`                                                  |
@@ -72,7 +73,7 @@ the behavior-level judgement (e.g. `agent_posture_tamper`, or
 Filter on `sir.detection_id` for "what kind of behavior happened"; filter on
 `sir.alert.type` for "which low-level check fired".
 
-The ten detection IDs and where they are routed:
+The eleven detection IDs and where they are routed:
 
 | Detection ID | Severity | Route |
 |---|---|---|

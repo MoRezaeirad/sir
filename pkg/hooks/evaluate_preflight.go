@@ -28,10 +28,13 @@ func evaluateMCPCredentialLeak(payload *HookPayload, l *lease.Lease, state *sess
 	}
 
 	entry := &ledger.Entry{
-		ToolName:  payload.ToolName,
-		Verb:      string(policy.VerbMcpCredentialLeak),
-		Target:    serverName,
-		Decision:  recordedDecisionFor(l, policy.VerdictDeny),
+		ToolName: payload.ToolName,
+		Verb:     string(policy.VerbMcpCredentialLeak),
+		Target:   serverName,
+		// Always a real deny — a credential leak is a Floor that observe mode
+		// never downgrades (OBSERVE-1), so the ledger records the enforced deny,
+		// not would_deny, even during an observe rollout.
+		Decision:  string(policy.VerdictDeny),
 		Reason:    fmt.Sprintf("credential pattern in MCP args: %s", patternHint),
 		Severity:  "HIGH",
 		AlertType: "mcp_credential",
@@ -49,6 +52,9 @@ func evaluateMCPCredentialLeak(payload *HookPayload, l *lease.Lease, state *sess
 	return &HookResponse{
 		Decision: policy.VerdictDeny,
 		Reason:   FormatDenyMCPCredential(payload.ToolName, serverName, patternHint),
+		// A raw credential heading to an untrusted MCP server is active
+		// exfiltration; observe mode must never silently allow it (OBSERVE-1).
+		Floor: true,
 	}, true
 }
 
@@ -198,19 +204,44 @@ func evaluateMCPOnboarding(intent Intent, payload *HookPayload, l *lease.Lease, 
 		fmt.Fprintf(os.Stderr, "sir: onboarding: config load error, skipping gate: %v\n", err)
 		return nil, false
 	}
-	if !cfg.OnboardingEnabled() {
-		return nil, false
-	}
 
 	window := time.Duration(cfg.MCPOnboardingWindowHours) * time.Hour
 	age := time.Since(record.ApprovedAt)
 	count := state.MCPOnboardingCallCount(serverName)
-	if age >= window || count >= cfg.MCPOnboardingCallCount {
+	withinWindow := age < window
+
+	// MCPONBOARD-1: the configurable per-call counter is friction-not-containment
+	// and OFF by default. What we keep, independent of that counter:
+	//   - a first-touch checkpoint: the FIRST call this session from a still-new
+	//     (within-window) approved server always surfaces — this is the only
+	//     interactive surface on a freshly-approved server's earliest activity
+	//     (the first-call-exfil checkpoint the red-team flagged), and
+	//   - a heightened floor: when the session carries secret context or a
+	//     pending injection alert, or the server has NO configured capability
+	//     scope, force a few early checkpoints even if the counter is disabled.
+	_, hasScope := l.FindMCPCapabilityScope(serverName)
+	heightened := state.SecretSession || state.PendingInjectionAlert || !hasScope
+
+	effectiveCallCount := cfg.MCPOnboardingCallCount
+	if heightened && effectiveCallCount < onboardingHeightenedFloor {
+		effectiveCallCount = onboardingHeightenedFloor
+	}
+
+	shouldAsk := withinWindow && (count == 0 || count < effectiveCallCount)
+	if !shouldAsk {
 		return nil, false
 	}
 
 	newCount := state.BumpMCPOnboardingCall(serverName)
 	saveSessionBestEffort(state)
+
+	why := "first call this session from a newly-approved server"
+	if effectiveCallCount > 0 {
+		why = fmt.Sprintf("session call %d/%d", newCount, effectiveCallCount)
+	}
+	if heightened {
+		why += " (heightened: secret/injection or no capability scope)"
+	}
 
 	entry := &ledger.Entry{
 		ToolName: payload.ToolName,
@@ -218,8 +249,8 @@ func evaluateMCPOnboarding(intent Intent, payload *HookPayload, l *lease.Lease, 
 		Target:   serverName,
 		Decision: recordedDecisionFor(l, thinkingDegradedLedgerDecision(state, policy.VerdictAsk)),
 		Reason: fmt.Sprintf(
-			"MCP onboarding: server %q within window (age=%s, session call %d/%d)",
-			serverName, age.Round(time.Second), newCount, cfg.MCPOnboardingCallCount,
+			"MCP onboarding: server %q within window (age=%s, %s)",
+			serverName, age.Round(time.Second), why,
 		),
 	}
 	if err := ledger.Append(projectRoot, entry); err != nil {
@@ -229,11 +260,17 @@ func evaluateMCPOnboarding(intent Intent, payload *HookPayload, l *lease.Lease, 
 	return &HookResponse{
 		Decision: policy.VerdictAsk,
 		Reason: fmt.Sprintf(
-			"MCP server %q is within its onboarding window. This is call %d of %d in this session; approved %s ago. Approve to continue — friction only, not a security block.",
-			serverName, newCount, cfg.MCPOnboardingCallCount, age.Round(time.Second),
+			"MCP server %q was approved %s ago and this is its %s. Surfacing its early activity for visibility — approve to continue. Friction only, not a security block.",
+			serverName, age.Round(time.Second), why,
 		),
 	}, true
 }
+
+// onboardingHeightenedFloor is the minimum number of early MCP calls that are
+// surfaced for an approved server when the session is heightened (secret
+// context, a pending injection alert, or the server has no configured
+// capability scope) — even when the per-call onboarding counter is disabled.
+const onboardingHeightenedFloor = 3
 
 // evaluateMCPBinaryDrift detects that the MCP command binary has changed
 // since approval. Fast-path: stat for mtime; if mtime matches the
@@ -299,6 +336,16 @@ func evaluateMCPBinaryDrift(intent Intent, payload *HookPayload, l *lease.Lease,
 		return nil, false
 	}
 
+	// MCPDRIFT-1: if the developer already approved this EXACT drifted hash this
+	// session (under clean posture), don't re-ask — a routine `npm update`/`brew
+	// upgrade` shouldn't prompt on every subsequent call. A new/different hash is
+	// not acknowledged and still asks; binary-not-found (empty hash) still asks.
+	if l != nil && l.ReuseSessionApprovals && autoLeaseSafeContext(state) && state.MCPDriftAcknowledged(serverName, currentHash) {
+		return nil, false
+	}
+	if l != nil && l.ReuseSessionApprovals && autoLeaseSafeContext(state) {
+		state.MarkPendingMCPDriftAck(serverName, currentHash)
+	}
 	return driftAsk(payload, serverName, record, fmt.Sprintf("hash mismatch (approved=%s, now=%s)",
 		shortHash(record.CommandHash), shortHash(currentHash)), l, state, projectRoot), true
 }

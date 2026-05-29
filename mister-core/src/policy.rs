@@ -61,7 +61,7 @@ pub fn evaluate(req: &EvalRequest, lease: &Lease, session: &SessionState) -> Pol
         return result;
     }
 
-    if let Some(result) = evaluate_network_guardrails(req, verb) {
+    if let Some(result) = evaluate_network_guardrails(req, lease, verb) {
         return result;
     }
 
@@ -468,14 +468,38 @@ mod tests {
         assert!(result.reason.to_lowercase().contains("environment"));
     }
 
-    // --- DnsLookup: deny ---
+    // --- DnsLookup / NetExternal egress gradient (NET-1/NET-2) ---
 
     #[test]
-    fn test_dns_lookup_denied() {
+    fn test_dns_lookup_clean_asks_when_not_forbidden() {
+        // NET-2: on a clean session with a personal/team lease (dns not
+        // forbidden), an outbound DNS lookup is an approval prompt, not a block.
         let req = make_request("dns_lookup");
-        let result = evaluate(&req, &default_lease(), &clean_session());
-        assert_eq!(result.verdict, Verdict::Deny);
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
         assert!(result.reason.contains("DNS"));
+    }
+
+    #[test]
+    fn test_dns_lookup_forbidden_denied() {
+        // Strict/managed forbid dns_lookup -> hard Deny even on a clean session.
+        let req = make_request("dns_lookup");
+        let mut lease = default_lease();
+        lease.forbidden_verbs = vec![Verb::DnsLookup];
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+    }
+
+    #[test]
+    fn test_net_external_clean_asks_when_not_forbidden() {
+        // NET-1: clean session, not forbidden (personal/team) -> approval prompt.
+        let req = make_request("net_external");
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
     }
 
     #[test]

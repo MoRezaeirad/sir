@@ -310,9 +310,22 @@ func cmdInstall(projectRoot, mode string) {
 			fmt.Println("Run 'claude' in any project. sir is invisible until something dangerous happens.")
 		}
 	}
+	hasClaude := false
+	for _, a := range agents {
+		if a.ID() == agent.Claude {
+			hasClaude = true
+		}
+	}
+	if hasClaude {
+		fmt.Println()
+		fmt.Println("Note (Claude Code + extended thinking): an approval prompt mid-turn corrupts the")
+		fmt.Println("  thinking stream, so when an action would prompt, sir denies instead. Approve from")
+		fmt.Println("  YOUR terminal — sir approve --last — or turn thinking off (/config) for inline prompts.")
+	}
+
 	fmt.Println()
 	fmt.Println("See it work now:  sir demo        (60-second tour of what sir catches)")
-	fmt.Println("Check anytime:    sir status      ·  if blocked: sir why")
+	fmt.Println("Check anytime:    sir status      ·  if blocked: sir why  (full chain: sir explain)")
 }
 
 // resolveMCPTrustPostureForInstall returns the posture to use for this
