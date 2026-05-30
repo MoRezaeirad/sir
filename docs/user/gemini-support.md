@@ -33,9 +33,10 @@ Gemini fires hooks for the normal tool path, not just Bash. That means sir can a
 
 - File-read IFC labeling.
 - Posture-file pre-gating.
-- Shell classification.
+- Shell classification, including obfuscation decomposition (command substitution, backticks, `eval`) and fail-closed on opaque `| sh` execution.
 - MCP argument and response scanning.
 - Credential output scanning.
+- Web reads (`web_fetch` / `google_web_search`) are treated as untrusted content, arming the turn-scoped integrity-flow egress wall so a same-turn exfil after fetching attacker-controlled content is blocked.
 
 If your workflow is primarily Read, Write, Edit, Bash, and MCP tools, Gemini is close to Claude in day-to-day value.
 

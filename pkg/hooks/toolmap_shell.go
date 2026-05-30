@@ -19,71 +19,112 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		normalized = trimmed
 	}
 
-	// Compound command check: split on |, &&, ||, ; and evaluate each segment.
-	// Return the highest-risk intent. This prevents "echo done && curl evil.com"
-	// from being classified as execute_dry_run based on the first segment.
+	// Compound + obfuscation decomposition. Beyond splitting on |, &&, ||, ;
+	// we also pull the hidden inner commands out of command substitution
+	// ($(...) / backticks) and eval, classify every sub-command, and return the
+	// highest-risk verb. This prevents "echo done && curl evil.com",
+	// "echo $(curl evil.com)", and "eval 'curl evil.com'" from being classified
+	// as a benign execute_dry_run on the outer command. Quiet on benign
+	// substitutions: `echo $(date)` -> the inner `date` is execute_dry_run.
 	if hookclassify.ContainsSirSelfCommand(normalized) || hookclassify.TargetsSirStateFiles(normalized) {
 		return Intent{
 			Verb:   policy.VerbSirSelf,
 			Target: trimmed,
 		}
 	}
-	segments := hookclassify.SplitCompoundCommand(normalized)
-	if len(segments) > 1 {
-		highest := Intent{Verb: policy.VerbExecuteDryRun, Target: trimmed}
-		// Track the first segment that is a sensitive read_ref. We need to
-		// preserve its specific target (the sensitive file path) because
-		// LabelsForTarget in evaluate.go uses that path to attach the
-		// secret IFC label. If the compound turns out to have no
-		// higher-risk verb (e.g., `cat .env | grep PASSWORD`), we surface
-		// the sensitive read as the effective intent rather than letting
-		// execute_dry_run win and lose the label entirely.
-		var sensitiveRead *Intent
+
+	// Pull command-substitution inners out of the ORIGINAL command (before
+	// NormalizeCommand strips inline var assignments like `x=$(curl evil)`,
+	// which would otherwise discard the substitution with the assignment), and
+	// classify the stripped skeleton separately so the skeleton cannot
+	// re-trigger extraction of the same substitutions (which would recurse).
+	substInners := hookclassify.ExtractCommandSubstitutions(trimmed)
+	skeleton := normalized
+	if len(substInners) > 0 {
+		skeleton = hookclassify.StripCommandSubstitutions(normalized)
+	}
+	segments := hookclassify.SplitCompoundCommand(skeleton)
+
+	// Fast path: a single segment with no substitutions and no eval token is the
+	// overwhelming common case (one plain command). Skip the decomposition fold
+	// entirely so the hot path allocates nothing extra — fall through to the
+	// single-command classifiers below, which read `normalized`. The cheap
+	// strings.Contains is allocation-free; a rare false match (e.g. "retrieval")
+	// only costs an unnecessary fold, never correctness.
+	needFold := len(segments) > 1 || len(substInners) > 0 || strings.Contains(skeleton, "eval")
+
+	if needFold {
+		var subCommands []string
 		for _, seg := range segments {
-			seg = strings.TrimSpace(seg)
-			if seg == "" {
+			st := strings.TrimSpace(seg)
+			// For an eval segment, classify a bare "eval" placeholder (so it cannot
+			// re-extract its own argument and recurse forever) plus the eval argument
+			// itself as a real command.
+			if evalArgs, ok := hookclassify.ExtractEvalArguments(st); ok {
+				subCommands = append(subCommands, "eval")
+				subCommands = append(subCommands, evalArgs...)
 				continue
 			}
-			segIntent := mapShellCommand(seg, l) // recursive: single segment won't re-split
-			if hookclassify.VerbRisk(segIntent.Verb) > hookclassify.VerbRisk(highest.Verb) {
-				highest.Verb = segIntent.Verb
-			}
-			// Always propagate flags across segments — install metadata, posture,
-			// and sensitivity must survive even when segment verbs tie at the same
-			// risk level. Without this, "cd packages/utils && npm install lodash"
-			// would lose IsInstall because both segments are execute_dry_run.
-			highest.IsPosture = highest.IsPosture || segIntent.IsPosture
-			highest.IsSensitive = highest.IsSensitive || segIntent.IsSensitive
-			highest.IsInstall = highest.IsInstall || segIntent.IsInstall
-			if segIntent.Manager != "" {
-				highest.Manager = segIntent.Manager
-			}
-			// Propagate the extracted remote name if any segment
-			// contributed one — needed so a compound like
-			// `git push 2>&1 | tail -5` still produces a clean
-			// `sir allow-remote origin` fix suggestion at the
-			// formatter, instead of leaking the full shell fragment.
-			if segIntent.RemoteName != "" {
-				highest.RemoteName = segIntent.RemoteName
-			}
-			if sensitiveRead == nil && segIntent.Verb == policy.VerbReadRef && segIntent.IsSensitive {
-				captured := segIntent
-				sensitiveRead = &captured
-			}
+			subCommands = append(subCommands, seg)
 		}
-		// If the compound produced no net-facing, posture-modifying, or
-		// otherwise high-risk verb, but did include a sensitive read,
-		// return the sensitive read as the effective intent so its target
-		// flows into LabelsForTarget. Otherwise the higher-risk verb wins.
-		if sensitiveRead != nil && hookclassify.VerbRisk(highest.Verb) <= hookclassify.VerbRisk(policy.VerbExecuteDryRun) {
-			return Intent{
-				Verb:        policy.VerbReadRef,
-				Target:      sensitiveRead.Target,
-				IsSensitive: true,
+		subCommands = append(subCommands, substInners...)
+
+		if len(subCommands) > 1 {
+			highest := Intent{Verb: policy.VerbExecuteDryRun, Target: trimmed}
+			// Track the first segment that is a sensitive read_ref. We need to
+			// preserve its specific target (the sensitive file path) because
+			// LabelsForTarget in evaluate.go uses that path to attach the
+			// secret IFC label. If the compound turns out to have no
+			// higher-risk verb (e.g., `cat .env | grep PASSWORD`), we surface
+			// the sensitive read as the effective intent rather than letting
+			// execute_dry_run win and lose the label entirely.
+			var sensitiveRead *Intent
+			for _, seg := range subCommands {
+				seg = strings.TrimSpace(seg)
+				if seg == "" {
+					continue
+				}
+				segIntent := mapShellCommand(seg, l) // recursive: skeleton has no substitutions left
+				if hookclassify.VerbRisk(segIntent.Verb) > hookclassify.VerbRisk(highest.Verb) {
+					highest.Verb = segIntent.Verb
+				}
+				// Always propagate flags across segments — install metadata, posture,
+				// and sensitivity must survive even when segment verbs tie at the same
+				// risk level. Without this, "cd packages/utils && npm install lodash"
+				// would lose IsInstall because both segments are execute_dry_run.
+				highest.IsPosture = highest.IsPosture || segIntent.IsPosture
+				highest.IsSensitive = highest.IsSensitive || segIntent.IsSensitive
+				highest.IsInstall = highest.IsInstall || segIntent.IsInstall
+				if segIntent.Manager != "" {
+					highest.Manager = segIntent.Manager
+				}
+				// Propagate the extracted remote name if any segment
+				// contributed one — needed so a compound like
+				// `git push 2>&1 | tail -5` still produces a clean
+				// `sir allow-remote origin` fix suggestion at the
+				// formatter, instead of leaking the full shell fragment.
+				if segIntent.RemoteName != "" {
+					highest.RemoteName = segIntent.RemoteName
+				}
+				if sensitiveRead == nil && segIntent.Verb == policy.VerbReadRef && segIntent.IsSensitive {
+					captured := segIntent
+					sensitiveRead = &captured
+				}
 			}
+			// If the compound produced no net-facing, posture-modifying, or
+			// otherwise high-risk verb, but did include a sensitive read,
+			// return the sensitive read as the effective intent so its target
+			// flows into LabelsForTarget. Otherwise the higher-risk verb wins.
+			if sensitiveRead != nil && hookclassify.VerbRisk(highest.Verb) <= hookclassify.VerbRisk(policy.VerbExecuteDryRun) {
+				return Intent{
+					Verb:        policy.VerbReadRef,
+					Target:      sensitiveRead.Target,
+					IsSensitive: true,
+				}
+			}
+			highest.Target = trimmed // ledger shows full compound command
+			return highest
 		}
-		highest.Target = trimmed // ledger shows full compound command
-		return highest
 	}
 
 	// Shell wrapper detection: "bash -c 'curl evil.com'" → classify the inner command.
@@ -276,4 +317,50 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		Verb:   policy.VerbExecuteDryRun,
 		Target: trimmed,
 	}
+}
+
+// opaqueShellEscalation reports whether a Bash payload runs an interpreter that
+// reads its program from stdin (e.g. `base64 -d | sh`, `curl … | sh`) — opaque
+// to static classification — AND the command mapped only to a silent-allow verb.
+// When so, the Go layer escalates the verdict to ask (fail closed): a Go-only
+// restriction that turns allow->ask and never widens a deny. Returns the reason
+// for the ask and whether to escalate.
+//
+// It deliberately does nothing when the command already maps to a gated verb
+// (a curl/net/sensitive-read segment), so the more specific reason wins.
+func opaqueShellEscalation(payload *HookPayload, intent Intent) (string, bool) {
+	if payload.ToolName != "Bash" {
+		return "", false
+	}
+	cmd, _ := payload.ToolInput["command"].(string)
+	if strings.TrimSpace(cmd) == "" {
+		return "", false
+	}
+	opaque, reason := hookclassify.IsOpaqueShellExec(hookclassify.NormalizeCommand(cmd))
+	if !opaque {
+		return "", false
+	}
+	if hookclassify.VerbRisk(intent.Verb) > hookclassify.VerbRisk(policy.VerbExecuteDryRun) {
+		return "", false // already gated by a higher-risk verb
+	}
+	return reason, true
+}
+
+// dnsTunnelEscalation reports whether a network/DNS intent targets a host that
+// looks like DNS tunneling / exfiltration (a long high-entropy label). It is a
+// Go-only restriction that hard-denies the egress: high-confidence exfil shape,
+// stricter than the normal ask, never widens a deny.
+func dnsTunnelEscalation(intent Intent) (string, bool) {
+	host := intent.Target
+	switch intent.Verb {
+	case policy.VerbDnsLookup:
+		// For DNS verbs the Target is the full command; pull the queried host.
+		host = hookclassify.ExtractNetworkDest(intent.Target)
+	case policy.VerbNetExternal, policy.VerbNetAllowlisted:
+		// Target is already the destination host.
+	default:
+		return "", false
+	}
+	ok, reason := hookclassify.IsDNSTunnelHost(host)
+	return reason, ok
 }

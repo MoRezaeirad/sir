@@ -30,6 +30,7 @@ use policy_sinks::evaluate_derived_secret_sink;
 /// ```text
 /// Secret file read                    -> ask (developer decides)
 /// Secret session + external egress    -> block
+/// Untrusted content + external egress -> block (integrity wall)
 /// Secret session + unapproved push    -> block
 /// Secret session + loopback/approved  -> allow
 /// Posture file write                  -> ask (always)
@@ -117,6 +118,7 @@ mod tests {
             session_secret: false,
             session_was_secret: false,
             session_untrusted_read: false,
+            session_untrusted_this_turn: false,
             is_posture_file: false,
             is_sensitive_path: false,
             is_delegation: false,
@@ -555,6 +557,96 @@ mod tests {
     fn test_net_external_clean_asks_when_not_forbidden() {
         // NET-1: clean session, not forbidden (personal/team) -> approval prompt.
         let req = make_request("net_external");
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    // --- Integrity-flow egress wall (P0.3): untrusted content + egress -> block ---
+
+    #[test]
+    fn test_net_external_untrusted_read_denied_even_when_not_forbidden() {
+        // The trifecta exfil leg: untrusted content was ingested this session
+        // (detected MCP injection, or external-package read), so external egress
+        // escalates from the clean-session Ask to a hard Deny — even on a
+        // personal lease that does not forbid net_external.
+        let mut req = make_request("net_external");
+        req.session_untrusted_read = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("untrusted content"));
+        // Distinct from the secret wall — this is the integrity wall.
+        assert!(!result.reason.contains("credentials"));
+    }
+
+    #[test]
+    fn test_dns_lookup_untrusted_read_denied_even_when_not_forbidden() {
+        let mut req = make_request("dns_lookup");
+        req.session_untrusted_read = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("untrusted content"));
+    }
+
+    #[test]
+    fn test_net_external_untrusted_read_secret_session_still_credentials_deny() {
+        // The secret wall runs first: when BOTH flags are set, the credentials
+        // deny wins so the message stays accurate. Integrity wall never widens it.
+        let mut req = make_request("net_external");
+        req.session_untrusted_read = true;
+        req.session_secret = true;
+        let result = evaluate(&req, &default_lease(), &secret_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("credentials"));
+    }
+
+    #[test]
+    fn test_net_external_no_untrusted_read_still_asks_clean() {
+        // Regression: the integrity wall must NOT fire on a clean session with no
+        // untrusted ingestion — that would be over-blocking.
+        let req = make_request("net_external");
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    #[test]
+    fn test_net_external_untrusted_this_turn_denied() {
+        // Weak turn-scoped signal: untrusted content (MCP/web) was ingested this
+        // turn. Same-turn external egress is the dangerous injection shape -> deny,
+        // even though session_untrusted_read (the strong signal) is not set.
+        let mut req = make_request("net_external");
+        req.session_untrusted_this_turn = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("untrusted content"));
+    }
+
+    #[test]
+    fn test_dns_lookup_untrusted_this_turn_denied() {
+        let mut req = make_request("dns_lookup");
+        req.session_untrusted_this_turn = true;
+        let mut lease = default_lease();
+        lease.forbidden_verbs.clear();
+        let result = evaluate(&req, &lease, &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+    }
+
+    #[test]
+    fn test_net_external_untrusted_this_turn_cleared_reverts_to_ask() {
+        // Quiet on normal coding: once the turn-scoped flag clears (next turn),
+        // egress is back to a plain approval prompt — cross-turn fetch-then-egress
+        // is not blocked.
+        let mut req = make_request("net_external");
+        req.session_untrusted_this_turn = false; // boundary cleared it
         let mut lease = default_lease();
         lease.forbidden_verbs.clear();
         let result = evaluate(&req, &lease, &clean_session());

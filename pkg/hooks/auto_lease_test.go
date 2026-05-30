@@ -122,6 +122,30 @@ func TestAutoLease_NeverUnderSecretSession(t *testing.T) {
 	}
 }
 
+// TestAutoLeaseSafeContext_FalseUnderUntrustedContent locks the P1 review fix:
+// untrusted content in the turn/session is not a safe context, so the
+// NETALLOW-1 / REMOTE-1 / NPX-1 / ENV-1 reuse paths cannot silently downgrade an
+// approval to allow — closing the same-turn untrusted-content-to-approved-host
+// exfiltration path that the integrity-flow wall (net_external/dns only) misses.
+func TestAutoLeaseSafeContext_FalseUnderUntrustedContent(t *testing.T) {
+	clean := session.NewState(t.TempDir())
+	if !autoLeaseSafeContext(clean) {
+		t.Fatal("a clean session should be a safe context")
+	}
+
+	turn := session.NewState(t.TempDir())
+	turn.MarkUntrustedContentThisTurn()
+	if autoLeaseSafeContext(turn) {
+		t.Error("turn-scoped untrusted content must NOT be a safe context")
+	}
+
+	sessionScoped := session.NewState(t.TempDir())
+	sessionScoped.MarkUntrustedRead()
+	if autoLeaseSafeContext(sessionScoped) {
+		t.Error("session-scoped untrusted read must NOT be a safe context")
+	}
+}
+
 // TestAutoLease_PostEvaluateWiring proves the PostToolUse handler actually
 // invokes the auto-lease path: with a pending marker set, a clean executed
 // egress mints the lease through the real postEvaluatePayload.

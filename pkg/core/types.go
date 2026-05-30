@@ -49,11 +49,16 @@ type SessionInfo struct {
 	// been secret-labeled, even after the turn-scoped SecretSession flag clears
 	// on a turn boundary. Carried to the oracle as session_was_secret so egress
 	// and pushes re-prompt instead of silently reverting to the clean baseline.
-	WasSecret             bool   `json:"was_secret"`
-	RecentlyReadUntrusted bool   `json:"recently_read_untrusted"`
-	DenyAll               bool   `json:"deny_all"`
-	ApprovalScope         string `json:"approval_scope,omitempty"`
-	TurnCounter           int    `json:"turn_counter,omitempty"`
+	WasSecret             bool `json:"was_secret"`
+	RecentlyReadUntrusted bool `json:"recently_read_untrusted"`
+	// UntrustedContentThisTurn is the turn-scoped weak-integrity signal: any
+	// untrusted content (MCP tool output / fetched web content) was ingested
+	// this turn. Gates same-turn external egress; clears on the next turn so
+	// cross-turn workflows stay quiet. Carried as session_untrusted_this_turn.
+	UntrustedContentThisTurn bool   `json:"untrusted_content_this_turn"`
+	DenyAll                  bool   `json:"deny_all"`
+	ApprovalScope            string `json:"approval_scope,omitempty"`
+	TurnCounter              int    `json:"turn_counter,omitempty"`
 }
 
 // Response is the verdict from mister-core.

@@ -57,6 +57,16 @@ type MCPApproval struct {
 	Command        string    `json:"command,omitempty"`
 	CommandHash    string    `json:"command_hash,omitempty"`
 	CommandModTime time.Time `json:"command_mod_time,omitempty"`
+
+	// Tool-definition pinning (rug-pull / full-schema-poisoning detection).
+	// ToolSchemaHash is the canonical full-schema digest of the server's
+	// tools/list at approval time (see mcp.CanonicalToolsDigest). Empty when the
+	// schema could not be captured (server unreachable, or not yet scanned) —
+	// honest "nothing pinned", same convention as an empty CommandHash.
+	// ToolNames is kept for human-readable drift reporting ("tool X changed").
+	ToolSchemaHash       string    `json:"tool_schema_hash,omitempty"`
+	ToolSchemaCapturedAt time.Time `json:"tool_schema_captured_at,omitempty"`
+	ToolNames            []string  `json:"tool_names,omitempty"`
 }
 
 // MCPCapabilityScope narrows what a specific approved MCP server is expected

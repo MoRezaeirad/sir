@@ -165,6 +165,34 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 	intent := MapToolToIntent(payload.ToolName, payload.ToolInput, l)
 	labels := labelsForEvaluation(payload, intent, l, projectRoot)
 
+	// Fail-closed on opaque shell execution: a command that pipes into an
+	// interpreter reading its program from stdin (`base64 -d | sh`,
+	// `curl … | sh`) cannot be classified, so a silent-allow verb is escalated
+	// to ask. Go-only restriction (allow->ask, never widens a deny); only fires
+	// when the mapped verb is low-risk so it never preempts a stricter gate.
+	if oreason, escalate := opaqueShellEscalation(payload, intent); escalate {
+		resp := &HookResponse{
+			Decision: policy.VerdictAsk,
+			Reason:   "Command " + oreason + " — sir cannot see what will run. Approve to proceed, or rewrite without piping into a shell.",
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, l.ObserveOnly, ag)
+		return resp, nil
+	}
+
+	// DNS-tunneling / exfil destination: a long high-entropy hostname label is
+	// the shape of base32/hex-encoded data smuggled out over DNS or HTTP. Hard
+	// deny (Go-only restriction, stricter than the normal ask; never widens a
+	// deny). Marked Floor so observe mode does not downgrade an active exfil.
+	if treason, tunnel := dnsTunnelEscalation(intent); tunnel {
+		resp := &HookResponse{
+			Decision: policy.VerdictDeny,
+			Reason:   "Blocked — " + treason + ". Run `sir unlock` only if you are certain this is legitimate.",
+			Floor:    true,
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, false, ag)
+		return resp, nil
+	}
+
 	if resp, handled := evaluateRawSecretReadGate(payload, intent, labels, l, state, projectRoot, ag); handled {
 		return resp, nil
 	}

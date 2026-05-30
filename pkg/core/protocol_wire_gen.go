@@ -12,73 +12,75 @@ import (
 )
 
 const (
-	protocolMagic          = "MSTR"
-	protocolVersion byte   = 0x01
-	maxFrameBytes   uint32 = 10 * 1024 * 1024
+	protocolMagic = "MSTR"
+	protocolVersion byte = 0x01
+	maxFrameBytes uint32 = 10 * 1024 * 1024
 )
 
 type wireEvalRequest struct {
-	Verb                 string  `json:"verb"`
-	Target               string  `json:"target"`
-	ToolName             string  `json:"tool_name"`
-	Labels               []Label `json:"labels"`
-	DerivedLabels        []Label `json:"derived_labels"`
-	SessionSecret        bool    `json:"session_secret"`
-	SessionWasSecret     bool    `json:"session_was_secret"`
-	SessionUntrustedRead bool    `json:"session_untrusted_read"`
-	IsPostureFile        bool    `json:"is_posture_file"`
-	IsSensitivePath      bool    `json:"is_sensitive_path"`
-	IsDelegation         bool    `json:"is_delegation"`
-	IsTripwire           bool    `json:"is_tripwire"`
+	Verb string `json:"verb"`
+	Target string `json:"target"`
+	ToolName string `json:"tool_name"`
+	Labels []Label `json:"labels"`
+	DerivedLabels []Label `json:"derived_labels"`
+	SessionSecret bool `json:"session_secret"`
+	SessionWasSecret bool `json:"session_was_secret"`
+	SessionUntrustedRead bool `json:"session_untrusted_read"`
+	SessionUntrustedThisTurn bool `json:"session_untrusted_this_turn"`
+	IsPostureFile bool `json:"is_posture_file"`
+	IsSensitivePath bool `json:"is_sensitive_path"`
+	IsDelegation bool `json:"is_delegation"`
+	IsTripwire bool `json:"is_tripwire"`
 }
 
 type wireEvalResponse struct {
-	Verdict       policy.Verdict `json:"verdict"`
-	Reason        string         `json:"reason"`
-	RiskTier      string         `json:"risk_tier"`
-	LabelsApplied []Label        `json:"labels_applied"`
-	ReceiptId     string         `json:"receipt_id"`
-	Timestamp     uint64         `json:"timestamp"`
+	Verdict policy.Verdict `json:"verdict"`
+	Reason string `json:"reason"`
+	RiskTier string `json:"risk_tier"`
+	LabelsApplied []Label `json:"labels_applied"`
+	ReceiptId string `json:"receipt_id"`
+	Timestamp uint64 `json:"timestamp"`
 }
 
 type wireSessionPayload struct {
-	SecretSession         bool   `json:"secret_session"`
-	RecentlyReadUntrusted bool   `json:"recently_read_untrusted"`
-	DenyAll               bool   `json:"deny_all"`
-	ApprovalScope         string `json:"approval_scope"`
-	TurnCounter           uint64 `json:"turn_counter"`
+	SecretSession bool `json:"secret_session"`
+	RecentlyReadUntrusted bool `json:"recently_read_untrusted"`
+	DenyAll bool `json:"deny_all"`
+	ApprovalScope string `json:"approval_scope"`
+	TurnCounter uint64 `json:"turn_counter"`
 }
 
 type wireRequestEnvelope struct {
-	Request wireEvalRequest    `json:"request"`
+	Request wireEvalRequest `json:"request"`
 	Session wireSessionPayload `json:"session"`
-	Lease   json.RawMessage    `json:"lease,omitempty"`
+	Lease json.RawMessage `json:"lease,omitempty"`
 }
 
 func buildWireEvalRequest(req *Request) wireEvalRequest {
 	return wireEvalRequest{
-		Verb:                 req.Intent.Verb.String(),
-		Target:               req.Intent.Target,
-		ToolName:             req.ToolName,
-		Labels:               nonNilLabels(req.Intent.Labels),
-		DerivedLabels:        nonNilLabels(req.Intent.DerivedLabels),
-		SessionSecret:        req.Session.SecretSession,
-		SessionWasSecret:     req.Session.WasSecret,
+		Verb: req.Intent.Verb.String(),
+		Target: req.Intent.Target,
+		ToolName: req.ToolName,
+		Labels: nonNilLabels(req.Intent.Labels),
+		DerivedLabels: nonNilLabels(req.Intent.DerivedLabels),
+		SessionSecret: req.Session.SecretSession,
+		SessionWasSecret: req.Session.WasSecret,
 		SessionUntrustedRead: req.Session.RecentlyReadUntrusted,
-		IsPostureFile:        req.Intent.IsPosture,
-		IsSensitivePath:      req.Intent.IsSensitive,
-		IsDelegation:         req.Intent.IsDelegation,
-		IsTripwire:           req.Intent.IsTripwire,
+		SessionUntrustedThisTurn: req.Session.UntrustedContentThisTurn,
+		IsPostureFile: req.Intent.IsPosture,
+		IsSensitivePath: req.Intent.IsSensitive,
+		IsDelegation: req.Intent.IsDelegation,
+		IsTripwire: req.Intent.IsTripwire,
 	}
 }
 
 func buildWireSessionPayload(req *Request) wireSessionPayload {
 	return wireSessionPayload{
-		SecretSession:         req.Session.SecretSession,
+		SecretSession: req.Session.SecretSession,
 		RecentlyReadUntrusted: req.Session.RecentlyReadUntrusted,
-		DenyAll:               req.Session.DenyAll,
-		ApprovalScope:         req.Session.ApprovalScope,
-		TurnCounter:           uint64(req.Session.TurnCounter),
+		DenyAll: req.Session.DenyAll,
+		ApprovalScope: req.Session.ApprovalScope,
+		TurnCounter: uint64(req.Session.TurnCounter),
 	}
 }
 

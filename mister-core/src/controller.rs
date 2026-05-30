@@ -80,6 +80,7 @@ mod tests {
             session_secret: false,
             session_was_secret: false,
             session_untrusted_read: false,
+            session_untrusted_this_turn: false,
             is_posture_file: false,
             is_sensitive_path: false,
             is_delegation: false,

@@ -132,6 +132,13 @@ boundary is documented here rather than implied.
 
 The fail-closed backstop is downstream, and it is the load-bearing piece of this mitigation: credential detection can still mark the session secret, and secret-session IFC plus delegation gating still apply on the next tool use even when the original MCP framing was opaque to the literal scanner. Untrusted MCP servers are also tainted on detection, so future traffic is treated with elevated posture.
 
+There is also an **integrity-flow egress wall** that does not depend on the secret path. When the session has ingested untrusted content, the policy oracle escalates subsequent external network egress and outbound DNS from the clean-session approval prompt to a hard **deny** — the exfiltration leg of the lethal trifecta (private data + untrusted content + egress). This is the integrity dual of the confidentiality secret-session wall and follows the FIDES "low-integrity data must not reach a high-integrity sink" rule. It fires on two signals of different strength:
+
+- a **strong, session-scoped** signal — a detected injection, or a read of external-package-provenance content — that holds for the rest of the session; and
+- a **weak, turn-scoped** signal — *any* MCP tool response or fetched web content ingested **this turn**, set regardless of whether the ~50-pattern scanner flagged it. This is what catches an injection the literal scanner missed: it blocks the dangerous *same-turn* untrusted→egress shape, then clears at the turn boundary so cross-turn "fetch now, legitimately call an API later" workflows stay quiet (the "quiet on normal coding" contract).
+
+The wall is enforced in `mister-core` (`policy_guards.rs`), mirrored in the Go local-fallback evaluator for parity, and only ever tightens the clean-session prompt into a deny — it never widens a deny. The escape hatch, after verifying intent, is `sir unlock`.
+
 ### Posture disablement
 
 **Threat:** the agent edits hook config or other posture files to remove sir from the loop.
@@ -169,6 +176,32 @@ Being explicit about what sir does not cover matters more than claiming broad pr
 - **The default lease**, which is deliberately permissive to reduce developer friction and is not a hardened profile.
 
 > **Note:** If you find a way to violate one of the in-scope guarantees above, that is a security bug and we want to hear about it. See the verification path below.
+
+## Standards mapping
+
+sir's controls map onto the public agent-security frameworks so reviewers can
+place each guarantee in a shared taxonomy. This is the basis of the evaluation
+story, alongside the reproducible benchmark harness (`eval/agentdojo/`) and the
+signed-build + SLSA-provenance + SBOM release artifacts (see the release workflow
+and `docs/contributor/supply-chain-policy.md`).
+
+| sir control | OWASP LLM / Agentic | MITRE ATLAS | CSA MAESTRO | MCP-T |
+|---|---|---|---|---|
+| Allow/ask/deny tool-call mediation | LLM06 Excessive Agency; ASI02 Tool Misuse | M0029 human-in-the-loop; M0030 restrict tool use on untrusted data | Agent Frameworks | — |
+| Secret-session + derived-lineage egress wall | LLM02 Sensitive Info Disclosure | T0024 exfiltration | Data Operations | T5 |
+| Integrity-flow egress wall (untrusted → egress) | LLM01 Prompt Injection; ASI01 Goal Hijack | T0051 LLM Prompt Injection | Foundation Models | T4 |
+| MCP injection scan + server taint | LLM01; ASI06 Memory/Context Poisoning | T0051 (indirect) | Agent Frameworks | T3, T4 |
+| MCP tool-schema pinning (`sir mcp scan`) | LLM03 Supply Chain; ASI04 Agentic Supply Chain | T0011.002 Poisoned AI Agent Tool | Deployment Infra | T6, T11 |
+| Posture-file tamper detection + restore | LLM03; ASI05 Unexpected Code Execution | T0011 Poison Training/Config | Deployment Infra | T6 |
+| Install-sentinel supply-chain hashing | LLM03 Supply Chain | T0010 ML Supply Chain Compromise | Data Operations | T11 |
+| Least-privilege lease; managed mode | LLM06; ASI03 Identity & Privilege Abuse | M0026 least-privilege agent perms | Agent Frameworks | T1, T2 |
+| Below-hook runtime containment (`sir run`) | — | M0005 control access to systems | Deployment Infra | T8 |
+| Hash-chained ledger; OTLP (no raw secrets) | LLM02 | logging/monitoring | Eval & Observability | T12 |
+
+The mapping is a guide, not a certification. Where a control is heuristic (MCP
+injection scanning, shell classification) the relevant row is a *detection*
+contribution, backstopped by the deterministic IFC floors; the residual-risk
+sections above are the honest boundary.
 
 ## Verification path
 

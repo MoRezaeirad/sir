@@ -36,6 +36,17 @@ func autoLeaseSafeContext(state *session.State) bool {
 	if state.SecretSession || state.PendingInjectionAlert {
 		return false
 	}
+	// Untrusted content in the turn/session is NOT a safe context for silently
+	// downgrading an approval to allow. Without this, the NETALLOW-1 / REMOTE-1 /
+	// NPX-1 / ENV-1 reuse paths could silently allow egress to an *approved* host
+	// (or an ephemeral install / push) right after the agent ingested
+	// attacker-controlled web/MCP content — an exfiltration sink for
+	// prompt-injected content that the integrity-flow wall (which only sees
+	// net_external/dns) would otherwise miss for approved hosts. The
+	// approved-host egress stays at an approval prompt instead of allow.
+	if state.RecentlyReadUntrusted || state.UntrustedContentThisTurn {
+		return false
+	}
 	if state.Posture != "" && state.Posture != policy.PostureStateNormal {
 		return false
 	}

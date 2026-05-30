@@ -65,7 +65,9 @@ sir is built to **block as little as possible**. Routine work — reads, edits, 
 ## What it catches
 
 - **Secret → exit.** A secret read taints every later write, commit, or push attempt in the turn — tool-agnostic.
-- **MCP prompt injection.** Scans MCP arguments for credentials and responses for injection patterns (~50 regex patterns), taints the server, and forces re-approval.
+- **Untrusted content → exit.** Once the session ingests untrusted content (a detected injection, or a web/MCP read this turn), external egress and DNS escalate from a prompt to a hard deny — the exfiltration leg of the lethal trifecta, even when no secret is in play.
+- **MCP prompt injection & rug pulls.** Scans MCP arguments for credentials and responses for injection patterns (~50 regex patterns), taints the server, and forces re-approval. `sir mcp scan` pins each server's full tool schema and revokes approval on drift, catching tool-poisoning / rug-pull mutations after you trusted it.
+- **Obfuscated & opaque shell.** Hidden egress behind `$(…)`, backticks, or `eval` is decomposed and gated, not silently allowed; piping into a shell (`… | sh`) fails closed to a prompt; DNS-tunnel-shaped destinations (long high-entropy labels) are blocked.
 - **Posture tampering.** Edits to hook config, `CLAUDE.md`, or `.mcp.json` are detected and auto-restored.
 - **A local audit trail.** Every verdict is appended to a tamper-evident, hash-chained ledger — verify it with `sir log verify`.
 
@@ -113,10 +115,10 @@ Try the core protection yourself: **ask the agent to read `.env`**. On a default
 
 ```text
 Get started   setup · install · uninstall · update · status [--json|--agents] · demo
-When blocked  why · approve --last [--ttl D] · approvals · unlock · secret view <path>
+When blocked  why · approve --last [--ttl D] · approvals · unlock · declassify <path> · secret view <path>
 Grant/revoke  trust host|remote|mcp|path <x> [--ttl D] [--remove]   (--yes to skip prompt)
 Policy        config · policy show|diff|init --profile <p>|suggest
-MCP           mcp status|wrap|approve|revoke|list|scope
+MCP           mcp status|wrap|approve|revoke|list|scope|scan [--quiet]
 Review        audit · friction · log [--follow|verify|archive|export] · replay · trace · explain
 Maintenance   doctor [--json] · verify · version [--check] · completion bash|zsh|fish
 Advanced      run <agent> · relay · mcp-proxy <cmd>
@@ -140,7 +142,7 @@ Run `sir <command> --help` for details on any command, or `sir help` for the ful
 
 ## Honest limits
 
-sir is a hook- and tool-boundary layer, not a host firewall. If a tool executor ignores the hook response, sir cannot stop it. MCP injection detection is regex-based and can be evaded by encoding or paraphrasing. Turn boundaries advance instantly on every user message (`UserPromptSubmit`), and also via a 30-second gap heuristic — so the turn-scoped secret deny floor can reset without any timing race. To keep that reset honest, secret taint is **monotonic**: a session that has *ever* held a secret keeps re-prompting external egress and pushes (an approval prompt, never a silent allow) across turn boundaries until you run `sir unlock`. What that re-prompt does *not* cover is a secret laundered through model context and re-emitted as fresh agent-authored bytes — see the threat model's context-laundering table. Shell classification is prefix-aware, not full POSIX. The default lease intentionally allows push-to-origin, commit, loopback, and delegation — tighten with `sir trust` or a managed policy. If `mister-core` is missing from `PATH`, Go falls back to a deliberately *more restrictive* subset (parity-tested), and a tampered oracle triggers a hard deny on all tool calls. Model-internal reasoning is out of scope. Hook-layer policy (the default `sir install`) is advisory enforcement; OS-level *prevention* exists only under `sir run`, which adds optional containment (network namespace on Linux, `sandbox-exec` on macOS) and is experimental.
+sir is a hook- and tool-boundary layer, not a host firewall. If a tool executor ignores the hook response, sir cannot stop it. MCP injection detection is regex-based and can be evaded by encoding or paraphrasing — so it is backstopped by the integrity-flow egress wall, which denies external egress after *any* untrusted content was ingested this turn, whether or not the scanner flagged it. Turn boundaries advance instantly on every user message (`UserPromptSubmit`), and also via a 30-second gap heuristic — so the turn-scoped secret deny floor can reset without any timing race. To keep that reset honest, secret taint is **monotonic**: a session that has *ever* held a secret keeps re-prompting external egress and pushes (an approval prompt, never a silent allow) across turn boundaries until you run `sir unlock`. What that re-prompt does *not* cover is a secret laundered through model context and re-emitted as fresh agent-authored bytes — see the threat model's context-laundering table. Shell classification is prefix-aware — it decomposes command substitution, backticks, and `eval`, and fails closed on `… | sh` — but it is not a full POSIX parser, and interpreter one-liners (`python -c "open('.env')"`) remain a documented residual. The default lease intentionally allows push-to-origin, commit, loopback, and delegation — tighten with `sir trust` or a managed policy. If `mister-core` is missing from `PATH`, Go falls back to a deliberately *more restrictive* subset (parity-tested), and a tampered oracle triggers a hard deny on all tool calls. Model-internal reasoning is out of scope. Hook-layer policy (the default `sir install`) is advisory enforcement; OS-level *prevention* exists only under `sir run`, which adds optional containment (network namespace on Linux, `sandbox-exec` on macOS) and is experimental.
 
 ## Documentation
 
@@ -148,6 +150,6 @@ sir is a hook- and tool-boundary layer, not a host firewall. If a tool executor 
 
 **Contributors** — [CONTRIBUTING.md](CONTRIBUTING.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/README.md](docs/README.md)
 
-**Researchers** — [Threat model](docs/research/sir-threat-model.md) · [Verification guide](docs/research/security-verification-guide.md) · [Observability design](docs/research/observability-design.md)
+**Researchers** — [Threat model](docs/research/sir-threat-model.md) · [Verification guide](docs/research/security-verification-guide.md) · [Observability design](docs/research/observability-design.md) · [AgentDojo benchmark harness](eval/agentdojo/README.md)
 
 Report vulnerabilities privately via [SECURITY.md](SECURITY.md). Licensed under [Apache 2.0](LICENSE).

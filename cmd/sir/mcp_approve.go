@@ -79,6 +79,29 @@ func cmdMCPApprove(projectRoot string, args []string) {
 		}
 	}
 
+	// Best-effort: pin each server's advertised tool schema at approval time so
+	// a later rug pull / tool poisoning (MCPoison, full-schema poisoning) is
+	// detectable by `sir mcp scan`. Probing reads tools/list read-only and is
+	// non-fatal — a server we cannot probe is approved anyway with an empty pin,
+	// exactly as an unresolvable binary yields an empty CommandHash. Args come
+	// from the live inventory (the discovered record only carries the command).
+	inv := make(map[string]mcpServerInventory)
+	for _, s := range discoverMCPInventoryForScopes(projectRoot, mcpScopesForAgent("")).Servers {
+		inv[s.Name] = s
+	}
+	type schemaPin struct {
+		hash  string
+		names []string
+		err   error
+	}
+	pins := make(map[string]schemaPin, len(targets))
+	for _, t := range targets {
+		if s, ok := inv[t.Name]; ok {
+			h, names, err := probeToolSchema(s)
+			pins[t.Name] = schemaPin{hash: h, names: names, err: err}
+		}
+	}
+
 	// Show a single review screen with provenance so the user can see what
 	// they are approving at once. This batches the decision instead of
 	// per-server prompts, which habituates users into rubber-stamping.
@@ -100,6 +123,16 @@ func cmdMCPApprove(projectRoot string, args []string) {
 			fmt.Printf("    hash:    (not available — command resolved via PATH or npx/uvx)\n")
 		} else {
 			fmt.Printf("    hash:    %s\n", hash)
+		}
+		if p, ok := pins[t.Name]; ok {
+			switch {
+			case p.err != nil:
+				fmt.Printf("    tools:   (schema not pinned — could not probe: %v)\n", p.err)
+			case p.hash == "":
+				fmt.Printf("    tools:   (none advertised)\n")
+			default:
+				fmt.Printf("    tools:   %d pinned (%s)\n", len(p.names), strings.Join(p.names, ", "))
+			}
 		}
 	}
 	fmt.Println()
@@ -128,13 +161,19 @@ func cmdMCPApprove(projectRoot string, args []string) {
 			if !containsApprovedName(l.ApprovedMCPServers, t.Name) {
 				l.ApprovedMCPServers = append(l.ApprovedMCPServers, t.Name)
 			}
-			l.MCPApprovals[t.Name] = lease.MCPApproval{
+			rec := lease.MCPApproval{
 				ApprovedAt:     now,
 				SourcePath:     t.SourcePath,
 				Command:        t.Command,
 				CommandHash:    hash,
 				CommandModTime: modTime,
 			}
+			if p, ok := pins[t.Name]; ok && p.err == nil && p.hash != "" {
+				rec.ToolSchemaHash = p.hash
+				rec.ToolSchemaCapturedAt = now
+				rec.ToolNames = p.names
+			}
+			l.MCPApprovals[t.Name] = rec
 			l.RemoveDiscoveredMCPServer(t.Name)
 		}
 		return nil

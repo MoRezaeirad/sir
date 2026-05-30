@@ -72,6 +72,46 @@ Then trigger one real protection path:
 
 Expected result: the read shows `? ask` and prompts for approval, the external request shows `× deny`, and `sir explain --last` shows the causal chain.
 
+## Keep MCP tool definitions honest
+
+An approved MCP server can mutate its tool definitions *after* you trust it — a
+"rug pull" (MCPoison) or tool/full-schema poisoning that hides instructions in a
+description, parameter default, or error template. `sir mcp approve` pins each
+server's advertised `tools/list` at approval; `sir mcp scan` re-checks it:
+
+```bash
+sir mcp scan          # pin on first run, verify after, revoke on drift
+sir mcp scan --quiet  # print nothing unless drift is found; exit 3 on drift
+```
+
+On drift, sir revokes the server's approval (so the agent is asked before using
+it again) and logs it to the ledger. Re-pin with `sir mcp approve <name>` after
+verifying the change.
+
+### Schedule it
+
+Because `--quiet` is silent on success and exits non-zero on drift, it drops
+straight into any scheduler. macOS (launchd), run every 30 min in your repo:
+
+```xml
+<!-- ~/Library/LaunchAgents/cloud.sir.mcpscan.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>cloud.sir.mcpscan</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/sh</string><string>-c</string>
+    <string>cd /path/to/repo &amp;&amp; sir mcp scan --quiet</string></array>
+  <key>StartInterval</key><integer>1800</integer>
+</dict></plist>
+```
+
+Linux (systemd user timer): a `sir-mcp-scan.service` running
+`sir mcp scan --quiet` in `WorkingDirectory=/path/to/repo`, paired with a
+`sir-mcp-scan.timer` at `OnUnitActiveSec=30min`. Or cron:
+`*/30 * * * * cd /path/to/repo && sir mcp scan --quiet`.
+
+Inside a Claude Code session you can also run it on an interval with the
+`/loop` command (e.g. `/loop 30m sir mcp scan --quiet`).
+
 ## Go deeper
 
 - [faq.md](faq.md)

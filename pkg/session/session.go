@@ -36,13 +36,20 @@ type State struct {
 	SecretApprovalTurn    int                  `json:"secret_approval_turn,omitempty"` // turn when secret was approved
 	LastToolCallAt        time.Time            `json:"last_tool_call_at,omitempty"`    // timestamp of most recent PreToolUse
 	RecentlyReadUntrusted bool                 `json:"recently_read_untrusted"`
-	PendingInstall        *PendingInstall      `json:"pending_install,omitempty"`
-	PostureHashes         map[string]string    `json:"posture_hashes,omitempty"`
-	DenyAll               bool                 `json:"deny_all"`
-	DenyAllReason         string               `json:"deny_all_reason,omitempty"`
-	LeaseHash             string               `json:"lease_hash,omitempty"`       // SHA-256 of lease.json at session start
-	GlobalHookHash        string               `json:"global_hook_hash,omitempty"` // SHA-256 of the managed hook/config subtrees for all registered host agents at session start
-	SessionHash           string               `json:"session_hash,omitempty"`     // SHA-256 of session.json content (excludes this field)
+	// UntrustedContentThisTurn is the turn-scoped weak-integrity signal: any
+	// untrusted content (MCP tool output / fetched web content) was ingested
+	// this turn. It gates same-turn external egress and clears on the next turn
+	// boundary (clearTurnEvidenceLocked), so cross-turn MCP/web workflows stay
+	// quiet. Distinct from RecentlyReadUntrusted, which is session-scoped and set
+	// only on a detected injection or external-package read.
+	UntrustedContentThisTurn bool              `json:"untrusted_content_this_turn,omitempty"`
+	PendingInstall           *PendingInstall   `json:"pending_install,omitempty"`
+	PostureHashes            map[string]string `json:"posture_hashes,omitempty"`
+	DenyAll                  bool              `json:"deny_all"`
+	DenyAllReason            string            `json:"deny_all_reason,omitempty"`
+	LeaseHash                string            `json:"lease_hash,omitempty"`       // SHA-256 of lease.json at session start
+	GlobalHookHash           string            `json:"global_hook_hash,omitempty"` // SHA-256 of the managed hook/config subtrees for all registered host agents at session start
+	SessionHash              string            `json:"session_hash,omitempty"`     // SHA-256 of session.json content (excludes this field)
 
 	// MCP defense fields
 	Posture                       policy.PostureState `json:"posture,omitempty"`                          // "normal", "elevated", "critical"

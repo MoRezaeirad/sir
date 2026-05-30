@@ -104,6 +104,12 @@ var geminiSpec = AgentSpec{
 		"glob":              "Glob",
 		"grep_search":       "Grep",
 		"list_directory":    "ListDir",
+		// Web tools normalize to the canonical names so the turn-scoped
+		// untrusted-content gate (and any other web-aware control) fires on
+		// Gemini's web reads, just as it does on Claude Code's WebFetch/WebSearch.
+		"web_fetch":         "WebFetch",
+		"google_web_search": "WebSearch",
+		"web_search":        "WebSearch",
 	},
 	EventNames: map[string]string{
 		"BeforeTool":  "PreToolUse",

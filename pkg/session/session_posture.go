@@ -20,6 +20,17 @@ func (s *State) ClearUntrustedRead() {
 	s.RecentlyReadUntrusted = false
 }
 
+// MarkUntrustedContentThisTurn flags that untrusted content (an MCP tool
+// response or fetched web content) was ingested this turn. This is the broad,
+// turn-scoped weak-integrity signal that gates same-turn external egress; it
+// clears at the next turn boundary, so it does not make sir loud on normal
+// cross-turn MCP/web coding.
+func (s *State) MarkUntrustedContentThisTurn() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.UntrustedContentThisTurn = true
+}
+
 // SetDenyAll triggers session-fatal deny-all mode.
 func (s *State) SetDenyAll(reason string) {
 	s.mu.Lock()
@@ -200,6 +211,7 @@ func (s *State) HasTransientRestrictions() bool {
 	return s.SecretSession ||
 		s.SessionEverSecret ||
 		s.RecentlyReadUntrusted ||
+		s.UntrustedContentThisTurn ||
 		s.PendingInjectionAlert ||
 		s.Posture == policy.PostureStateElevated ||
 		s.Posture == policy.PostureStateCritical ||
@@ -217,6 +229,7 @@ func (s *State) ClearTransientRestrictions() {
 	// high-water mark — turn boundaries downgrade but never clear it.
 	s.SessionEverSecret = false
 	s.RecentlyReadUntrusted = false
+	s.UntrustedContentThisTurn = false
 	s.PendingInjectionAlert = false
 	s.InjectionAlertDetail = ""
 	s.Posture = policy.PostureStateNormal

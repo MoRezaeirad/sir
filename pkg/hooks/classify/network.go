@@ -1,6 +1,9 @@
 package classify
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // IsNetworkCommand reports whether cmd starts with a network egress tool.
 func IsNetworkCommand(cmd string) bool {
@@ -44,6 +47,91 @@ func ExtractNetworkDest(cmd string) string {
 		return p
 	}
 	return ""
+}
+
+// IsDNSTunnelHost reports whether host looks like a DNS-tunneling / DNS-exfil
+// destination — a subdomain label that is both long and high-entropy, the shape
+// of base32/hex-encoded data smuggled into a hostname
+// (e.g. "mz2wg4tbojuw4zlon...deadbeef.tunnel.evil.com"). It is deliberately
+// conservative to stay quiet on normal hostnames: a label must be long (>= 32
+// chars), almost entirely alphanumeric (dictionary/hyphenated CDN names are
+// kept), AND high Shannon entropy. Returns (true, reason) on a match.
+func IsDNSTunnelHost(host string) (bool, string) {
+	host = hostnameForTunnelCheck(host)
+	if host == "" {
+		return false, ""
+	}
+	for _, label := range strings.Split(host, ".") {
+		if isHighEntropyLabel(label) {
+			return true, "destination contains a long high-entropy DNS label (possible DNS tunneling / exfiltration)"
+		}
+	}
+	return false, ""
+}
+
+// hostnameForTunnelCheck strips scheme, path, and port from a raw destination,
+// leaving the bare hostname for label analysis.
+func hostnameForTunnelCheck(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if i := strings.Index(raw, "://"); i >= 0 {
+		raw = raw[i+3:]
+	}
+	if i := strings.IndexAny(raw, "/?#"); i >= 0 {
+		raw = raw[:i]
+	}
+	if i := strings.LastIndex(raw, "@"); i >= 0 { // strip user:pass@
+		raw = raw[i+1:]
+	}
+	if i := strings.LastIndex(raw, ":"); i >= 0 && !strings.Contains(raw, "]") {
+		raw = raw[:i] // strip :port (not IPv6)
+	}
+	return strings.Trim(raw, ".")
+}
+
+func isHighEntropyLabel(label string) bool {
+	n := len(label)
+	if n < 32 {
+		return false
+	}
+	alnum := 0
+	for i := 0; i < n; i++ {
+		c := label[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			alnum++
+		}
+	}
+	if float64(alnum)/float64(n) < 0.9 {
+		return false // hyphens/underscores -> human-readable, not encoded data
+	}
+	// Very long pure-alphanumeric labels are encoded data even at the moderate
+	// entropy of hex; shorter (32-44) labels need the higher entropy of base32/64
+	// to avoid flagging the rare long-but-readable label. No legitimate hostname
+	// label is 45+ chars of alphanumeric.
+	e := shannonEntropy(label)
+	if n >= 45 {
+		return e >= 3.0
+	}
+	return e >= 3.5
+}
+
+func shannonEntropy(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	var freq [256]int
+	for i := 0; i < len(s); i++ {
+		freq[s[i]]++
+	}
+	n := float64(len(s))
+	e := 0.0
+	for _, c := range freq {
+		if c == 0 {
+			continue
+		}
+		p := float64(c) / n
+		e -= p * math.Log2(p)
+	}
+	return e
 }
 
 // IsDNSCommand detects DNS exfiltration prefixes.

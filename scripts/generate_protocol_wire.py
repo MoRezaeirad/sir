@@ -24,6 +24,7 @@ REQUEST_FIELD_EXPRESSIONS = {
     "session_secret": "req.Session.SecretSession",
     "session_was_secret": "req.Session.WasSecret",
     "session_untrusted_read": "req.Session.RecentlyReadUntrusted",
+    "session_untrusted_this_turn": "req.Session.UntrustedContentThisTurn",
     "is_posture_file": "req.Intent.IsPosture",
     "is_sensitive_path": "req.Intent.IsSensitive",
     "is_delegation": "req.Intent.IsDelegation",

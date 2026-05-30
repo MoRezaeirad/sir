@@ -45,6 +45,14 @@ pub struct EvalRequest {
     /// (ask) instead of silently reverting to the clean-session baseline.
     pub session_was_secret: bool,
     pub session_untrusted_read: bool,
+    /// Turn-scoped weak-integrity signal: untrusted content (any MCP tool
+    /// response or fetched web content) was ingested *this turn*. Unlike
+    /// `session_untrusted_read` (session-scoped, set only on a detected
+    /// injection or external-package read), this is the broad signal that
+    /// catches injections the scanner missed — but it clears on the next turn
+    /// boundary, so cross-turn workflows stay quiet. It gates same-turn external
+    /// egress only.
+    pub session_untrusted_this_turn: bool,
     pub is_posture_file: bool,
     pub is_sensitive_path: bool,
     pub is_delegation: bool,
@@ -129,6 +137,7 @@ impl EvalRequest {
         let session_secret = opt_bool(&val, "session_secret")?;
         let session_was_secret = opt_bool(&val, "session_was_secret")?;
         let session_untrusted_read = opt_bool(&val, "session_untrusted_read")?;
+        let session_untrusted_this_turn = opt_bool(&val, "session_untrusted_this_turn")?;
         let is_posture_file = opt_bool(&val, "is_posture_file")?;
         let is_sensitive_path = opt_bool(&val, "is_sensitive_path")?;
         let is_delegation = opt_bool(&val, "is_delegation")?;
@@ -191,6 +200,7 @@ impl EvalRequest {
             session_secret,
             session_was_secret,
             session_untrusted_read,
+            session_untrusted_this_turn,
             is_posture_file,
             is_sensitive_path,
             is_delegation,

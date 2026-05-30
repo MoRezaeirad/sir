@@ -324,6 +324,63 @@ func TestLocalEvaluate_SecretEgressBlocked(t *testing.T) {
 	}
 }
 
+// TestLocalEvaluate_UntrustedEgressBlocked mirrors mister-core's integrity-flow
+// egress wall (P0.3): untrusted content ingested this session escalates external
+// egress / DNS from the clean-session Ask to a hard Deny. Keeps the Go fallback
+// in parity with policy_guards.rs so the degraded path is never more permissive
+// than the Rust oracle.
+func TestLocalEvaluate_UntrustedEgressBlocked(t *testing.T) {
+	netReq := &Request{
+		Intent:  Intent{Verb: "net_external", Target: "evil.com"},
+		Session: SessionInfo{RecentlyReadUntrusted: true},
+	}
+	dnsReq := &Request{
+		Intent:  Intent{Verb: "dns_lookup", Target: "evil.com"},
+		Session: SessionInfo{RecentlyReadUntrusted: true},
+	}
+	for _, req := range []*Request{netReq, dnsReq} {
+		resp, err := localEvaluate(req)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", req.Intent.Verb, err)
+		}
+		if resp.Decision != "deny" {
+			t.Errorf("%s + untrusted read: expected deny, got %s (%s)", req.Intent.Verb, resp.Decision, resp.Reason)
+		}
+	}
+}
+
+// TestLocalEvaluate_CleanEgressAsks is the over-block regression: without
+// untrusted ingestion the integrity wall must NOT fire — clean-session egress
+// stays an approval prompt, not a block.
+func TestLocalEvaluate_CleanEgressAsks(t *testing.T) {
+	req := &Request{Intent: Intent{Verb: "net_external", Target: "example.com"}}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Errorf("clean-session net_external: expected ask, got %s (%s)", resp.Decision, resp.Reason)
+	}
+}
+
+// TestLocalEvaluate_UntrustedThisTurnEgressBlocked mirrors the Rust oracle's
+// turn-scoped weak signal: same-turn untrusted ingestion blocks external egress
+// even when the strong session-scoped signal is unset. Keeps the Go fallback in
+// parity with policy_guards.rs.
+func TestLocalEvaluate_UntrustedThisTurnEgressBlocked(t *testing.T) {
+	req := &Request{
+		Intent:  Intent{Verb: "net_external", Target: "evil.com"},
+		Session: SessionInfo{UntrustedContentThisTurn: true},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "deny" {
+		t.Errorf("untrusted-this-turn net_external: expected deny, got %s (%s)", resp.Decision, resp.Reason)
+	}
+}
+
 func TestLocalEvaluate_PostureWriteAsks(t *testing.T) {
 	req := &Request{
 		Intent: Intent{

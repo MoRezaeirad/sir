@@ -127,6 +127,32 @@ func (s *State) DerivedPaths() []string {
 	return out
 }
 
+// DeclassifyPath removes the persistent derived-secret lineage for the first of
+// the given path candidates that matches a tracked key, returning the removed
+// key and whether anything was removed.
+//
+// This is the granular, operator-attested declassification primitive (P2.1): it
+// lifts the derived-secret label on ONE file — e.g. after the operator has
+// reviewed or redacted it — so a later push/egress of that file is no longer
+// gated, WITHOUT clearing all session taint the way `sir unlock` would. It
+// deliberately only touches file lineage; it cannot clear the live secret
+// session or the monotonic high-water mark, so an in-flight secret exfil stays
+// blocked. Every use is logged by the caller.
+func (s *State) DeclassifyPath(candidates ...string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if _, ok := s.DerivedFileLineage[c]; ok {
+			delete(s.DerivedFileLineage, c)
+			return c, true
+		}
+	}
+	return "", false
+}
+
 func (s *State) ensureLineageLocked() {
 	if s.DerivedFileLineage == nil {
 		s.DerivedFileLineage = make(map[string]DerivedPathRecord)
@@ -135,6 +161,10 @@ func (s *State) ensureLineageLocked() {
 
 func (s *State) clearTurnEvidenceLocked() {
 	s.ActiveEvidence = nil
+	// The weak turn-scoped untrusted-content signal decays at the turn boundary:
+	// same-turn untrusted->egress is the dangerous injection shape; a later turn
+	// legitimately fetching then egressing is normal coding and stays quiet.
+	s.UntrustedContentThisTurn = false
 }
 
 func normalizeLineageLabels(labels []LineageLabel) []LineageLabel {

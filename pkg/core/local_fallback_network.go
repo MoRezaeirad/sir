@@ -61,6 +61,9 @@ func localEvaluateNetwork(req *Request, effectiveLabels []Label) *Response {
 		if leaseForbidsVerb(req, policy.VerbNetExternal) {
 			return &Response{Decision: policy.VerdictDeny, Reason: "Network requests to external hosts are blocked by your security policy."}
 		}
+		if req.Session.RecentlyReadUntrusted || req.Session.UntrustedContentThisTurn {
+			return untrustedEgressDeny("External network request")
+		}
 		// NET-1: clean session, not forbidden (personal/team) -> approval prompt.
 		return &Response{Decision: policy.VerdictAsk, Reason: "External network request requires approval."}
 	case policy.VerbPushRemote:
@@ -102,6 +105,9 @@ func localEvaluateNetwork(req *Request, effectiveLabels []Label) *Response {
 		if leaseForbidsVerb(req, policy.VerbDnsLookup) {
 			return &Response{Decision: policy.VerdictDeny, Reason: "DNS lookup (outbound request) not allowed by your security policy."}
 		}
+		if req.Session.RecentlyReadUntrusted || req.Session.UntrustedContentThisTurn {
+			return untrustedEgressDeny("DNS lookup")
+		}
 		// NET-2: clean session, not forbidden (personal/team) -> approval prompt.
 		return &Response{Decision: policy.VerdictAsk, Reason: "DNS lookup (outbound request) requires approval."}
 	}
@@ -113,4 +119,19 @@ func denyFlowResponse() *Response {
 		Decision: policy.VerdictDeny,
 		Reason:   "Data labels on this action exceed the trust level of the destination.",
 	}
+}
+
+// untrustedEgressDeny mirrors mister-core's integrity-flow egress wall (P0.3):
+// untrusted content ingested this session (detected MCP injection, or
+// external-package-provenance read) must not silently drive outbound egress —
+// the exfiltration leg of the lethal trifecta. Reached only after the
+// secret-session and forbidden-lease deny branches, so it strictly tightens the
+// clean-session Ask into a Deny and never widens a deny. Kept byte-for-byte in
+// step with policy_guards.rs::untrusted_egress_deny for Go<->Rust parity.
+func untrustedEgressDeny(action string) *Response {
+	reason := "External network egress blocked — untrusted content was ingested this session (possible prompt injection); outbound requests are held. Verify intent, then `sir unlock`."
+	if action == "DNS lookup" {
+		reason = "DNS lookup blocked — untrusted content was ingested this session (possible prompt injection); outbound requests are held. Verify intent, then `sir unlock`."
+	}
+	return &Response{Decision: policy.VerdictDeny, Reason: reason}
 }

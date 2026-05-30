@@ -72,6 +72,16 @@ func (a runtimeAllowlist) Allows(host, port string) bool {
 	if host == "" || port == "" {
 		return false
 	}
+	// Fail closed on hosts that are not a clean ASCII hostname/IP. A NUL byte,
+	// control character, whitespace, or non-ASCII rune is the shape of an
+	// allowlist-bypass: the matcher and the OS resolver can disagree about where
+	// the host ends (the Claude Code SOCKS5 `attacker.com\x00.allowed.com` class).
+	// sir already uses exact matching rather than suffix matching, so a smuggled
+	// host does not match an allowed entry — but rejecting it outright makes the
+	// property explicit and refactor-proof on every proxy path.
+	if !safeProxyHost(host) {
+		return false
+	}
 	ports := a.portsByHost[host]
 	if len(ports) == 0 {
 		return false
@@ -81,6 +91,26 @@ func (a runtimeAllowlist) Allows(host, port string) bool {
 	}
 	_, ok := ports[port]
 	return ok
+}
+
+// safeProxyHost reports whether host is a clean ASCII hostname or IP literal
+// safe to allowlist-match and dial. It rejects NUL bytes, control characters,
+// whitespace, and non-ASCII runes — the characters that let a host smuggle a
+// second name past a matcher (the resolver truncating at NUL / interpreting
+// homoglyphs). Permitted: letters, digits, '.', '-', and IPv6 literal syntax
+// (':', '%' zone id). Host is expected already lowercased and bracket-stripped
+// by NormalizeProxyHost.
+func safeProxyHost(host string) bool {
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == ':' || r == '%':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func expandRuntimeDestinations(raw string) []exactDestination {

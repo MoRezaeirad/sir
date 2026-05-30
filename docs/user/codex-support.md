@@ -46,8 +46,9 @@ sir writes `~/.codex/hooks.json` and may create or update `~/.codex/config.toml`
 
 Codex is useful with sir when the workflow stays on covered tool paths:
 
-- External egress blocking.
+- External egress blocking, including the integrity-flow wall that blocks egress after untrusted content (MCP output) was ingested this turn.
 - DNS and `sudo` classification.
+- Shell-obfuscation decomposition (`echo $(curl …)`, backticks, `eval`) and fail-closed on opaque `| sh` execution on the Bash path.
 - Package-install and posture sentinel checks.
 - Bash-mediated sensitive reads such as `cat .env` or `sed -n ... .env`.
 - Native `apply_patch` / `Edit` / `Write` posture pre-gating when Codex emits those hooks.

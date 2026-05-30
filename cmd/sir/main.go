@@ -108,6 +108,8 @@ func main() {
 		// `sir clear session` form has been removed: it was undocumented,
 		// footgun-shaped, and duplicated `sir unlock` exactly.
 		cmdClearSession(projectRoot)
+	case "declassify":
+		cmdDeclassify(projectRoot, os.Args[2:])
 	case "allow-host":
 		cmdAllowHostArgs(projectRoot, os.Args[2:])
 	case "allow-remote":
@@ -214,6 +216,7 @@ When sir asks or blocks
   sir approve --last             Turn the last ask into a scoped, expiring lease
                                  (host/remote/MCP); --once for a single retry
   sir unlock                     Clear transient runtime restrictions, restore operability
+  sir declassify <path>          Lift the derived-secret label from one file you attest is safe
   sir secret view <path>         Show a sensitive file's keys with values redacted
   sir trust host <h> [--ttl 2h]      Allow a host          (--remove to revoke)
   sir trust remote <name>            Allow a git remote    (--remove to revoke)

@@ -38,12 +38,13 @@ func buildCoreRequest(projectRoot string, payload *HookPayload, intent Intent, l
 			IsTripwire:    false,
 		},
 		Session: core.SessionInfo{
-			SecretSession:         state.SecretSession,
-			WasSecret:             state.SessionEverSecret,
-			RecentlyReadUntrusted: state.RecentlyReadUntrusted,
-			DenyAll:               state.DenyAll,
-			ApprovalScope:         string(state.ApprovalScope),
-			TurnCounter:           state.TurnCounter,
+			SecretSession:            state.SecretSession,
+			WasSecret:                state.SessionEverSecret,
+			RecentlyReadUntrusted:    state.RecentlyReadUntrusted,
+			UntrustedContentThisTurn: state.UntrustedContentThisTurn,
+			DenyAll:                  state.DenyAll,
+			ApprovalScope:            string(state.ApprovalScope),
+			TurnCounter:              state.TurnCounter,
 		},
 	}, nil
 }

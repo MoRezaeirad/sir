@@ -1,0 +1,18 @@
+# Benign commands that MUST stay silently allowed — the over-block guard. These
+# use substitution / pipes / && in entirely ordinary ways. If the obfuscation
+# hardening flags any of these, it is too aggressive (loud on normal coding).
+#
+ls -la
+cat README.md
+grep -r TODO ./src
+echo hello && go build ./...
+echo $(date)
+echo $((1 + 2))
+cd $(git rev-parse --show-toplevel) && make
+VERSION=$(cat VERSION) && echo "building $VERSION"
+git status && git diff --stat
+npm test | tail -20
+find . -name '*.go' | xargs gofmt -l
+echo "${HOME}/bin is on PATH"
+docker build -t app . && echo built
+for f in *.txt; do wc -l "$f"; done

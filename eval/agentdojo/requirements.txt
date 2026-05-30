@@ -1,0 +1,7 @@
+# AgentDojo benchmark harness for sir. Python 3.10+.
+# selftest.py needs NONE of these (only the Go toolchain to build sir).
+# run.py needs agentdojo + the provider SDK for the model you benchmark.
+agentdojo>=0.1.20
+# Pick the provider SDK matching `--provider`:
+openai>=1.40
+anthropic>=0.40

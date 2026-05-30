@@ -172,6 +172,16 @@ func postEvaluatePayload(payload *PostHookPayload, l *lease.Lease, state *sessio
 		alertFired = true
 	}
 
+	// Weak, turn-scoped untrusted-content signal. Any MCP tool response or
+	// fetched web content is untrusted input; marking it here (regardless of
+	// whether the heuristic injection scanner flagged anything) lets the
+	// integrity-flow egress wall gate the dangerous *same-turn* untrusted->egress
+	// shape — catching injections the ~50-pattern scanner missed — while clearing
+	// at the next turn boundary so cross-turn MCP/web coding stays quiet.
+	if payload.ToolOutput != "" && isUntrustedContentTool(payload.ToolName) {
+		state.MarkUntrustedContentThisTurn()
+	}
+
 	if payload.ToolName == "Write" || payload.ToolName == "Edit" {
 		attachLineageToWriteTarget(projectRoot, state, payload)
 	}
@@ -206,6 +216,21 @@ func promoteSessionApprovalsOnPost(payload *PostHookPayload, l *lease.Lease, sta
 	if l.AutoLeaseApprovedRemotes && intent.Verb == policy.VerbPushRemote && intent.RemoteName != "" {
 		state.PromotePendingPushRemote(intent.RemoteName)
 	}
+}
+
+// isUntrustedContentTool reports whether a tool's output should be treated as
+// untrusted external content for the turn-scoped integrity signal. MCP tool
+// responses and web fetches/searches are the common indirect-injection carriers
+// for coding agents (malicious READMEs, issues, web pages, MCP tool output).
+func isUntrustedContentTool(toolName string) bool {
+	if isToolMCP(toolName) {
+		return true
+	}
+	switch toolName {
+	case "WebFetch", "WebSearch", "web_fetch", "web_search", "fetch":
+		return true
+	}
+	return false
 }
 
 // checkPendingInstall re-hashes sentinel files after an install and returns changed files.

@@ -110,6 +110,40 @@ pub(super) fn evaluate_preapproval_guards(req: &EvalRequest, verb: Verb) -> Opti
     }
 }
 
+/// INTEGRITY-FLOW egress wall (P0.3, the FIDES "low-integrity must not reach a
+/// high-integrity sink" rule, applied to outbound network actions).
+///
+/// Fires on either of two untrusted-ingestion signals:
+///   - `session_untrusted_read` (strong, session-scoped): a detected MCP prompt
+///     injection, or a read of external-package-provenance content.
+///   - `session_untrusted_this_turn` (weak, turn-scoped): any untrusted content
+///     (MCP tool output / fetched web content) ingested this turn, even if the
+///     injection scanner did not flag it. This clears at the next turn boundary,
+///     so it gates the dangerous *same-turn* untrusted->egress shape without
+///     making cross-turn fetch-then-egress workflows loud.
+///
+/// In both cases the ingested untrusted content must not be allowed to silently
+/// drive outbound egress — the *exfiltration leg* of the lethal trifecta. It is
+/// the integrity dual of the confidentiality `session_secret` wall: secret data
+/// must not flow OUT; untrusted instructions must not steer the flow OUT.
+///
+/// This only ever converts the clean-session **Ask into a Deny** (it is the last
+/// branch, reached only after the secret-session and forbidden-lease Deny
+/// branches), so it strictly tightens and can never widen a deny. The escape
+/// hatch is the same as the secret wall: verify intent, then `sir unlock`.
+fn untrusted_egress_deny(action: &str) -> PolicyResult {
+    policy_result(
+        Verdict::Deny,
+        // No "credentials" wording: this is the integrity wall, not the secret
+        // wall. Distinct reason so the ledger and `sir why` can tell them apart.
+        match action {
+            "DNS lookup" => "DNS lookup blocked — untrusted content was ingested this session (possible prompt injection); outbound requests are held. Verify intent, then `sir unlock`.",
+            _ => "External network egress blocked — untrusted content was ingested this session (possible prompt injection); outbound requests are held. Verify intent, then `sir unlock`.",
+        },
+        RiskTier::R4,
+    )
+}
+
 pub(super) fn evaluate_network_guardrails(
     req: &EvalRequest,
     lease: &Lease,
@@ -129,6 +163,8 @@ pub(super) fn evaluate_network_guardrails(
                     "DNS lookup (outbound request) not allowed by your security policy.",
                     RiskTier::R4,
                 ))
+            } else if req.session_untrusted_read || req.session_untrusted_this_turn {
+                Some(untrusted_egress_deny("DNS lookup"))
             } else {
                 // NET-2: on a clean session (no secret in context) an outbound
                 // DNS lookup is an approval prompt, not a hard block — there is
@@ -154,6 +190,8 @@ pub(super) fn evaluate_network_guardrails(
                     "Network requests to external hosts are blocked by your security policy.",
                     RiskTier::R4,
                 ))
+            } else if req.session_untrusted_read || req.session_untrusted_this_turn {
+                Some(untrusted_egress_deny("External network request"))
             } else {
                 // NET-1: on a clean session, external egress is an approval
                 // prompt, not a hard block. A secret session is still denied
