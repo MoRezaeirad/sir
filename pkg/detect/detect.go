@@ -39,6 +39,10 @@ const (
 	// PackageInstallPostureMutation fires when a package install coincides
 	// with a posture mutation (install that rewrites control-plane state).
 	PackageInstallPostureMutation ID = "package_install_posture_mutation"
+	// HookIntegrityViolation fires when a PostToolUse arrives for a tool_use_id
+	// that sir denied at PreToolUse — the host executor ran a denied call,
+	// ignoring sir's deny. The session is taken to deny-all.
+	HookIntegrityViolation ID = "hook_integrity_violation"
 	// RepeatedDeniedIntent fires when the same (verb,target) is denied or
 	// asked repeatedly in a session — a developer-facing friction signal,
 	// not a security escalation.

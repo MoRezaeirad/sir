@@ -107,9 +107,23 @@ func ScanMCPResponseForInjection(output string) []InjectionSignal {
 	if output == "" {
 		return nil
 	}
+	// Scan the raw output, then normalized variants (zero-width/bidi stripped,
+	// base64/hex/percent-decoded) so the literal patterns also catch the common
+	// encoding/hidden-text evasions. A shared `seen` dedupes across all of them.
+	seen := make(map[string]struct{}, len(injectionPatterns)+4)
+	signals := scanInjectionWindows(output, seen)
+	for _, variant := range injectionScanVariants(output) {
+		signals = append(signals, scanInjectionWindows(variant, seen)...)
+	}
+	return signals
+}
+
+// scanInjectionWindows runs the injection patterns over one string, windowing
+// large inputs (first/middle/last 100KB) so the scan stays bounded.
+func scanInjectionWindows(output string, seen map[string]struct{}) []InjectionSignal {
 	const maxScanBytes = 100_000
 	if len(output) <= maxScanBytes*2 {
-		return scanMCPResponseWindow(output, nil)
+		return scanMCPResponseWindow(output, seen)
 	}
 
 	middleStart := len(output)/2 - maxScanBytes/2
@@ -128,7 +142,6 @@ func ScanMCPResponseForInjection(output string) []InjectionSignal {
 		output[middleStart : middleStart+maxScanBytes],
 		output[len(output)-maxScanBytes:],
 	}
-	seen := make(map[string]struct{}, len(injectionPatterns)+2)
 	var signals []InjectionSignal
 	for _, window := range windows {
 		signals = append(signals, scanMCPResponseWindow(window, seen)...)

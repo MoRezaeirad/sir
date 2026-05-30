@@ -312,6 +312,21 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		}
 	}
 
+	// Interpreter one-liner that opens a sensitive file from inside its inline
+	// source (`python -c "open('.env').read()"`). The argv read-classifier above
+	// can't see paths embedded in interpreter code; this catches the literal
+	// case and labels it a sensitive read so the secret IFC gate fires. Checked
+	// after the network classifiers so a one-liner that ALSO egresses is gated as
+	// egress (the higher-risk verb). Use `normalized` so `/usr/bin/python3 -c …`
+	// and `env python3 -c …` match the same prefixes as bare `python3`.
+	if sensitiveTarget, ok := hookclassify.IsInterpreterSensitiveRead(normalized, l); ok {
+		return Intent{
+			Verb:        policy.VerbReadRef,
+			Target:      sensitiveTarget,
+			IsSensitive: true,
+		}
+	}
+
 	// Default: execute_dry_run
 	return Intent{
 		Verb:   policy.VerbExecuteDryRun,

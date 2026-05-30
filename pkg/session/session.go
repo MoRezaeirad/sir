@@ -36,6 +36,18 @@ type State struct {
 	SecretApprovalTurn    int                  `json:"secret_approval_turn,omitempty"` // turn when secret was approved
 	LastToolCallAt        time.Time            `json:"last_tool_call_at,omitempty"`    // timestamp of most recent PreToolUse
 	RecentlyReadUntrusted bool                 `json:"recently_read_untrusted"`
+	// SecretFingerprints maps a salted one-way digest of a secret VALUE that
+	// entered context (approved read / env read / detected credential) to its
+	// byte length. It lets sir detect that exact value re-appearing in an
+	// outbound payload (verbatim context-laundering) without ever storing the raw
+	// secret. FingerprintSalt is the hex per-session salt. Cleared by `sir unlock`.
+	SecretFingerprints map[string]int `json:"secret_fingerprints,omitempty"`
+	FingerprintSalt    string         `json:"fingerprint_salt,omitempty"`
+	// DeniedToolUses records tool_use_ids that sir denied at PreToolUse. If a
+	// PostToolUse later arrives for one of them, the host executor ran a denied
+	// call — it ignored sir's deny — and the session is taken to deny-all. Bounded
+	// (oldest entries are dropped past the cap) so it cannot grow without limit.
+	DeniedToolUses []string `json:"denied_tool_uses,omitempty"`
 	// UntrustedContentThisTurn is the turn-scoped weak-integrity signal: any
 	// untrusted content (MCP tool output / fetched web content) was ingested
 	// this turn. It gates same-turn external egress and clears on the next turn

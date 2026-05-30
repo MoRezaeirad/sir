@@ -72,15 +72,16 @@ sir **does** detect post-install binary tampering: `mister-core` is hash-verifie
 - File/data lineage is independent of the turn counter: a secret copied or renamed into a file carries a derived-secret label that still blocks a later push, even across turn boundaries.
 - `sir unlock` and explicit allowlists are visible, logged escape hatches.
 
-**Residual risk:** sir does not follow secrets through model reasoning, paraphrase, or arbitrary child processes. Concretely, lineage tracks secrets that move *through the filesystem*; it cannot see a secret that is laundered through model context and re-emitted as fresh agent-authored bytes a turn later. The boundary between what is and is not caught across a turn boundary:
+**Residual risk:** sir does not follow secrets through model *reasoning or paraphrase*. It does, however, fingerprint secret *values* that enter context (an approved read, an env read, a detected credential) with a salted one-way digest — never the raw value — so a **verbatim** re-emission of that value in a later outbound payload is denied even though the bytes are agent-authored. The boundary across a turn boundary:
 
 | Path | Across a turn boundary |
 |------|------------------------|
-| Read `.env` → next turn `curl`/push with the value inline | **Re-prompted** (high-water mark asks; not a hard deny, and the value itself is invisible to sir) |
+| Read `.env` → next turn `curl`/push with the value **inline (verbatim)** | **Denied** (the value's fingerprint is matched in the outbound payload) |
+| Read `.env` → next turn `curl` with the value **paraphrased/transformed** | **Re-prompted** (high-water mark asks; sir never sees the reworded bytes as the secret) |
 | `cp .env leak.txt` → next turn push `leak.txt` | **Still denied** (the file carries a derived-secret lineage label) |
 | Read `.env` → same turn `curl` | **Denied** (live secret-session deny floor) |
 
-The first row is the honest residual: a context-laundered secret re-emitted inline is gated by an approval prompt, not blocked outright, because sir never observes the secret bytes on disk. The monotonic high-water mark guarantees that prompt fires instead of a silent allow; it does not — and cannot — recover the hard deny for data sir never saw.
+The honest residual is now narrowed to row two: a *paraphrased or transformed* secret. Verbatim copy-paste laundering is caught by value fingerprinting; a secret reworded by the model is not, because sir never observes those bytes as the secret. The monotonic high-water mark guarantees the paraphrase case still re-prompts (never a silent allow); it cannot recover a hard deny for data sir never recognized.
 
 #### Raw secret-read coverage (deny + redact)
 

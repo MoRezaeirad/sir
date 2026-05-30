@@ -212,6 +212,7 @@ func (s *State) HasTransientRestrictions() bool {
 		s.SessionEverSecret ||
 		s.RecentlyReadUntrusted ||
 		s.UntrustedContentThisTurn ||
+		len(s.SecretFingerprints) > 0 ||
 		s.PendingInjectionAlert ||
 		s.Posture == policy.PostureStateElevated ||
 		s.Posture == policy.PostureStateCritical ||
@@ -230,6 +231,8 @@ func (s *State) ClearTransientRestrictions() {
 	s.SessionEverSecret = false
 	s.RecentlyReadUntrusted = false
 	s.UntrustedContentThisTurn = false
+	s.SecretFingerprints = nil
+	s.FingerprintSalt = ""
 	s.PendingInjectionAlert = false
 	s.InjectionAlertDetail = ""
 	s.Posture = policy.PostureStateNormal

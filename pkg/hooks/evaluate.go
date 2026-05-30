@@ -63,6 +63,14 @@ func Evaluate(projectRoot string, ag agent.Agent) error {
 		}
 		var eErr error
 		resp, eErr = evaluatePayload(payload, l, state, projectRoot, ag)
+		// Remember a denied tool_use_id so a later PostToolUse for it reveals an
+		// executor that ignored the deny (hook-integrity check). PostToolUse only
+		// fires for tools that actually ran, so a denied id reappearing there is a
+		// real violation.
+		if eErr == nil && resp != nil && resp.Decision == policy.VerdictDeny && payload.ToolUseID != "" {
+			state.RecordDeniedToolUse(payload.ToolUseID)
+			_ = state.Save()
+		}
 		return eErr
 	})
 	if lockErr != nil {
@@ -97,6 +105,14 @@ func EvaluatePermissionRequest(projectRoot string, ag agent.Agent) error {
 		}
 		var eErr error
 		resp, eErr = evaluatePayload(payload, l, state, projectRoot, ag)
+		// Remember a denied tool_use_id so a later PostToolUse for it reveals an
+		// executor that ignored the deny (hook-integrity check). PostToolUse only
+		// fires for tools that actually ran, so a denied id reappearing there is a
+		// real violation.
+		if eErr == nil && resp != nil && resp.Decision == policy.VerdictDeny && payload.ToolUseID != "" {
+			state.RecordDeniedToolUse(payload.ToolUseID)
+			_ = state.Save()
+		}
 		return eErr
 	})
 	if lockErr != nil {
@@ -176,6 +192,21 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 			Reason:   "Command " + oreason + " — sir cannot see what will run. Approve to proceed, or rewrite without piping into a shell.",
 		}
 		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, l.ObserveOnly, ag)
+		return resp, nil
+	}
+
+	// Verbatim context-laundering: an outbound/persisting action whose payload
+	// contains the exact value of a secret that entered context earlier this
+	// session. Hard deny (Go-only restriction; Floor so observe mode does not
+	// downgrade an active exfil). This catches copy-paste exfil the secret-session
+	// turn floor misses once the value has been laundered through context.
+	if lreason, leak := outboundSecretLeak(payload, intent, state); leak {
+		resp := &HookResponse{
+			Decision: policy.VerdictDeny,
+			Reason:   "Blocked — " + lreason + ". Run `sir unlock` only if you are certain this is intended.",
+			Floor:    true,
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, false, ag)
 		return resp, nil
 	}
 

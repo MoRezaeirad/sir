@@ -99,3 +99,68 @@ func DetectSensitiveFileRead(cmd string, l *lease.Lease) (string, bool) {
 	}
 	return "", false
 }
+
+// interpreterOneLinerPrefixes are interpreters whose -c/-e/-r inline source can
+// open files directly, bypassing the argv-based read classifier.
+var interpreterOneLinerPrefixes = []string{
+	"python ", "python3 ", "python2 ", "node ", "nodejs ",
+	"ruby ", "perl ", "php ", "bun ", "deno ", "rscript ",
+}
+
+// IsInterpreterSensitiveRead reports whether cmd is an interpreter one-liner
+// (e.g. `python -c "open('.env').read()"`, `node -e "fs.readFileSync('.env')"`)
+// whose inline source references a sensitive file path, and returns that path.
+// This closes the documented residual where a credential file is opened from
+// inside interpreter source the shell read-classifier never inspects. It is a
+// LITERAL-path heuristic: a dynamically-constructed or obfuscated path is not
+// caught (and remains backstopped by the downstream IFC floors).
+func IsInterpreterSensitiveRead(cmd string, l *lease.Lease) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	matched := false
+	for _, p := range interpreterOneLinerPrefixes {
+		if strings.HasPrefix(lower, p) {
+			matched = true
+			break
+		}
+	}
+	if !matched || !hasInlineCodeFlag(cmd) {
+		return "", false
+	}
+	for _, tok := range interpreterCodeTokens(cmd) {
+		if IsSensitivePath(tok, l) {
+			return tok, true
+		}
+	}
+	return "", false
+}
+
+func hasInlineCodeFlag(cmd string) bool {
+	fields := strings.Fields(cmd)
+	for i := 1; i < len(fields); i++ {
+		part := fields[i]
+		if part == "-c" || part == "-e" || part == "-r" || part == "--eval" {
+			return true
+		}
+		// Bundled short flags like `-Sc` / `-e'...'`: last letter is the code flag.
+		if strings.HasPrefix(part, "-") && !strings.HasPrefix(part, "--") && len(part) > 2 {
+			switch part[len(part)-1] {
+			case 'c', 'e', 'r':
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// interpreterCodeTokens splits a command into candidate path tokens on quotes
+// and common code delimiters, so a path embedded in interpreter source surfaces
+// as its own token for the sensitive-path check.
+func interpreterCodeTokens(cmd string) []string {
+	return strings.FieldsFunc(cmd, func(r rune) bool {
+		switch r {
+		case '\'', '"', '(', ')', '[', ']', '{', '}', ',', ';', ' ', '\t', '=', '+', '`', '<', '>':
+			return true
+		}
+		return false
+	})
+}

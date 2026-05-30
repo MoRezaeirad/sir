@@ -63,6 +63,14 @@ func TestShellSensitiveFileRead(t *testing.T) {
 		// absolute path normalization through normalizeCommand
 		{"absolute path sed", "/usr/bin/sed -n '1,10p' .env", ".env"},
 		{"env-prefix cat", "env FOO=bar cat .env", ".env"},
+
+		// interpreter one-liners reading a secret — classified through the
+		// normalized command so a path prefix or env wrapper still matches the
+		// bare-interpreter prefixes (regression for the normalize fix).
+		{"python -c inline read", `python3 -c "print(open('.env').read())"`, ".env"},
+		{"absolute path python -c", `/usr/bin/python3 -c "open('.env')"`, ".env"},
+		{"env-prefix python -c", `env python3 -c "open('.env')"`, ".env"},
+		{"node -e inline read", `node -e "require('fs').readFileSync('.env')"`, ".env"},
 	}
 
 	for _, tc := range positives {

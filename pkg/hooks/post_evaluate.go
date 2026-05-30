@@ -121,6 +121,31 @@ func postEvaluatePayload(payload *PostHookPayload, l *lease.Lease, state *sessio
 		}, nil
 	}
 
+	// Hook-integrity check: a PostToolUse for a tool_use_id sir DENIED at
+	// PreToolUse means the host executor ran the call anyway — it ignored sir's
+	// deny. A hook layer cannot prevent that one call, but it can detect it and
+	// lock the session down so nothing further proceeds.
+	if payload.ToolUseID != "" && state.WasToolUseDenied(payload.ToolUseID) {
+		state.SetDenyAll("a denied tool call executed anyway — the host executor ignored sir's deny")
+		if saveErr := state.Save(); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "sir: save session error: %v\n", saveErr)
+		}
+		entry := &ledger.Entry{
+			ToolName:    payload.ToolName,
+			Verb:        "hook_integrity_violation",
+			Target:      payload.ToolUseID,
+			Decision:    "deny",
+			Reason:      "denied tool call executed anyway; host executor ignored sir's deny — session set to deny-all",
+			DetectionID: string(detect.HookIntegrityViolation),
+			Severity:    "HIGH",
+		}
+		if err := ledger.Append(projectRoot, entry); err != nil {
+			fmt.Fprintf(os.Stderr, "sir: ledger append error: %v\n", err)
+		}
+		emitTelemetryEvent(entry, state, ag)
+		return &HookResponse{Decision: "deny", Reason: FormatDenyAll(state.DenyAllReason)}, nil
+	}
+
 	rebaselinePostureHashesAfterWrite(payload, state, l, projectRoot)
 
 	// If a Read or Grep of a sensitive path just completed, mark the session as secret.
@@ -170,6 +195,16 @@ func postEvaluatePayload(payload *PostHookPayload, l *lease.Lease, state *sessio
 
 	if applyPostEvaluateMCPOutputAnalysis(payload, state, projectRoot, ag) {
 		alertFired = true
+	}
+
+	// Verbatim context-laundering backstop: when secret values entered context
+	// (an approved sensitive read whose output is the secret file, or credentials
+	// detected in the output by EITHER the generic or the MCP scanner), record
+	// one-way fingerprints of those values so a later verbatim re-emission in an
+	// outbound payload is caught. Placed AFTER the MCP credential scan so an
+	// MCP-returned secret is also fingerprinted. Raw values are never stored.
+	if payload.ToolOutput != "" && (sensitiveTarget != "" || alertFired) {
+		captureSecretFingerprints(payload.ToolOutput, state)
 	}
 
 	// Weak, turn-scoped untrusted-content signal. Any MCP tool response or
