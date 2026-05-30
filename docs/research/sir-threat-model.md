@@ -72,16 +72,17 @@ sir **does** detect post-install binary tampering: `mister-core` is hash-verifie
 - File/data lineage is independent of the turn counter: a secret copied or renamed into a file carries a derived-secret label that still blocks a later push, even across turn boundaries.
 - `sir unlock` and explicit allowlists are visible, logged escape hatches.
 
-**Residual risk:** sir does not follow secrets through model *reasoning or paraphrase*. It does, however, fingerprint secret *values* that enter context (an approved read, an env read, a detected credential) with a salted one-way digest — never the raw value — so a **verbatim** re-emission of that value in a later outbound payload is denied even though the bytes are agent-authored. The boundary across a turn boundary:
+**Residual risk:** sir does not follow secrets through model *semantic* reasoning or paraphrase. It does fingerprint secret *values* that enter context (an approved read, an env read, a detected credential) with a salted one-way digest — never the raw value — and it inverts a single cheap *mechanical* transform on the outbound side before matching, so a verbatim **or** mechanically-laundered re-emission is denied even though the bytes are agent-authored. The boundary across a turn boundary:
 
 | Path | Across a turn boundary |
 |------|------------------------|
 | Read `.env` → next turn `curl`/push with the value **inline (verbatim)** | **Denied** (the value's fingerprint is matched in the outbound payload) |
-| Read `.env` → next turn `curl` with the value **paraphrased/transformed** | **Re-prompted** (high-water mark asks; sir never sees the reworded bytes as the secret) |
+| Read `.env` → next turn egress with the value **mechanically transformed** — reversed, base64/hex/URL-encoded, or whitespace-chunked | **Denied** (the transform is inverted on the payload and the fingerprint still matches) |
+| Read `.env` → next turn egress with the value **semantically transformed** — paraphrased, encrypted, or re-keyed | **Re-prompted** (high-water mark asks; sir never sees those bytes as the secret) |
 | `cp .env leak.txt` → next turn push `leak.txt` | **Still denied** (the file carries a derived-secret lineage label) |
 | Read `.env` → same turn `curl` | **Denied** (live secret-session deny floor) |
 
-The honest residual is now narrowed to row two: a *paraphrased or transformed* secret. Verbatim copy-paste laundering is caught by value fingerprinting; a secret reworded by the model is not, because sir never observes those bytes as the secret. The monotonic high-water mark guarantees the paraphrase case still re-prompts (never a silent allow); it cannot recover a hard deny for data sir never recognized.
+The honest residual is now narrowed to *semantic* transformation (row three): a paraphrased, encrypted, or re-keyed secret. Verbatim and single-step mechanical laundering — `… | rev`, `… | base64`, `xxd`, URL-encoding, chunking across whitespace — are caught by inverting the transform on the payload and re-checking the fingerprint; a secret the model semantically rewrites is not, because sir never observes those bytes as the secret. The monotonic high-water mark guarantees the semantic case still re-prompts (never a silent allow); it cannot recover a hard deny for data sir never recognized. (Implementation: `pkg/secretscan/fingerprint.go`, `PayloadLeaksSecret`.)
 
 #### Raw secret-read coverage (deny + redact)
 

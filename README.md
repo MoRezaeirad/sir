@@ -146,7 +146,7 @@ sir is a hook- and tool-boundary layer, not a host firewall, and under the defau
 
 Content-based detection is **heuristic**, so some residuals remain by construction:
 
-- **Semantic evasion.** MCP-injection scanning and the verbatim-secret fingerprint defeat literal and common-encoded evasion, but a *semantically paraphrased* injection or a *transformed* (not byte-identical) secret value still slips the scanner. These lean on the integrity-flow egress wall — external egress is denied after *any* untrusted content is ingested, scanner hit or not — as a backstop, not a proof.
+- **Semantic evasion.** The scanners defeat literal, common-encoded, and single-step *mechanical* evasion: MCP-injection patterns run over decoded/zero-width-stripped text, and the secret fingerprint inverts reverse/base64/hex/URL-encoding/whitespace-chunking on the outbound side before matching. What still slips is *semantic* transformation — a paraphrased injection, or a secret the model encrypts or re-keys — which leans on the integrity-flow egress wall (external egress denied after *any* untrusted ingestion) and the monotonic secret high-water mark (egress re-prompts, never silently allows) as backstops, not a proof.
 - **Shell parsing.** Classification is prefix-aware, not a full POSIX parser. It decomposes command substitution, backticks, and `eval`, fails closed on `… | sh`, and flags interpreter one-liners that name a sensitive file literally — but dynamically-constructed or obfuscated paths remain a residual.
 - **Model-internal reasoning.** What the model does with data already in its context is out of scope for a tool-boundary layer.
 
