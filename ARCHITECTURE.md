@@ -141,9 +141,9 @@ These may narrow a decision further. They must never widen a Rust `deny` into `a
 sir is experimental, and its v1 tradeoffs are documented so contributors and users do not mistake heuristic detection for hard guarantees:
 
 - The hook layer is advisory policy enforcement, not OS-level prevention. `sir run` adds below-hook containment on Linux and macOS, but is optional.
-- MCP injection detection is heuristic (around 50 regex patterns across authority framing, exfil, credential harvest, and hidden-marker categories), mitigated by server tainting rather than guaranteed blocking.
-- Turn boundaries use a 30-second gap heuristic.
-- Shell classification is lexical and prefix-based. It decomposes compound commands, command substitution (`$(…)` / backticks), process substitution, and `eval`, and fails closed (ask) on opaque execution like `… | sh`; the honest residual is interpreter one-liners (`python -c "open('.env')"`) and novel wrappers, which the downstream IFC floors still gate.
+- MCP injection detection is heuristic (around 50 regex patterns across authority framing, exfil, credential harvest, and hidden-marker categories). The scanner normalizes responses first — zero-width/bidi (`unicode.Cf`) stripped and base64/hex/percent blobs decoded — so common encoding evasion is covered; semantic paraphrase and homoglyph substitution remain the residual, mitigated by server tainting and the integrity-flow egress wall rather than guaranteed blocking.
+- Turn boundaries use a 30-second gap heuristic (backstop only; `UserPromptSubmit` advances turns instantly).
+- Shell classification is lexical and prefix-based. It decomposes compound commands, command substitution (`$(…)` / backticks), process substitution, and `eval`, fails closed (ask) on opaque execution like `… | sh`, and flags interpreter one-liners that name a sensitive file by a literal path (`python -c "open('.env')"`, including `/usr/bin/python3` and `env python3` forms); the honest residual is dynamically-constructed or obfuscated paths and novel wrappers, which the downstream IFC floors still gate.
 - The default lease is intentionally permissive to keep developer friction low; hardening is the operator's choice.
 - IFC labels do not track model-internal reasoning, only observable tool I/O.
 

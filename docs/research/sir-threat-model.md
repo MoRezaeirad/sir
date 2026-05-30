@@ -93,7 +93,8 @@ what it does not:
 |-------------|----------|
 | `Read` tool on a sensitive path | **Yes** — denied + redacted view |
 | Bash via a known read program reading a sensitive path — `cat`, `tac`, `nl`, `head`, `tail`, `less`, `more`, `bat`/`batcat`, `xxd`, `hexdump`, `od`, `sed`, `awk`/`gawk`, `grep`, `rg`, `ag`, `ack`, `strings`, `file` (flag-aware; see `pkg/hooks/classify/reads.go`) | **Yes** — denied + redacted view |
-| Interpreter one-liners that open the file themselves — `python -c "open('.env').read()"`, `node -e ...`, `ruby -e ...`, `perl -e ...` | **No** — the file argument is inside interpreter source, not a classified read; content is invisible to sir |
+| Interpreter one-liners that open the file by a **literal** path — `python -c "open('.env').read()"`, `node -e ...`, `ruby -e ...`, `perl -e ...` (also `/usr/bin/python3` and `env python3` forms, matched on the normalized command) | **Yes** — the inline source is scanned for a sensitive-path literal and classified as a sensitive read (`pkg/hooks/classify/reads.go`) |
+| The same one-liner where the path is **dynamically constructed or obfuscated** (concatenation, base64, a variable) | **No** — the literal-path heuristic does not evaluate interpreter source; falls back to the downstream floors |
 | A script or arbitrary binary that reads the file (`./run.sh` that cats `.env`) | **No** — sir sees the program invocation, not its file I/O |
 | A read program not on the list, or obfuscated past the lexical classifier | **No** — prefix-aware shell classification, not full POSIX |
 | Secrets arriving in **MCP tool output** | Not this gate — covered separately by MCP argument/response scanning and session taint (see *MCP injection and credential leakage*) |
@@ -103,8 +104,8 @@ read paths, not a complete read interceptor. The vectors marked **No** fall back
 to the downstream floors: if such a read does taint the session (e.g. an
 approved read, an env-var read, or MCP content), the secret-session egress wall
 and lineage tracking still gate the exit. Widening this matrix (more read
-programs, interpreter heuristics) is tracked as ongoing hardening; the honest
-boundary is documented here rather than implied.
+programs, deeper interpreter-source analysis beyond literal paths) is tracked as
+ongoing hardening; the honest boundary is documented here rather than implied.
 
 ### Supply-chain posture tamper
 
@@ -129,7 +130,7 @@ boundary is documented here rather than implied.
 - Elevated posture after injection signals.
 - Optional `sir mcp` and `sir mcp wrap` hardening for command-based servers.
 
-**Residual risk:** MCP injection detection is **heuristic** — roughly 50 regex patterns covering authority framing, exfil instructions, credential harvesting, and hidden markers. Encoded, paraphrased, or non-English prompt-injection techniques that avoid the literal patterns are not guaranteed to be caught at `PostToolUse`. This is a known v1 limitation.
+**Residual risk:** MCP injection detection is **heuristic** — roughly 50 regex patterns covering authority framing, exfil instructions, credential harvesting, and hidden markers. The scanner runs those patterns over normalized variants of the response — `unicode.Cf` (zero-width/bidi) characters stripped, and embedded base64/hex/percent blobs decoded (printable only) — so common *encoding* evasion no longer bypasses it. What remains a known v1 limitation: *semantically paraphrased*, homoglyph-substituted, or non-English prompt-injection techniques that avoid the literal patterns are not guaranteed to be caught at `PostToolUse`.
 
 The fail-closed backstop is downstream, and it is the load-bearing piece of this mitigation: credential detection can still mark the session secret, and secret-session IFC plus delegation gating still apply on the next tool use even when the original MCP framing was opaque to the literal scanner. Untrusted MCP servers are also tainted on detection, so future traffic is treated with elevated posture.
 
