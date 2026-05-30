@@ -103,6 +103,14 @@ func readClientHello(conn net.Conn) (raw []byte, sni string) {
 // localhost) ClientHello. A disallowed SNI tears both sides down. This call
 // blocks until the tunnel closes; callers already run per-connection goroutines.
 func (p *LocalProxy) tunnelWithSNI(client, upstream net.Conn, host, port string) {
+	// Re-check taint for the lifetime of the tunnel: a tunnel opened while the
+	// session is clean must not keep carrying bytes after the session reads a
+	// secret or ingests untrusted content (the hook layer's hard-deny floors).
+	// The watcher tears both sides down on a hard-deny transition.
+	done := make(chan struct{})
+	defer close(done)
+	p.watchTaintTeardown(done, client, upstream, host, port)
+
 	go tunnelRunProxyConnections(client, upstream) // upstream -> client, immediate
 
 	hello, ok := p.enforceSNI(client, host, port)
@@ -119,6 +127,38 @@ func (p *LocalProxy) tunnelWithSNI(client, upstream net.Conn, host, port string)
 		}
 	}
 	tunnelRunProxyConnections(upstream, client) // client -> upstream
+}
+
+// watchTaintTeardown closes an active tunnel when the contained session crosses
+// a hook hard-deny floor after the tunnel was already established. It runs only
+// for gated, non-loopback destinations and stops when the tunnel ends (done
+// closed). The recheck interval bounds the window in which a freshly-tainted
+// session can still use an open tunnel.
+func (p *LocalProxy) watchTaintTeardown(done <-chan struct{}, client, upstream net.Conn, host, port string) {
+	if p == nil || p.gate == nil || isLoopbackRuntimeHost(host) {
+		return
+	}
+	interval := p.taintRecheck
+	if interval <= 0 {
+		interval = defaultTaintRecheckInterval
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if blocked, _ := p.taintBlocksExternal(host); blocked {
+					p.recordBlockedEgress(net.JoinHostPort(host, port))
+					_ = client.Close()
+					_ = upstream.Close()
+					return
+				}
+			}
+		}
+	}()
 }
 
 // extractSNI parses a TLS handshake message (a ClientHello) and returns the

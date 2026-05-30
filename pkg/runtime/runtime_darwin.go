@@ -52,6 +52,11 @@ func runAgentDarwin(projectRoot, bin string, opts Options) (int, error) {
 		return 0, fmt.Errorf("start local proxy: %w", err)
 	}
 	defer proxy.Close()
+	// Mirror the hook layer's hard-deny egress floors at the OS boundary: the
+	// proxy denies external egress when the contained session is secret-tainted,
+	// has ingested untrusted content, or is locked — even if the agent bypasses
+	// the hook. Reads the shadow state the contained hooks write to.
+	proxy.EnableTaintGate(projectRoot, stateHome)
 
 	baseEnv, scrubbedEnv := sanitizeContainmentEnv(os.Environ())
 	cmd.Env = WithEnvOverride(baseEnv, session.StateHomeEnvVar, stateHome)

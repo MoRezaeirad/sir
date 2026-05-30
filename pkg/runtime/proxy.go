@@ -21,8 +21,34 @@ type LocalProxy struct {
 	resolvedIPs   map[string]struct{}
 	pinnedHosts   map[string][]string
 	dial          func(context.Context, string, string) (net.Conn, error)
+	gate          *postureGate
+	taintRecheck  time.Duration
 	statsMu       sync.Mutex
 	stats         localProxyStats
+}
+
+// defaultTaintRecheckInterval bounds how long an already-open CONNECT/SOCKS
+// tunnel can outlive a posture change before the gate tears it down.
+const defaultTaintRecheckInterval = time.Second
+
+// EnableTaintGate makes the proxy consult the contained agent's live session
+// posture (under stateHome) and deny external egress under the hook layer's
+// hard-deny conditions. Called by the launcher once the shadow state home is
+// known; safe to leave unset (the proxy then enforces the allowlist only).
+func (p *LocalProxy) EnableTaintGate(projectRoot, stateHome string) {
+	if p == nil {
+		return
+	}
+	p.gate = newPostureGate(projectRoot, stateHome)
+}
+
+// taintBlocksExternal reports whether live session taint should block egress to
+// host, with a reason. Loopback is never blocked (it is not exfil).
+func (p *LocalProxy) taintBlocksExternal(host string) (bool, string) {
+	if p == nil || p.gate == nil || isLoopbackRuntimeHost(host) {
+		return false, ""
+	}
+	return p.gate.externalEgressDenied()
 }
 
 type localProxyStats struct {

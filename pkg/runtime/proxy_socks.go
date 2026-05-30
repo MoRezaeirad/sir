@@ -46,6 +46,12 @@ func (p *LocalProxy) serveSOCKSConn(conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
+	if blocked, _ := p.taintBlocksExternal(host); blocked {
+		p.recordBlockedEgress(net.JoinHostPort(host, port))
+		writeSOCKSFailure(conn, 0x02) // connection not allowed by ruleset
+		_ = conn.Close()
+		return
+	}
 	p.recordAllowedEgress()
 
 	upstream, err := p.dialAllowedTarget(context.Background(), "tcp", host, port)

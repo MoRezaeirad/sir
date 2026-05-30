@@ -26,6 +26,12 @@ func (p *LocalProxy) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, fmt.Sprintf("sir run proxy blocked destination %q", dest), http.StatusForbidden)
 		return
 	}
+	if blocked, reason := p.taintBlocksExternal(host); blocked {
+		dest := net.JoinHostPort(host, port)
+		p.recordBlockedEgress(dest)
+		http.Error(w, fmt.Sprintf("sir run proxy blocked %q: %s", dest, reason), http.StatusForbidden)
+		return
+	}
 	p.recordAllowedEgress()
 
 	outReq := req.Clone(req.Context())
@@ -56,6 +62,12 @@ func (p *LocalProxy) serveConnect(w http.ResponseWriter, req *http.Request) {
 		dest := net.JoinHostPort(host, port)
 		p.recordBlockedEgress(dest)
 		http.Error(w, fmt.Sprintf("sir run proxy blocked destination %q", dest), http.StatusForbidden)
+		return
+	}
+	if blocked, reason := p.taintBlocksExternal(host); blocked {
+		dest := net.JoinHostPort(host, port)
+		p.recordBlockedEgress(dest)
+		http.Error(w, fmt.Sprintf("sir run proxy blocked %q: %s", dest, reason), http.StatusForbidden)
 		return
 	}
 	p.recordAllowedEgress()

@@ -106,6 +106,13 @@ Start here when changing:
 - Runtime state descriptors.
 - Host-agent containment claims.
 
+On macOS the `sir run` proxy is **taint-aware**: it reads the contained agent's
+live shadow posture and denies external egress under the hook layer's hard-deny
+floors (live secret, untrusted ingestion, deny-all) even if the agent bypasses
+the hook — the high-water-mark *ask* is deliberately not mirrored. See
+[docs/research/runtime-taint-containment.md](docs/research/runtime-taint-containment.md)
+for the design and the path to a taint-driven default.
+
 ## 4. State objects that matter
 
 - **Lease** — the authority contract.
@@ -140,7 +147,7 @@ These may narrow a decision further. They must never widen a Rust `deny` into `a
 
 sir is experimental, and its v1 tradeoffs are documented so contributors and users do not mistake heuristic detection for hard guarantees:
 
-- The hook layer is advisory policy enforcement, not OS-level prevention. `sir run` adds below-hook containment on Linux and macOS, but is optional.
+- The hook layer is advisory policy enforcement, not OS-level prevention. `sir run` adds below-hook containment on Linux and macOS, but is optional. The macOS `sir run` proxy is taint-aware (denies external egress under the hook's hard-deny floors even if the hook is bypassed); the equivalent Linux iptables enforcement and a taint-driven *default* are still on the roadmap ([runtime-taint-containment.md](docs/research/runtime-taint-containment.md)).
 - MCP injection detection is heuristic (around 50 regex patterns across authority framing, exfil, credential harvest, and hidden-marker categories). The scanner normalizes responses first — zero-width/bidi (`unicode.Cf`) stripped and base64/hex/percent blobs decoded — so common encoding evasion is covered; semantic paraphrase and homoglyph substitution remain the residual, mitigated by server tainting and the integrity-flow egress wall rather than guaranteed blocking.
 - Turn boundaries use a 30-second gap heuristic (backstop only; `UserPromptSubmit` advances turns instantly).
 - Shell classification is lexical and prefix-based. It decomposes compound commands, command substitution (`$(…)` / backticks), process substitution, and `eval`, fails closed (ask) on opaque execution like `… | sh`, and flags interpreter one-liners that name a sensitive file by a literal path (`python -c "open('.env')"`, including `/usr/bin/python3` and `env python3` forms); the honest residual is dynamically-constructed or obfuscated paths and novel wrappers, which the downstream IFC floors still gate.
