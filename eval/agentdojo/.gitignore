@@ -1,0 +1,5 @@
+# Local run artifacts (created by run.sh)
+.venv/
+.sir-bin
+__pycache__/
+*.pyc

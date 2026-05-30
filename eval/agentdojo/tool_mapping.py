@@ -64,12 +64,14 @@ EFFECT_RULES: list[tuple[re.Pattern[str], Effect]] = [
     # 3. Reads of genuinely attacker-controllable content -> untrusted ingestion
     #    (turn-scoped integrity). Requires BOTH a read verb AND a third-party
     #    content noun, so own-data reads (get_weather, list_calendar_events,
-    #    search_contacts) stay BENIGN and are not over-gated.
+    #    search_contacts) stay BENIGN and are not over-gated. The noun list covers
+    #    the AgentDojo injection carriers across suites (emails, messages, web
+    #    pages, reviews, transactions, files, channels, threads).
     (re.compile(
         r"(?=.*(read|get|fetch|receive|view|browse|open|download|search|list))"
         r"(?=.*(email|message|inbox|mail|webpage|web_?page|website|\burl\b|\bweb\b|"
         r"review|comment|feedback|document|attachment|received|incoming|external|"
-        r"article|news|content|channel|thread))",
+        r"article|news|content|channel|thread|transaction|unread|draft|\bfile\b|post))",
         re.I,
     ), Effect.UNTRUSTED_READ),
     # 4. Mutations -> write.
@@ -106,9 +108,9 @@ def classify(tool_name: str) -> Effect:
     return DEFAULT_EFFECT
 
 
-def map_call(tool_name: str, args: dict[str, Any]) -> SirCall:
-    """Map one AgentDojo (tool_name, args) to the sir call with equivalent effect."""
-    effect = classify(tool_name)
+def sir_call_for_effect(effect: Effect, tool_name: str, args: dict[str, Any]) -> SirCall:
+    """Build the sir call that models a given security effect. Suite mappers reuse
+    this after deciding the effect from suite-specific tool semantics."""
     if effect is Effect.EGRESS:
         dest = _extract_external_dest(args)
         return SirCall(
@@ -145,6 +147,11 @@ def map_call(tool_name: str, args: dict[str, Any]) -> SirCall:
         tool_input={"command": f"echo ran {tool_name}"},
         effect=effect,
     )
+
+
+def map_call(tool_name: str, args: dict[str, Any]) -> SirCall:
+    """Map one AgentDojo (tool_name, args) to the sir call with equivalent effect."""
+    return sir_call_for_effect(classify(tool_name), tool_name, args)
 
 
 # Optional per-suite override hook: register a function that returns a SirCall or

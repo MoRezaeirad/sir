@@ -62,8 +62,10 @@ func (p *LocalProxy) serveSOCKSConn(conn net.Conn) {
 	_ = conn.SetDeadline(time.Time{})
 	_ = upstream.SetDeadline(time.Time{})
 
-	go tunnelRunProxyConnections(upstream, conn)
-	go tunnelRunProxyConnections(conn, upstream)
+	// Bridge with the SNI consistency gate. The upstream->client direction starts
+	// immediately (so server-speaks-first protocols are not stalled by the peek);
+	// only the client->upstream side waits for the ClientHello.
+	p.tunnelWithSNI(conn, upstream, host, port)
 }
 
 // HandshakeSOCKS performs the SOCKS5 greeting handshake. Exported for tests.

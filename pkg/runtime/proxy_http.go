@@ -85,8 +85,10 @@ func (p *LocalProxy) serveConnect(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	go tunnelRunProxyConnections(upstream, client)
-	go tunnelRunProxyConnections(client, upstream)
+	// Bridge with the SNI consistency gate (see tunnelWithSNI): blocks a client
+	// that negotiates TLS for a name other than the authorized CONNECT host,
+	// without stalling server-speaks-first protocols.
+	p.tunnelWithSNI(client, upstream, host, port)
 }
 
 func tunnelRunProxyConnections(dst, src net.Conn) {

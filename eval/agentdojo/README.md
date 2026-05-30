@@ -65,41 +65,52 @@ AgentDojo tool call ──► tool_mapping.py ──► sir_bridge.py ──► 
 
 ## Run it
 
-Offline wiring check (only needs the Go toolchain — **this is the CI gate**):
+**Full benchmark — one command** (see [RUNBOOK.md](RUNBOOK.md) for the details):
 
 ```bash
-python eval/agentdojo/selftest.py
-```
-
-Full benchmark (needs agentdojo + a model key; costs tokens):
-
-```bash
-pip install -r eval/agentdojo/requirements.txt
-export OPENAI_API_KEY=...   # or ANTHROPIC_API_KEY
-python eval/agentdojo/run.py --provider openai --model gpt-4o \
-    --suites workspace banking --baseline
+export OPENAI_API_KEY=sk-...        # or ANTHROPIC_API_KEY
+eval/agentdojo/run.sh               # builds sir, self-tests, installs agentdojo, runs all suites + baseline
 # -> eval/results/<timestamp>.json
 ```
 
-Also wire the NIST Inspect fork (`usnistgov/agentdojo-inspect`) for the
-gov-credible variant — same mapping/bridge, different harness.
+Offline wiring check (only needs the Go toolchain — **this is the CI gate**, no tokens):
 
-## What to refine next (turns the scaffold into a real score)
+```bash
+python eval/agentdojo/selftest.py        # end-to-end against the built sir binary
+python eval/agentdojo/suite_mappers.py   # per-suite tool→effect mapping sanity check
+```
 
-1. **Per-suite mapping fidelity.** Use each suite's real tool schemas to register
-   `register_suite_mapper(...)` overrides in `tool_mapping.py` (e.g. distinguish
-   `send_money` to an attacker IBAN vs a known payee). Conservative default:
-   unknown-but-plausibly-egressing tools map to EGRESS, not BENIGN.
-2. **P0.3 integrity-flow is wired (done).** `UNTRUSTED_READ` calls arm sir's
+Manual invocation (what `run.sh` calls):
+
+```bash
+pip install -r eval/agentdojo/requirements.txt
+SIR_BIN=$(go build -o /tmp/sir ./cmd/sir && echo /tmp/sir) \
+  python eval/agentdojo/run.py --provider openai --model gpt-4o --suites workspace banking --baseline
+```
+
+Per-suite tool→effect tuning lives in [`suite_mappers.py`](suite_mappers.py)
+(banking / slack / travel / workspace). Also wire the NIST Inspect fork
+(`usnistgov/agentdojo-inspect`) for the gov-credible variant — same
+mapping/bridge, different harness.
+
+## Status & what to verify on first run
+
+1. **Per-suite mapping — tuned (done).** `suite_mappers.py` classifies each v1
+   suite's injection-carrier reads (`UNTRUSTED_READ`) and exfil sinks (`EGRESS`)
+   by their real tool semantics; `python suite_mappers.py` checks the mapping. If
+   AgentDojo renames a tool, the substring patterns degrade gracefully to the
+   generic classifier — widen the patterns if a key tool slips.
+2. **P0.3 integrity-flow — wired (done).** `UNTRUSTED_READ` calls arm sir's
    turn-scoped `session_untrusted_this_turn` gate via `ingest_untrusted`, so a
    same-turn exfil after ingesting attacker content is hard-denied (selftest
-   Scenario D proves it: deny same-turn, ask cross-turn). Next: tune which
-   AgentDojo tools count as untrusted-content carriers per suite so the
-   ASR-reduction vs over-block tradeoff is measured precisely.
-3. **Verify `_summarize` field names** against the installed AgentDojo version
-   (result attribute names have drifted across 0.1.x; meanings are stable).
+   Scenario D: deny same-turn, ask cross-turn).
+3. **`_summarize` result parsing — hardened, verify once.** It probes the known
+   AgentDojo result field names (attr or dict) and accepts dict/list values. If
+   your version exposes different names you'll see `raw_type`/`raw` in the output;
+   add the names to the `_probe(...)` lists. See RUNBOOK "If the scores look wrong".
 4. **Confirm the message-shape adapters** in `sir_defense.py` against the
-   installed AgentDojo `ChatMessage`/`FunctionCall` types.
+   installed AgentDojo `ChatMessage`/`FunctionCall` types (tolerant dict/attr
+   access already, but worth a glance on a new major version).
 
 ## Notes
 

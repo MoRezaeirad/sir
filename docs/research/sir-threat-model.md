@@ -158,6 +158,8 @@ Managed mode shifts the trust anchor from the local working copy to an org-owned
 - **macOS** uses localhost-only `sandbox-exec` plus a provider-aware local proxy with launch-time DNS pinning.
 - **Linux** uses `unshare --net` containment with exact-destination egress allowlisting and durable-state protection.
 
+The proxy allow-checks each destination by exact host (NUL/control/non-ASCII hosts fail closed) and adds a **TLS SNI consistency gate**: it peeks the leading ClientHello and blocks a connection whose negotiated SNI is neither the allow-checked CONNECT host nor an allowlisted host — catching a client that connects to an approved host but then negotiates TLS for a different, unapproved name. This is a defense-in-depth consistency check, **not** a complete domain-fronting defense: classic fronting uses an approved SNI with a hidden inner HTTP `Host`, which is invisible without terminating TLS (sir deliberately does not MITM). Non-TLS traffic, ClientHellos with no SNI, and unparseable handshakes fail open so legitimate connections are never broken.
+
 Both are meaningful hardening layers and are the only parts of sir that provide OS-level prevention rather than hook-layer policy. They remain experimental and are not yet a cross-platform transparent egress firewall.
 
 ## Privacy contract

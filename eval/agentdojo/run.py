@@ -27,6 +27,10 @@ import datetime
 import json
 from pathlib import Path
 
+# Importing suite_mappers registers the per-suite tool→effect tuning for the four
+# AgentDojo v1 suites (banking, slack, travel, workspace). Side-effecting import.
+import suite_mappers  # noqa: F401
+
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 
 
@@ -123,33 +127,54 @@ def main() -> int:
 
 
 def _summarize(results) -> dict:
-    """Pull utility + ASR out of AgentDojo's result object, tolerant to shape.
+    """Pull utility + targeted-ASR out of AgentDojo's result object, tolerant to
+    shape. AgentDojo returns per-(task, injection) outcomes; attribute/field names
+    have varied across 0.1.x, so we probe several. The field MEANINGS are stable:
+    utility = benign task solved; security = injection NOT triggered, so
+    targeted ASR = 1 - mean(security). If your installed version exposes different
+    names, add them to the candidate lists below."""
 
-    AgentDojo returns per-(task, injection) outcomes; the exact attribute names
-    have varied across releases, so we probe a few. Adjust here if your installed
-    version differs (the field meanings are stable: utility = benign task solved,
-    security = injection NOT triggered)."""
-    def _mean(xs):
-        xs = list(xs)
-        return round(sum(1 for x in xs if x) / len(xs), 4) if xs else None
+    def _bools(x):
+        # Accept a dict (use .values()), a list/tuple/iterable of bools, or None.
+        if x is None:
+            return None
+        if isinstance(x, dict):
+            return list(x.values())
+        try:
+            return list(x)
+        except TypeError:
+            return None
 
-    # Common shapes: dict with "utility_results" / "security_results" mapping
-    # (task_id, injection) -> bool.
-    util = getattr(results, "utility_results", None)
-    sec = getattr(results, "security_results", None)
-    if util is None and isinstance(results, dict):
-        util = results.get("utility_results")
-        sec = results.get("security_results")
-    summary = {}
+    def _mean(x):
+        xs = _bools(x)
+        if not xs:
+            return None
+        return round(sum(1 for v in xs if v) / len(xs), 4)
+
+    def _probe(*names):
+        for n in names:
+            v = getattr(results, n, None)
+            if v is None and isinstance(results, dict):
+                v = results.get(n)
+            if v is not None:
+                return v
+        return None
+
+    util = _probe("utility_results", "utility", "utilities")
+    sec = _probe("security_results", "security", "securities")
+
+    summary: dict = {}
     if util is not None:
-        summary["utility"] = _mean(util.values())
+        summary["utility"] = _mean(util)
     if sec is not None:
-        # AgentDojo "security" True == attack blocked; ASR == 1 - security.
-        blocked = _mean(sec.values())
+        blocked = _mean(sec)  # mean(security) == fraction of attacks NOT triggered
         summary["attack_blocked"] = blocked
         summary["targeted_asr"] = round(1 - blocked, 4) if blocked is not None else None
     if not summary:
-        summary["raw"] = str(results)[:500]
+        # Last resort: surface the object so the field names can be read off and
+        # added to the candidate lists above.
+        summary["raw_type"] = type(results).__name__
+        summary["raw"] = str(results)[:800]
     return summary
 
 
