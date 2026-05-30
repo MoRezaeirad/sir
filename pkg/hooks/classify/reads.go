@@ -28,6 +28,14 @@ var sensitiveReadPrograms = map[string]bool{
 	"ack":     true,
 	"strings": true,
 	"file":    true,
+	// Encoders that emit file contents to stdout/stderr — `base64 .env`,
+	// `base32 .aws/credentials`, `basenc --base64 .env`, `uuencode .env x` are
+	// a classic exfil pipeline leg, indistinguishable from a raw read for our
+	// purposes, so they get the same deny + redact treatment.
+	"base64":   true,
+	"base32":   true,
+	"basenc":   true,
+	"uuencode": true,
 }
 
 var readProgramFlagsTakingValue = map[string]map[string]bool{
@@ -52,6 +60,15 @@ var readProgramFlagsTakingValue = map[string]map[string]bool{
 	"ack":     {"A": true, "B": true, "C": true, "g": true, "m": true},
 	"strings": {"n": true, "t": true, "e": true},
 	"file":    {"m": true, "P": true},
+	// `-w`/`--wrap N` sets the column width; consume its value so the width digit
+	// is not mistaken for a positional. NB: `-i` (macOS input file) is left
+	// unregistered on purpose — its value IS the file we want to flag, so it must
+	// stay a positional rather than be swallowed as a flag argument.
+	"base64": {"w": true, "wrap": true},
+	"base32": {"w": true, "wrap": true},
+	"basenc": {"w": true, "wrap": true},
+	// uuencode takes no value-bearing flags relevant to the file positional.
+	"uuencode": {},
 }
 
 // DetectSensitiveFileRead checks whether cmd targets a sensitive file.
@@ -70,6 +87,7 @@ func DetectSensitiveFileRead(cmd string, l *lease.Lease) (string, bool) {
 	}
 	valueFlags := readProgramFlagsTakingValue[program]
 
+	positionals := make([]string, 0, len(fields)-1)
 	skipNext := false
 	for _, arg := range fields[1:] {
 		if skipNext {
@@ -84,17 +102,33 @@ func DetectSensitiveFileRead(cmd string, l *lease.Lease) (string, bool) {
 			if flagBody == "-" {
 				continue
 			}
+			// A single-char flag whose value is the next token (e.g. `-w 0`).
+			// Bundled forms (`-w0`) carry the value in the same token, so only
+			// the bare single-char case consumes the following arg.
 			if len(flagBody) == 1 && valueFlags[flagBody] {
 				skipNext = true
-				continue
-			}
-			if valueFlags[string(flagBody[0])] {
-				continue
 			}
 			continue
 		}
-		if IsSensitivePathResolved(arg, l) {
-			return arg, true
+		positionals = append(positionals, arg)
+	}
+
+	// uuencode's synopsis is `uuencode [-m] [file] decode_pathname`: the trailing
+	// operand is only the name embedded in the output header, and stdin is read
+	// when no `file` operand is given. So a sensitive *read* exists only in the
+	// two-operand form, and only the FIRST operand is the local file. Scanning
+	// every positional would falsely flag `echo data | uuencode .env`, where
+	// `.env` is the decode name, not a file being read.
+	if program == "uuencode" {
+		if len(positionals) >= 2 && IsSensitivePathResolved(positionals[0], l) {
+			return positionals[0], true
+		}
+		return "", false
+	}
+
+	for _, p := range positionals {
+		if IsSensitivePathResolved(p, l) {
+			return p, true
 		}
 	}
 	return "", false
