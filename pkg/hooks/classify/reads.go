@@ -36,6 +36,13 @@ var sensitiveReadPrograms = map[string]bool{
 	"base32":   true,
 	"basenc":   true,
 	"uuencode": true,
+	// Text utilities that read and re-emit a file's contents — `rev .env`,
+	// `cut -c1- .env`, `dd if=.env` are extraction legs just like the encoders.
+	// (`tr` reads only stdin, so it is covered by the input-redirect detector
+	// below rather than this positional list.)
+	"rev": true,
+	"cut": true,
+	"dd":  true,
 }
 
 var readProgramFlagsTakingValue = map[string]map[string]bool{
@@ -69,6 +76,13 @@ var readProgramFlagsTakingValue = map[string]map[string]bool{
 	"basenc": {"w": true, "wrap": true},
 	// uuencode takes no value-bearing flags relevant to the file positional.
 	"uuencode": {},
+	"rev":      {},
+	// cut's selection flags can be given separately (`cut -c 1-5 file`,
+	// `cut -d : -f 1 file`), so consume their value to avoid mistaking it for the
+	// file positional.
+	"cut": {"b": true, "c": true, "f": true, "d": true},
+	// dd uses `if=`/`of=` operands, not flags; handled specially below.
+	"dd": {},
 }
 
 // DetectSensitiveFileRead checks whether cmd targets a sensitive file.
@@ -126,9 +140,57 @@ func DetectSensitiveFileRead(cmd string, l *lease.Lease) (string, bool) {
 		return "", false
 	}
 
+	// dd reads its input from the `if=FILE` operand, not a bare positional, so
+	// scan the operands for it (`dd if=.env of=/dev/stdout`, `dd if=.aws/creds`).
+	if program == "dd" {
+		for _, p := range positionals {
+			if path, ok := strings.CutPrefix(p, "if="); ok && IsSensitivePathResolved(path, l) {
+				return path, true
+			}
+		}
+		return "", false
+	}
+
 	for _, p := range positionals {
 		if IsSensitivePathResolved(p, l) {
 			return p, true
+		}
+	}
+	return "", false
+}
+
+// IsRedirectSensitiveRead reports whether cmd feeds a sensitive file into a
+// command via input redirection (`tr a b < .env`, `cmd 0<.env`). The redirect
+// reads the file regardless of the program, so this catches stdin-only tools
+// (tr, and anything reading from `< secret`) that the program-list classifier
+// never sees. It deliberately ignores `<<` (heredoc), `<<<` (here-string),
+// `<>` (read-write), and `<(…)` (process substitution).
+func IsRedirectSensitiveRead(cmd string, l *lease.Lease) (string, bool) {
+	fields := strings.Fields(NormalizeCommand(strings.TrimSpace(cmd)))
+	for i := 0; i < len(fields); i++ {
+		tok := fields[i]
+		// Strip an optional leading file-descriptor number (`0<`, `6<`).
+		j := 0
+		for j < len(tok) && tok[j] >= '0' && tok[j] <= '9' {
+			j++
+		}
+		if j >= len(tok) || tok[j] != '<' {
+			continue
+		}
+		rest := tok[j+1:]
+		// Reject <<, <<<, <>, <( — none are a plain file input redirect.
+		if strings.HasPrefix(rest, "<") || strings.HasPrefix(rest, ">") || strings.HasPrefix(rest, "(") {
+			continue
+		}
+		target := rest
+		if target == "" { // `< file` — the path is the next token
+			if i+1 >= len(fields) {
+				continue
+			}
+			target = fields[i+1]
+		}
+		if IsSensitivePathResolved(target, l) {
+			return target, true
 		}
 	}
 	return "", false

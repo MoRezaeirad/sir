@@ -93,7 +93,8 @@ what it does not:
 | Read vector | Covered? |
 |-------------|----------|
 | `Read` tool on a sensitive path | **Yes** — denied + redacted view |
-| Bash via a known read program reading a sensitive path — `cat`, `tac`, `nl`, `head`, `tail`, `less`, `more`, `bat`/`batcat`, `xxd`, `hexdump`, `od`, `sed`, `awk`/`gawk`, `grep`, `rg`, `ag`, `ack`, `strings`, `file`, and the encoders `base64`, `base32`, `basenc`, `uuencode` (flag-aware; see `pkg/hooks/classify/reads.go`) | **Yes** — denied + redacted view |
+| Bash via a known read program reading a sensitive path — `cat`, `tac`, `nl`, `head`, `tail`, `less`, `more`, `bat`/`batcat`, `xxd`, `hexdump`, `od`, `sed`, `awk`/`gawk`, `grep`, `rg`, `ag`, `ack`, `strings`, `file`, the encoders `base64`, `base32`, `basenc`, `uuencode`, and the extractors `rev`, `cut`, `dd` (`if=`) (flag-aware; see `pkg/hooks/classify/reads.go`) | **Yes** — denied + redacted view |
+| A stdin-only tool fed the file by **input redirection** — `tr a b < .env`, `cmd 0<.env` | **Yes** — the `<`/`0<` redirect target is classified as a sensitive read (`<<`, `<<<`, `<>`, `<(…)` are excluded) |
 | Interpreter one-liners that open the file by a **literal** path — `python -c "open('.env').read()"`, `node -e ...`, `ruby -e ...`, `perl -e ...` (also `/usr/bin/python3` and `env python3` forms, matched on the normalized command) | **Yes** — the inline source is scanned for a sensitive-path literal and classified as a sensitive read (`pkg/hooks/classify/reads.go`) |
 | The same one-liner where the path is **dynamically constructed or obfuscated** (concatenation, base64, a variable) | **No** — the literal-path heuristic does not evaluate interpreter source; falls back to the downstream floors |
 | A script or arbitrary binary that reads the file (`./run.sh` that cats `.env`) | **No** — sir sees the program invocation, not its file I/O |
@@ -104,11 +105,9 @@ This is intentionally a *content-never-enters-context* control for the common
 read paths, not a complete read interceptor. The vectors marked **No** fall back
 to the downstream floors: if such a read does taint the session (e.g. an
 approved read, an env-var read, or MCP content), the secret-session egress wall
-and lineage tracking still gate the exit. Widening this matrix (more read
-programs — `dd if=…`, `rev`, `cut`, `tr` reading a secret are candidate
-additions — and deeper interpreter-source analysis beyond literal paths) is
-tracked as ongoing hardening; the honest boundary is documented here rather than
-implied.
+and lineage tracking still gate the exit. Widening this matrix (still more read
+programs, and deeper interpreter-source analysis beyond literal paths) is tracked
+as ongoing hardening; the honest boundary is documented here rather than implied.
 
 ### Supply-chain posture tamper
 

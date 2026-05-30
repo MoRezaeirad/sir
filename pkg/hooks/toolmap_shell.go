@@ -312,6 +312,18 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		}
 	}
 
+	// Input redirection from a sensitive file (`tr a b < .env`, `cmd 0<.env`).
+	// The redirect reads the file regardless of the program, so this catches
+	// stdin-only tools the argv read-classifier never sees. Placed after the
+	// network classifiers so `curl … < .env` is still gated as egress.
+	if sensitiveTarget, ok := hookclassify.IsRedirectSensitiveRead(normalized, l); ok {
+		return Intent{
+			Verb:        policy.VerbReadRef,
+			Target:      sensitiveTarget,
+			IsSensitive: true,
+		}
+	}
+
 	// Interpreter one-liner that opens a sensitive file from inside its inline
 	// source (`python -c "open('.env').read()"`). The argv read-classifier above
 	// can't see paths embedded in interpreter code; this catches the literal
