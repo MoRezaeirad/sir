@@ -274,13 +274,54 @@ func Explain(entry LedgerEntry) string {
 	b.WriteString(fmt.Sprintf("Enforceability: %s -- %s\n", d.Enforceability, enforcementGuarantee(d.Mode)))
 	b.WriteString(fmt.Sprintf("Attribution:    %s\n", d.Attribution))
 
-	if len(d.PolicyRules) > 0 {
-		b.WriteString("\nPolicy rules triggered:\n")
-		for _, r := range d.PolicyRules {
+	nativeRules := NativePolicyRules(d.PolicyRules)
+	if len(nativeRules) > 0 {
+		b.WriteString("\nNative SIR policy:\n")
+		for _, r := range nativeRules {
 			b.WriteString(fmt.Sprintf("  %s\n", r))
 		}
 	} else {
-		b.WriteString("\nPolicy rules: none (default allow)\n")
+		b.WriteString("\nNative SIR policy:\n  none\n")
+	}
+
+	if len(d.ProviderPolicyEvidence) > 0 {
+		b.WriteString("Policy provider verdicts:\n")
+		for _, ev := range d.ProviderPolicyEvidence {
+			b.WriteString(fmt.Sprintf("  %s: %s\n", ev.Provider, ev.Verdict))
+			for _, rule := range ev.RulesMatched {
+				b.WriteString(fmt.Sprintf("    rule: %s\n", rule))
+			}
+			if ev.Reason != "" {
+				b.WriteString(fmt.Sprintf("    reason: %s\n", ev.Reason))
+			}
+			used := "no"
+			if ev.Used {
+				used = "yes"
+			}
+			b.WriteString(fmt.Sprintf("    used: %s\n", used))
+		}
+	}
+
+	if len(d.ProviderEvidence) > 0 {
+		b.WriteString("Provider failures:\n")
+		for _, ev := range d.ProviderEvidence {
+			status := ev.Status
+			if status == "" {
+				status = "failed"
+			}
+			b.WriteString(fmt.Sprintf("  %s: %s\n", ev.Provider, status))
+			if ev.Reason != "" {
+				b.WriteString(fmt.Sprintf("    reason: %s\n", ev.Reason))
+			}
+			if ev.Behavior != "" {
+				b.WriteString(fmt.Sprintf("    behavior: %s\n", ev.Behavior))
+			}
+		}
+	}
+
+	if d.DeveloperWorkflowFloor != "" {
+		b.WriteString("Developer workflow floor:\n")
+		b.WriteString(fmt.Sprintf("  %s\n", d.DeveloperWorkflowFloor))
 	}
 
 	if len(d.Effects) > 0 {
@@ -298,6 +339,8 @@ func Explain(entry LedgerEntry) string {
 		}
 	}
 
+	b.WriteString("Final decision:\n")
+	b.WriteString(fmt.Sprintf("  %s\n", d.Verdict))
 	b.WriteString(fmt.Sprintf("\n%s\n", d.Explanation))
 	return b.String()
 }

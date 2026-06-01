@@ -115,18 +115,22 @@ const (
 
 // Decision is the kernel's final output for an attributed action.
 type Decision struct {
-	DecisionID     string          `json:"decision_id"`
-	Timestamp      string          `json:"timestamp"`
-	Mode           string          `json:"mode"`
-	Verdict        string          `json:"verdict"`
-	DecisionClass  string          `json:"decision_class"` // CORRELATION block-and-wait model
-	PolicyRules    []string        `json:"policy_rules,omitempty"`
-	Effects        []PlannedEffect `json:"effects,omitempty"`
-	Enforceability string          `json:"enforceability"`
-	Attribution    string          `json:"attribution"`
-	ActionType     string          `json:"action_type"`
-	Sensitivity    string          `json:"sensitivity"`
-	Explanation    string          `json:"explanation"`
+	DecisionID             string                   `json:"decision_id"`
+	Timestamp              string                   `json:"timestamp"`
+	Mode                   string                   `json:"mode"`
+	Verdict                string                   `json:"verdict"`
+	DecisionClass          string                   `json:"decision_class"` // CORRELATION block-and-wait model
+	PolicyRules            []string                 `json:"policy_rules,omitempty"`
+	Effects                []PlannedEffect          `json:"effects,omitempty"`
+	Enforceability         string                   `json:"enforceability"`
+	Attribution            string                   `json:"attribution"`
+	ActionType             string                   `json:"action_type"`
+	Sensitivity            string                   `json:"sensitivity"`
+	BaseVerdict            string                   `json:"base_verdict,omitempty"`
+	DeveloperWorkflowFloor string                   `json:"developer_workflow_floor,omitempty"`
+	ProviderPolicyEvidence []ProviderPolicyEvidence `json:"provider_policy_evidence,omitempty"`
+	ProviderEvidence       []ProviderEvidence       `json:"provider_evidence,omitempty"`
+	Explanation            string                   `json:"explanation"`
 }
 
 // LedgerEntry wraps a decision for the append-only ledger.
@@ -183,6 +187,27 @@ type PolicyVerdict struct {
 	RulesMatched []string `json:"rules_matched,omitempty"`
 	Reason       string   `json:"reason,omitempty"`
 	IsAdvisory   bool     `json:"is_advisory"`
+}
+
+// ProviderPolicyEvidence is the ledger/explanation form of an advisory policy
+// verdict. It is intentionally separate from Decision.PolicyRules so native SIR
+// floors remain distinguishable from provider recommendations.
+type ProviderPolicyEvidence struct {
+	Provider     string   `json:"provider"`
+	Verdict      string   `json:"verdict"`
+	RulesMatched []string `json:"rules_matched,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
+	Used         bool     `json:"used"`
+}
+
+// ProviderEvidence records a provider invocation that did not produce usable
+// policy evidence. Fail-open provider failures are still visible in the ledger.
+type ProviderEvidence struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind"`
+	Status   string `json:"status"` // unavailable | timeout | invalid_output | disabled | failed
+	Reason   string `json:"reason,omitempty"`
+	Behavior string `json:"behavior,omitempty"`
 }
 
 // SpoofingRisk constants — mirrors sir.attribution.v0.spoofing_risk enum.

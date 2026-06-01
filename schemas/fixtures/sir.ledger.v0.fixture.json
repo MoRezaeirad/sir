@@ -15,6 +15,15 @@
     "attribution": "medium",
     "action_type": "file_read",
     "sensitivity": "credential",
+    "provider_policy_evidence": [
+      {
+        "provider": "opa-bridge",
+        "verdict": "allow",
+        "rules_matched": ["example-rule"],
+        "reason": "example advisory result",
+        "used": false
+      }
+    ],
     "explanation": "SIR DENIED this because:\n  Policy rule 'deny-agent-credential-read' matched.\n  Target: .env (sensitivity: credential)\n  Enforceability: enforces (cooperative hooks only)"
   },
   "prev_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

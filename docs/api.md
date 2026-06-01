@@ -825,7 +825,7 @@ sir harness capture-generate --write harness/fixtures/cases
 sir harness run path/to/my/cases
 ```
 
-`sir kernel replay --use-providers` invokes active providers from `~/.sir/providers.json`. For policy providers, `sir provider use`, `sir provider disable`, and `sir provider swap` control which advisory policy verdicts reach replay. Unregistered manifests under `examples/providers` are not scanned unless `--include-unregistered` is set with `--providers-dir`.
+`sir kernel replay --use-providers` invokes active providers from `~/.sir/providers.json`. For policy providers, `sir provider use`, `sir provider disable`, and `sir provider swap` control which advisory policy verdicts reach replay. Unregistered manifests under `examples/providers` are not scanned unless `--include-unregistered` is set with `--providers-dir`. In live-provider mode, fixture `policy_verdicts` are not used as a fallback; a provider that returns no verdict or fails leaves native policy in control and records provider evidence. Kernel ledger entries store provider verdict evidence and fail-open provider failures separately from native SIR policy rules, and `sir kernel why` renders those layers separately.
 
 **`--engine both` parity check** compares `verdict`, `decision_class`, `enforceability`, `attribution`, and `policy_rules` between Go and Rust for every case. A mismatch exits with code 1 and lists the diverging fields. The built-in cases include policy-composition and real-containment cases.
 

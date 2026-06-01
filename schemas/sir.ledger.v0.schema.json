@@ -45,7 +45,7 @@
         "policy_rules": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "Policy rule IDs that triggered this verdict, in match order."
+          "description": "Native SIR policy rule IDs that triggered this verdict, in match order. External provider policy evidence is stored separately."
         },
         "effects": {
           "type": "array",
@@ -86,6 +86,54 @@
         "sensitivity": {
           "type": "string",
           "description": "Highest sensitivity label across signal targets."
+        },
+        "base_verdict": {
+          "enum": ["allow", "ask", "deny"],
+          "description": "Native verdict before advisory provider composition."
+        },
+        "developer_workflow_floor": {
+          "type": "string",
+          "description": "Human-readable evidence about whether the clean developer-workflow floor suppressed advisory escalation."
+        },
+        "provider_policy_evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["provider", "verdict", "used"],
+            "properties": {
+              "provider": {"type": "string"},
+              "verdict": {"type": "string"},
+              "rules_matched": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "reason": {"type": "string"},
+              "used": {
+                "type": "boolean",
+                "description": "True when the provider verdict changed native allow into final ask."
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Advisory policy-provider verdict evidence, separate from native policy rules."
+        },
+        "provider_evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["provider", "kind", "status"],
+            "properties": {
+              "provider": {"type": "string"},
+              "kind": {"type": "string"},
+              "status": {
+                "enum": ["unavailable", "timeout", "invalid_output", "disabled", "failed"]
+              },
+              "reason": {"type": "string"},
+              "behavior": {"type": "string"}
+            },
+            "additionalProperties": false
+          },
+          "description": "Provider invocation failures or disabled-provider evidence recorded fail-open."
         },
         "explanation": {
           "type": "string",

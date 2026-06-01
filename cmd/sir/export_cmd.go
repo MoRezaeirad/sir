@@ -61,22 +61,7 @@ func cmdExport(args []string) {
 	}
 
 	for _, e := range entries {
-		// Redacted export: omit raw explanation, keep structured fields.
-		record := map[string]any{
-			"entry_id":       e.EntryID,
-			"case_id":        e.CaseID,
-			"decision_id":    e.Decision.DecisionID,
-			"timestamp":      e.Decision.Timestamp,
-			"mode":           e.Decision.Mode,
-			"verdict":        e.Decision.Verdict,
-			"enforceability": e.Decision.Enforceability,
-			"attribution":    e.Decision.Attribution,
-			"action_type":    e.Decision.ActionType,
-			"sensitivity":    e.Decision.Sensitivity,
-			"policy_rules":   e.Decision.PolicyRules,
-			"hash":           e.Hash,
-			"prev_hash":      e.PrevHash,
-		}
+		record := redactedKernelExportRecord(e)
 		b, _ := json.Marshal(record)
 		fmt.Fprintln(out, string(b))
 	}
@@ -84,6 +69,75 @@ func cmdExport(args []string) {
 	if outPath != "" {
 		fmt.Printf("exported %d entries to %s\n", len(entries), outPath)
 	}
+}
+
+// redactedKernelExportRecord omits raw explanation text and provider reason
+// strings. Provider reasons can echo command arguments or paths from external
+// policy engines, so the redacted export keeps attribution metadata only.
+func redactedKernelExportRecord(e kernel.LedgerEntry) map[string]any {
+	return map[string]any{
+		"entry_id":                 e.EntryID,
+		"case_id":                  e.CaseID,
+		"decision_id":              e.Decision.DecisionID,
+		"timestamp":                e.Decision.Timestamp,
+		"mode":                     e.Decision.Mode,
+		"verdict":                  e.Decision.Verdict,
+		"enforceability":           e.Decision.Enforceability,
+		"attribution":              e.Decision.Attribution,
+		"action_type":              e.Decision.ActionType,
+		"sensitivity":              e.Decision.Sensitivity,
+		"policy_rules":             e.Decision.PolicyRules,
+		"base_verdict":             e.Decision.BaseVerdict,
+		"developer_workflow_floor": e.Decision.DeveloperWorkflowFloor,
+		"provider_policy_evidence": redactedProviderPolicyEvidence(e.Decision.ProviderPolicyEvidence),
+		"provider_evidence":        redactedProviderEvidence(e.Decision.ProviderEvidence),
+		"hash":                     e.Hash,
+		"prev_hash":                e.PrevHash,
+	}
+}
+
+type exportProviderPolicyEvidence struct {
+	Provider     string   `json:"provider"`
+	Verdict      string   `json:"verdict"`
+	RulesMatched []string `json:"rules_matched,omitempty"`
+	Used         bool     `json:"used"`
+}
+
+func redactedProviderPolicyEvidence(in []kernel.ProviderPolicyEvidence) []exportProviderPolicyEvidence {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]exportProviderPolicyEvidence, 0, len(in))
+	for _, ev := range in {
+		out = append(out, exportProviderPolicyEvidence{
+			Provider:     ev.Provider,
+			Verdict:      ev.Verdict,
+			RulesMatched: ev.RulesMatched,
+			Used:         ev.Used,
+		})
+	}
+	return out
+}
+
+type exportProviderEvidence struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind"`
+	Status   string `json:"status"`
+}
+
+func redactedProviderEvidence(in []kernel.ProviderEvidence) []exportProviderEvidence {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]exportProviderEvidence, 0, len(in))
+	for _, ev := range in {
+		out = append(out, exportProviderEvidence{
+			Provider: ev.Provider,
+			Kind:     ev.Kind,
+			Status:   ev.Status,
+		})
+	}
+	return out
 }
 
 // cmdLogFollowV2 streams new kernel ledger entries as they are written.

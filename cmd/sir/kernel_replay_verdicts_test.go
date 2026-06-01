@@ -105,9 +105,12 @@ func TestCollectLivePolicyVerdictsUsesActiveRegistry(t *testing.T) {
 		t.Fatalf("save registry: %v", err)
 	}
 
-	verdicts := collectLivePolicyVerdicts("", false, replayPolicyCase("vcs_push"))
+	verdicts, failures := collectLivePolicyVerdicts("", false, replayPolicyCase("vcs_push"), kernel.ModeHookGate)
 	if len(verdicts) != 1 {
 		t.Fatalf("verdicts: got %d, want 1: %+v", len(verdicts), verdicts)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("failures: got %+v, want none", failures)
 	}
 	if verdicts[0].Provider != "registered-policy" || verdicts[0].Verdict != "ask" {
 		t.Fatalf("active provider verdict mismatch: %+v", verdicts[0])
@@ -143,18 +146,86 @@ func TestCollectLivePolicyVerdictsRequiresIncludeUnregisteredForDirectoryScan(t 
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	if got := collectLivePolicyVerdicts(dir, false, replayPolicyCase("vcs_push")); len(got) != 0 {
+	if got, failures := collectLivePolicyVerdicts(dir, false, replayPolicyCase("vcs_push"), kernel.ModeHookGate); len(got) != 0 || len(failures) != 0 {
 		t.Fatalf("unregistered providers must not be scanned by default: %+v", got)
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("unregistered provider invoked without --include-unregistered: %v", *calls)
 	}
-	got := collectLivePolicyVerdicts(dir, true, replayPolicyCase("vcs_push"))
+	got, failures := collectLivePolicyVerdicts(dir, true, replayPolicyCase("vcs_push"), kernel.ModeHookGate)
 	if len(got) != 1 || got[0].Provider != "unregistered-policy" || got[0].RulesMatched[0] != "dir-rule" {
 		t.Fatalf("include-unregistered verdict mismatch: %+v", got)
 	}
+	if len(failures) != 0 {
+		t.Fatalf("failures: got %+v, want none", failures)
+	}
 	if len(*calls) != 1 || (*calls)[0] != "unregistered-policy" {
 		t.Fatalf("expected one unregistered provider invocation, got %v", *calls)
+	}
+}
+
+func TestCollectLivePolicyVerdictsRecordsProviderFailures(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reg := &provider.Registry{
+		Providers: []provider.Entry{
+			{Name: "missing-policy", Kind: provider.KindPolicy, Entrypoint: filepath.Join(t.TempDir(), "missing-provider"), Enabled: true},
+		},
+	}
+	if err := reg.Save(); err != nil {
+		t.Fatalf("save registry: %v", err)
+	}
+
+	verdicts, failures := collectLivePolicyVerdicts("", false, replayPolicyCase("vcs_push"), kernel.ModeHookGate)
+	if len(verdicts) != 0 {
+		t.Fatalf("verdicts: got %+v, want none", verdicts)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("failures: got %d, want 1: %+v", len(failures), failures)
+	}
+	if failures[0].Provider != "missing-policy" || failures[0].Status != "unavailable" {
+		t.Fatalf("failure mismatch: %+v", failures[0])
+	}
+}
+
+func TestCollectLivePolicyVerdictsRecordsDisabledPolicyWhenNoActiveProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := t.TempDir()
+	providerDir := filepath.Join(dir, "disabled-policy")
+	entrypoint := writeTestProvider(t, providerDir)
+	manifest := "schema_version: sir.provider.v0\n" +
+		"name: disabled-policy\n" +
+		"kind: policy_provider\n" +
+		"version: 0.1.0\n" +
+		"protocol: stdio-json\n" +
+		"entrypoint: " + filepath.Base(entrypoint) + "\n" +
+		"platforms: [macos, linux]\n" +
+		"capabilities:\n" +
+		"  verdict_types: [allow, ask, deny]\n" +
+		"  is_advisory: true\n"
+	if err := os.WriteFile(filepath.Join(providerDir, "provider.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	calls := stubReplayProviderInvocation(t, map[string]string{"disabled-policy": "should-not-run"})
+	reg := &provider.Registry{
+		Providers: []provider.Entry{
+			{Name: "disabled-policy", Kind: provider.KindPolicy, Entrypoint: entrypoint, Enabled: false},
+		},
+	}
+	if err := reg.Save(); err != nil {
+		t.Fatalf("save registry: %v", err)
+	}
+
+	verdicts, failures := collectLivePolicyVerdicts(dir, true, replayPolicyCase("vcs_push"), kernel.ModeHookGate)
+	if len(verdicts) != 0 {
+		t.Fatalf("verdicts: got %+v, want none", verdicts)
+	}
+	if len(failures) != 1 || failures[0].Provider != "disabled-policy" || failures[0].Status != "disabled" {
+		t.Fatalf("disabled provider evidence mismatch: %+v", failures)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("disabled registered provider must not be invoked through include-unregistered: %v", *calls)
 	}
 }
 
@@ -181,7 +252,7 @@ func stubReplayProviderInvocation(t *testing.T, rules map[string]string) *[]stri
 	t.Helper()
 	var calls []string
 	old := invokeKernelPolicyProviderForReplay
-	invokeKernelPolicyProviderForReplay = func(entry provider.Entry, req policy.PolicyRequest) []kernel.PolicyVerdict {
+	invokeKernelPolicyProviderForReplay = func(entry provider.Entry, req policy.PolicyRequest) ([]kernel.PolicyVerdict, *kernel.ProviderEvidence) {
 		calls = append(calls, entry.Name)
 		rule := rules[entry.Name]
 		if rule == "" {
@@ -192,7 +263,7 @@ func stubReplayProviderInvocation(t *testing.T, rules map[string]string) *[]stri
 			Verdict:      "ask",
 			RulesMatched: []string{rule},
 			IsAdvisory:   true,
-		}}
+		}}, nil
 	}
 	t.Cleanup(func() {
 		invokeKernelPolicyProviderForReplay = old

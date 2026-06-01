@@ -41,7 +41,7 @@ sir status
 
 ## How it decides
 
-Hooks and MCP proxy signals are normalized into intent, target, sensitivity, attribution, and session taint. Rust `sir-core` is the pure decision kernel; Go manages host-agent facts, session state, preflight gates, providers, and the ledger. Go may tighten a verdict from facts Rust cannot see; it must not make a deny safe.
+Hooks and MCP proxy signals are normalized into intent, target, sensitivity, attribution, and session taint. Rust `sir-core` owns the final deterministic decision. Go provides explicit evidence through `EvaluationInput`, then handles stateful post-decision work: ledgering, prompt bounding, provider execution, and local UX.
 
 ## What it catches
 

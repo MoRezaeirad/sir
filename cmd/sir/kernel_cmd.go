@@ -150,13 +150,15 @@ func cmdKernelReplay(args []string) {
 
 		// Under --use-providers, invoke the active policy providers for LIVE
 		// verdicts so replay exercises real policy composition (OPA/Cedar/policy-
-		// pack) rather than the fixture-baked policy_verdicts. Fail-open: an empty
-		// result falls back to the fixture verdicts.
+		// pack) rather than fixture-baked policy_verdicts. Fail-open: an empty or
+		// failed live provider result leaves PolicyVerdicts empty and records
+		// provider evidence; native policy is used.
 		policyVerdicts := c.PolicyVerdicts
+		var providerFailures []kernel.ProviderEvidence
 		if opts.useProviders {
-			if live := collectLivePolicyVerdicts(opts.providersDir, opts.includeUnregistered, c); len(live) > 0 {
-				policyVerdicts = live
-			}
+			live, failures := collectLivePolicyVerdicts(opts.providersDir, opts.includeUnregistered, c, caseMode)
+			providerFailures = failures
+			policyVerdicts = live
 		}
 
 		in := kernel.EvaluationInput{
@@ -180,6 +182,7 @@ func cmdKernelReplay(args []string) {
 		}
 
 		var evalOut kernel.EvaluationOutput
+		baseVerdict := ""
 		if opts.engine == "rust" {
 			// Rust replay: call sir-core-eval and write ledger entries.
 			// Apply --mode override and live provider capabilities if active.
@@ -205,9 +208,24 @@ func cmdKernelReplay(args []string) {
 				Sensitivity:    rout.Sensitivity,
 				NewTaint:       rout.NewTaint,
 			}
+			if len(policyVerdicts) > 0 {
+				rcBase := rc
+				rcBase.PolicyVerdicts = nil
+				baseOut, err := evalWithRust(rcBase)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "rust base eval error for %s: %v\n", c.CaseID, err)
+					os.Exit(1)
+				}
+				baseVerdict = baseOut.Verdict
+			}
 		} else {
 			// Go replay: use the Go reference kernel.
 			evalOut = kernel.Evaluate(in)
+			if len(policyVerdicts) > 0 {
+				baseIn := in
+				baseIn.PolicyVerdicts = nil
+				baseVerdict = kernel.Evaluate(baseIn).Verdict
+			}
 		}
 
 		// Build a Decision for ledger. Go stamps id+time (pure/stateful split).
@@ -217,17 +235,29 @@ func cmdKernelReplay(args []string) {
 			Mode:           caseMode,
 			Verdict:        evalOut.Verdict,
 			DecisionClass:  evalOut.DecisionClass,
-			PolicyRules:    evalOut.PolicyRules,
+			PolicyRules:    kernel.NativePolicyRules(evalOut.PolicyRules),
 			Effects:        evalOut.Effects,
 			Enforceability: evalOut.Enforceability,
 			Attribution:    evalOut.Attribution,
 			ActionType:     evalOut.ActionType,
 			Sensitivity:    evalOut.Sensitivity,
+			BaseVerdict:    baseVerdict,
+			DeveloperWorkflowFloor: kernel.DeveloperWorkflowFloorEvidence(
+				in.PriorTaint, evalOut.ActionType, policyVerdicts, baseVerdict, evalOut.Verdict,
+			),
+			ProviderPolicyEvidence: kernel.BuildProviderPolicyEvidence(policyVerdicts, evalOut.Verdict, baseVerdict),
+			ProviderEvidence:       providerFailures,
 		}
 
-		rules := strings.Join(decision.PolicyRules, ", ")
+		rules := strings.Join(kernel.NativePolicyRules(decision.PolicyRules), ", ")
 		if rules == "" {
 			rules = "(default allow)"
+		}
+		if len(decision.ProviderPolicyEvidence) > 0 {
+			rules += " | providers: " + summarizeProviderPolicyEvidence(decision.ProviderPolicyEvidence)
+		}
+		if len(decision.ProviderEvidence) > 0 {
+			rules += " | provider failures: " + summarizeProviderFailures(decision.ProviderEvidence)
 		}
 		fmt.Printf("%-34s %-8s %-14s %-14s %s\n",
 			c.CaseID, decision.Verdict, decision.Enforceability, decision.Attribution, rules)
@@ -377,7 +407,7 @@ var invokeKernelPolicyProviderForReplay = invokeKernelPolicyProvider
 //
 // This deliberately introduces nondeterminism (live provider state), so it is
 // gated by the flag and never used on the `--engine both` parity path.
-func collectLivePolicyVerdicts(dir string, includeUnregistered bool, c harnessCase) []kernel.PolicyVerdict {
+func collectLivePolicyVerdicts(dir string, includeUnregistered bool, c harnessCase, mode string) ([]kernel.PolicyVerdict, []kernel.ProviderEvidence) {
 	actionType := kernel.PrimaryActionType(c.Signals)
 	action := actionType
 	if v, ok := actionTypeToVerb[actionType]; ok {
@@ -392,32 +422,59 @@ func collectLivePolicyVerdicts(dir string, includeUnregistered bool, c harnessCa
 			}
 		}
 	}
-	enf := kernel.AnalyzeEnforceability(kernel.EnforceabilityInput{Mode: c.Mode, Signals: c.Signals})
+	enf := kernel.AnalyzeEnforceability(kernel.EnforceabilityInput{Mode: mode, Signals: c.Signals})
 	req := policy.PolicyRequest{
 		Action:         action,
 		Target:         kernel.DisplayTarget(c.Signals),
 		ResolvedActor:  actor,
 		Taint:          c.PriorTaint,
 		Enforceability: enf.Class,
-		Mode:           c.Mode,
+		Mode:           mode,
 	}
 
 	var out []kernel.PolicyVerdict
+	var failures []kernel.ProviderEvidence
 	seen := map[string]bool{}
 	if reg, err := provider.Load(); err != nil {
 		fmt.Fprintf(os.Stderr, "sir: load provider registry: %v\n", err)
+		failures = append(failures, kernel.ProviderEvidence{
+			Provider: "provider-registry",
+			Kind:     provider.KindPolicy,
+			Status:   "failed",
+			Reason:   err.Error(),
+			Behavior: "ignored; native policy used",
+		})
 	} else {
-		for _, entry := range reg.Active(provider.KindPolicy) {
+		for _, entry := range reg.Providers {
 			seen[entry.Name] = true
-			out = append(out, invokeKernelPolicyProviderForReplay(entry, req)...)
+		}
+		active := reg.Active(provider.KindPolicy)
+		if len(active) == 0 {
+			for _, entry := range reg.Providers {
+				if entry.Kind == provider.KindPolicy && !entry.Enabled {
+					failures = append(failures, kernel.ProviderEvidence{
+						Provider: entry.Name,
+						Kind:     provider.KindPolicy,
+						Status:   "disabled",
+						Behavior: "not invoked; native policy used",
+					})
+				}
+			}
+		}
+		for _, entry := range active {
+			verdicts, failure := invokeKernelPolicyProviderForReplay(entry, req)
+			out = append(out, verdicts...)
+			if failure != nil {
+				failures = append(failures, *failure)
+			}
 		}
 	}
 	if !includeUnregistered {
-		return out
+		return out, failures
 	}
 	manifests, err := findProviderManifests(dir)
 	if err != nil {
-		return out
+		return out, failures
 	}
 	for _, mpath := range manifests {
 		m, issues := loadAndValidateManifest(mpath)
@@ -428,16 +485,21 @@ func collectLivePolicyVerdicts(dir string, includeUnregistered bool, c harnessCa
 			continue
 		}
 		ep := filepath.Join(filepath.Dir(mpath), m.Entrypoint)
-		out = append(out, invokeKernelPolicyProviderForReplay(provider.Entry{Name: m.Name, Entrypoint: ep}, req)...)
+		verdicts, failure := invokeKernelPolicyProviderForReplay(provider.Entry{Name: m.Name, Kind: m.Kind, Entrypoint: ep}, req)
+		out = append(out, verdicts...)
+		if failure != nil {
+			failures = append(failures, *failure)
+		}
 	}
-	return out
+	return out, failures
 }
 
-func invokeKernelPolicyProvider(entry provider.Entry, req policy.PolicyRequest) []kernel.PolicyVerdict {
+func invokeKernelPolicyProvider(entry provider.Entry, req policy.PolicyRequest) ([]kernel.PolicyVerdict, *kernel.ProviderEvidence) {
 	verdicts, err := provider.InvokePolicy(entry, req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sir: policy provider %s: %v\n", entry.Name, err)
-		return nil
+		failure := providerFailureEvidence(entry.Name, provider.KindPolicy, err)
+		return nil, &failure
 	}
 	out := make([]kernel.PolicyVerdict, 0, len(verdicts))
 	for _, v := range verdicts {
@@ -453,7 +515,56 @@ func invokeKernelPolicyProvider(entry provider.Entry, req policy.PolicyRequest) 
 			IsAdvisory:   true,
 		})
 	}
-	return out
+	return out, nil
+}
+
+func providerFailureEvidence(name, kind string, err error) kernel.ProviderEvidence {
+	reason := err.Error()
+	status := "failed"
+	lower := strings.ToLower(reason)
+	switch {
+	case strings.Contains(lower, "timed out") || strings.Contains(lower, "deadline exceeded"):
+		status = "timeout"
+	case strings.Contains(lower, "executable file not found") ||
+		strings.Contains(lower, "no such file") ||
+		strings.Contains(lower, "not found"):
+		status = "unavailable"
+	case strings.Contains(lower, "unmarshal") ||
+		strings.Contains(lower, "invalid json") ||
+		strings.Contains(lower, "wrong schema"):
+		status = "invalid_output"
+	}
+	return kernel.ProviderEvidence{
+		Provider: name,
+		Kind:     kind,
+		Status:   status,
+		Reason:   reason,
+		Behavior: "ignored; native policy used",
+	}
+}
+
+func summarizeProviderPolicyEvidence(evidence []kernel.ProviderPolicyEvidence) string {
+	var parts []string
+	for _, ev := range evidence {
+		part := ev.Provider + "=" + ev.Verdict
+		if ev.Used {
+			part += "(used)"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func summarizeProviderFailures(evidence []kernel.ProviderEvidence) string {
+	var parts []string
+	for _, ev := range evidence {
+		status := ev.Status
+		if status == "" {
+			status = "failed"
+		}
+		parts = append(parts, ev.Provider+"="+status)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func collectProviderCapabilities(dir string, includeUnregistered bool) []string {
