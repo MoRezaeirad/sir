@@ -7,6 +7,15 @@ sir is experimental. Each release listed here is a snapshot of the "sandbox in r
 
 This file tracks shipped releases only. Historical planning notes, launch copy, and exploratory findings live in git history rather than on the production repo surface.
 
+## v0.1.4 — 2026-06-01 — provider verdict evidence and redacted exports
+
+This release makes policy-provider participation observable without letting provider output blur the native sir decision. Rust still owns the final deterministic allow / ask / deny verdict, while kernel replay now records enough structured evidence to audit why provider verdicts mattered or did not matter.
+
+- **Provider evidence in kernel replay.** `sir kernel replay --use-providers` now records active provider verdicts, skipped disabled providers, provider failures, the native base verdict, and the developer-workflow floor as distinct evidence. `sir kernel why` renders those layers separately so native sir policy, provider output, and final narrowing are easy to inspect.
+- **No fixture fallback for live providers.** Provider replay now uses only active registry policy providers; it no longer falls back to fixture `policy_verdicts` when `--use-providers` is set. Case mode is carried into provider requests, and disabled registered providers stay skipped even when unregistered providers are included.
+- **Redacted exports stay redacted.** `sir export --redact` omits provider reason and behavior text from kernel records while preserving provider names, verdicts, error classes, and structural evidence needed for audits.
+- **Contracts and docs.** Ledger schema, API docs, and replay fixtures now cover provider evidence explicitly and keep the public guarantee that Go may narrow decisions from extra facts but never widen a Rust deny.
+
 ## v0.1.3 — 2026-05-29 — monotonic secret taint, deny-raw-read default, relay auth
 
 Closes a turn-boundary secret-laundering gap, makes the advertised secret-read default hold for a bare `sir install`, and hardens the central Slack relay. Every change is a Go-side narrowing or a lease/oracle gate that never widens a Rust deny, never weakens fail-closed, and never leaks a secret.
@@ -232,19 +241,8 @@ This is the first tagged public release of sir. The project is **pre-alpha**: th
 - **Release trust**: reproducible-build verification, signed artifacts via Sigstore cosign (keyless OIDC), CycloneDX and SPDX SBOMs, and an AIBOM zero-ML declaration. SLSA provenance is wired but deferred pending an upstream `slsa-github-generator` fix.
 - **CI hygiene**: GitHub Actions pinned by commit SHA, least-privilege permissions, `persist-credentials: false`, CodeQL Go SAST on every PR and push, gosec on every PR and every main commit, `cargo-deny`, `govulncheck`, reproducible-build diff check, OpenSSF Scorecard workflow, and zizmor Actions linting.
 
-**Known limitations**
+**Known limitations:** MCP injection detection is regex-based, turn boundaries use a 30-second gap heuristic, shell classification is prefix-aware rather than a full POSIX parser, default leases are intentionally permissive for first-run usability, `sir run <agent>` is preview containment, and single-maintainer tradeoffs are documented in `docs/contributor/supply-chain-policy.md`.
 
-- MCP injection detection is a ~50-pattern regex set and is inherently an arms race. Tainted servers require re-approval as the mitigation.
-- Turn boundaries use a 30-second gap heuristic and are gameable in theory.
-- Shell classification is wrapper-aware and prefix-aware, not a full POSIX parser.
-- The default lease allows push to origin, commit, loopback, and sub-agent delegation out of the box. Tighten with `sir trust`, `sir allow-host`, or managed policy.
-- `sir run <agent>` containment is a measured preview, not a complete host firewall.
-- Single-maintainer tradeoffs are documented in `docs/contributor/supply-chain-policy.md` (Scorecard Code-Review, Branch-Protection, and CII-Best-Practices 0/10 are accepted until a second trusted reviewer exists and the bestpractices.dev self-assessment is complete).
-
-**For operators**
-
-- Install: `curl -sSL https://raw.githubusercontent.com/somoore/sir/main/install.sh | bash` then `sir install`
-- Verify: `sir status && sir doctor && sir log verify`
-- Uninstall: `sir uninstall` (state preserved at `~/.sir/` for forensic review)
+**For operators:** Install with `curl -sSL https://raw.githubusercontent.com/somoore/sir/main/install.sh | bash` then `sir install`; verify with `sir status && sir doctor && sir log verify`; uninstall with `sir uninstall` (state preserved at `~/.sir/` for forensic review).
 
 See [README.md](README.md) for the full quickstart and limitations, [ARCHITECTURE.md](ARCHITECTURE.md) for the Go + Rust split, [docs/research/sir-threat-model.md](docs/research/sir-threat-model.md) for the threat model, and [docs/research/security-verification-guide.md](docs/research/security-verification-guide.md) for the verification path.

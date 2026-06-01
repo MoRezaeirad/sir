@@ -3,7 +3,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash -s -- v0.1.3
+#   curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash -s -- v0.1.4
 #
 # Supported platforms (Unix/macOS only — see scripts/download.ps1 for Windows):
 #   macOS   Apple Silicon (arm64) and Intel (amd64)
