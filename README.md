@@ -8,7 +8,7 @@ Quiet on normal coding. Loud on dangerous transitions.
 
 <div align="center">
 
-[![release](https://img.shields.io/github/v/release/somoore/sir?include_prereleases&label=release&style=flat-square&labelColor=141311&color=B4660A)](https://github.com/somoore/sir/releases/latest)
+[![release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Fsomoore%2Fsir%2Freleases%3Fper_page%3D1&query=%24%5B0%5D.tag_name&label=release&style=flat-square&labelColor=141311&color=B4660A)](https://github.com/somoore/sir/releases)
 [![license](https://img.shields.io/badge/license-apache_2.0-2A2824?style=flat-square&labelColor=141311)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macos_%C2%B7_linux_%C2%B7_windows-1E6E85?style=flat-square&labelColor=141311)](docs/getting-started.md)
 
