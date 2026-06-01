@@ -3,7 +3,7 @@ package agent
 // equivalence_test.go — pre-refactor SAFETY NET (Step 14).
 //
 // This file captures byte-exact golden outputs for every adapter method on
-// every adapter (Claude Code, Codex, Gemini CLI). It exists so that the
+// every adapter (Claude Code, Cursor, Codex, Gemini CLI). It exists so that the
 // upcoming agent-adapter framework refactor can be proven behavior-preserving:
 // any change to the wire format an adapter emits will fail one of these
 // assertions.

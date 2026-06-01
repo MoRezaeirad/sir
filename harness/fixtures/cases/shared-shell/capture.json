@@ -1,0 +1,43 @@
+{
+  "_capture_evidence": {
+    "reproduction": "sh -c 'echo $$; id; echo $$' (same shell pid for both actions)",
+    "same_session_pid": true,
+    "shell_pid_first": "74496",
+    "two_actions": "id; cat"
+  },
+  "_capture_note": "Generated from a REAL run: two commands ran in one shell and shared the same shell pid (same_session_pid derived) — sibling actions in one session, not a detached child. Advise mode records but cannot gate → detects.",
+  "case_id": "shared-shell",
+  "mode": "advise",
+  "sensitive_source": true,
+  "shared_shell": true,
+  "signals": [
+    {
+      "action_claim": {
+        "target": {
+          "display": "~/.aws/credentials",
+          "sensitivity": "credential"
+        },
+        "type": "file_read"
+      },
+      "actor_claim": {
+        "kind": "ai_coding_agent",
+        "name": "claude-code"
+      },
+      "schema_version": "sir.signal.v0",
+      "session": {
+        "session_id": "ses_cap_shared",
+        "trace_id": "trace_cap_shared",
+        "turn_id": "turn_cap_2"
+      },
+      "signal_id": "cap-shared-shell",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "os_file_sensor",
+        "provider": "os_file_sensor",
+        "provider_version": "0.1.0",
+        "reliability": "observed_runtime",
+        "timing": "post_exec"
+      }
+    }
+  ]
+}

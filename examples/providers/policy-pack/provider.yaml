@@ -1,0 +1,14 @@
+schema_version: sir.provider.v0
+name: sir-policy-pack
+kind: policy_provider
+version: 0.2.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true
+  schema_version_supported: sir.policy_request.v0
+fixtures:
+  - fixtures/verdict-cred-read.json
+  - fixtures/verdict-was-secret-push.json

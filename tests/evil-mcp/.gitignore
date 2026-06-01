@@ -2,4 +2,5 @@ vendor/
 out/
 exfil.log
 sink.log
+tmux-run.log
 *.pid

@@ -178,6 +178,29 @@ func TestPostureFiles_IncludesCodex(t *testing.T) {
 	}
 }
 
+func TestPostureFiles_IncludesCursor(t *testing.T) {
+	l := lease.DefaultLease()
+	want := []string{
+		"AGENTS.md",
+		".cursor/hooks.json",
+		".cursor/mcp.json",
+		"./.cursor/hooks.json",
+		"./.cursor/mcp.json",
+	}
+	for _, w := range want {
+		found := false
+		for _, p := range l.PostureFiles {
+			if p == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("PostureFiles missing Cursor entry: %q", w)
+		}
+	}
+}
+
 // TestConfigChange_AGENTSmdTampered mirrors TestConfigChange_PostureFileChanged
 // but for Codex's AGENTS.md. This is the C7 bypass path: Codex used apply_patch
 // to append to AGENTS.md, which never hit PreToolUse; tamper detection in

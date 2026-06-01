@@ -31,6 +31,17 @@ func Load(projectRoot string) (*State, error) {
 
 // Save persists session state to disk using atomic rename.
 func (s *State) Save() error {
+	return s.saveTo(StateDir(s.ProjectRoot), StatePath(s.ProjectRoot))
+}
+
+// SaveToHome persists session state under an explicit sir state home. This is
+// used for contained `sir run` shadow state where the ambient process
+// environment intentionally points at the durable host state.
+func (s *State) SaveToHome(home string) error {
+	return s.saveTo(StateDirUnder(home, s.ProjectRoot), StatePathUnder(home, s.ProjectRoot))
+}
+
+func (s *State) saveTo(dir, finalPath string) error {
 	s.mu.Lock()
 	savedHash := s.SessionHash
 	s.SchemaVersion = policy.SessionSchemaVersion
@@ -49,12 +60,10 @@ func (s *State) Save() error {
 		return err
 	}
 
-	dir := StateDir(s.ProjectRoot)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
-	finalPath := StatePath(s.ProjectRoot)
 	tmpFile, err := os.CreateTemp(dir, "session-*.tmp")
 	if err != nil {
 		return err

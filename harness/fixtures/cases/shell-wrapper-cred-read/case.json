@@ -1,0 +1,44 @@
+{
+  "case_id": "shell-wrapper-cred-read",
+  "title": "Shell Wrapper: Credential File Read",
+  "description": "Shell preexec captures 'cat ~/.aws/credentials'. The shell-wrapper provider emits declared_intent pre_exec. In hook_gate mode this is blockable.",
+  "mode": "hook_gate",
+  "expected": {
+    "verdict": "allow",
+    "enforceability": "enforces",
+    "policy_rules": [],
+    "effects": [
+      {"type": "record", "required": true, "fail_closed": false}
+    ]
+  },
+  "sensitive_source": true,
+  "irreversible_sink": false,
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "shell-cred-read-001",
+      "signal_time": "2026-05-30T00:00:00Z",
+      "source": {
+        "kind": "shell_wrapper",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-shell-wrapper",
+        "provider_version": "0.1.0"
+      },
+      "session": {
+        "session_id": "sess_shell_001"
+      },
+      "actor_claim": {
+        "kind": "shell",
+        "pid": 9001
+      },
+      "action_claim": {
+        "type": "shell_exec",
+        "target": {
+          "display": "cat ~/.aws/credentials",
+          "sensitivity": "credential"
+        }
+      }
+    }
+  ]
+}

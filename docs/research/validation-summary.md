@@ -56,7 +56,8 @@ Every check here exercises the real evaluation path. There are no mock evaluator
 - **Follow the release/operator runbook:** [Security Verification Guide](security-verification-guide.md)
 - **Understand the in-scope boundary before evaluating:** [sir Threat Model](sir-threat-model.md)
 
-> **Note:** If any of these produce a verdict that contradicts a documented guarantee, treat it as a finding and open an issue — or a private advisory for in-scope security boundaries.
+> [!NOTE]
+> If any of these produce a verdict that contradicts a documented guarantee, treat it as a finding and open an issue — or a private advisory for in-scope security boundaries.
 
 ## What is no longer in the active docs set
 

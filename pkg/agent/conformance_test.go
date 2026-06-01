@@ -102,6 +102,8 @@ func supportFixturePath(id AgentID) string {
 		return "../../testdata/codex/support.json"
 	case Gemini:
 		return "../../testdata/gemini/support.json"
+	case Cursor:
+		return "../../testdata/cursor/support.json"
 	}
 	return ""
 }
@@ -158,6 +160,20 @@ func capabilityWitnesses(id AgentID) []capabilityWitness {
 			{name: "afteragent", path: "../../testdata/gemini/afteragent-response.json", parseKind: "pre", expectEvent: "Stop", expectCWD: "/Users/dev/myproject"},
 			{name: "sessionstart", path: "../../testdata/gemini/sessionstart-startup.json", parseKind: "pre", expectEvent: "SessionStart", expectCWD: "/Users/dev/myproject"},
 			{name: "sessionend", path: "../../testdata/gemini/sessionend-exit.json", parseKind: "pre", expectEvent: "SessionEnd", expectCWD: "/Users/dev/myproject"},
+		}
+	case Cursor:
+		return []capabilityWitness{
+			{name: "before-shell", path: "../../testdata/cursor/before-shell-execution.json", parseKind: "pre", expectEvent: "PreToolUse", expectTool: "Bash", expectCWD: "/Users/dev/myproject"},
+			{name: "before-read", path: "../../testdata/cursor/before-read-file.json", parseKind: "pre", expectEvent: "PreToolUse", expectTool: "Read", expectCWD: "/Users/dev/myproject"},
+			{name: "before-mcp", path: "../../testdata/cursor/before-mcp-execution.json", parseKind: "pre", expectEvent: "PreToolUse", expectTool: "mcp__github__search_issues", expectCWD: "/Users/dev/myproject"},
+			{name: "after-shell", path: "../../testdata/cursor/after-shell-execution.json", parseKind: "post", expectEvent: "PostToolUse", expectTool: "Bash", expectCWD: "/Users/dev/myproject", expectOutput: "hello\n"},
+			{name: "post-failure", path: "../../testdata/cursor/post-tool-use-failure.json", parseKind: "post", expectEvent: "PostToolUse", expectTool: "Bash", expectCWD: "/Users/dev/myproject", expectOutput: "exit status 1\n"},
+			{name: "prompt", path: "../../testdata/cursor/before-submit-prompt.json", parseKind: "pre", expectEvent: "UserPromptSubmit", expectCWD: "/Users/dev/myproject"},
+			{name: "subagent", path: "../../testdata/cursor/subagent-start.json", parseKind: "pre", expectEvent: "SubagentStart", expectCWD: "/Users/dev/myproject"},
+			{name: "sessionstart", path: "../../testdata/cursor/session-start.json", parseKind: "pre", expectEvent: "SessionStart", expectCWD: "/Users/dev/myproject"},
+			{name: "precompact", path: "../../testdata/cursor/pre-compact.json", parseKind: "pre", expectEvent: "SessionStart", expectCWD: "/Users/dev/myproject"},
+			{name: "stop", path: "../../testdata/cursor/stop.json", parseKind: "pre", expectEvent: "Stop", expectCWD: "/Users/dev/myproject"},
+			{name: "sessionend", path: "../../testdata/cursor/session-end.json", parseKind: "pre", expectEvent: "SessionEnd", expectCWD: "/Users/dev/myproject"},
 		}
 	}
 	return nil
@@ -308,10 +324,11 @@ func TestConformance(t *testing.T) {
 						t.Errorf("spec.SupportedSIREvents contains unknown sir event %q", ev)
 					}
 				}
-				// Sanity: wire events and internal events should have
-				// the same cardinality (one-to-one mapping).
-				if len(spec.SupportedWireEvents) != len(spec.SupportedSIREvents) {
-					t.Errorf("SupportedWireEvents (%d) and SupportedSIREvents (%d) length mismatch",
+				// Sanity: an adapter can register multiple native wire hooks
+				// for one sir-internal event, but it must never expose fewer
+				// wire events than the internal support claims.
+				if len(spec.SupportedWireEvents) < len(spec.SupportedSIREvents) {
+					t.Errorf("SupportedWireEvents (%d) shorter than SupportedSIREvents (%d)",
 						len(spec.SupportedWireEvents), len(spec.SupportedSIREvents))
 				}
 				for _, ev := range AllSIREvents() {
@@ -332,15 +349,27 @@ func TestConformance(t *testing.T) {
 				wireEvents := generatedWireEvents(t, ag)
 				supported := eventSet(spec.SupportedSIREvents)
 				for _, ev := range AllSIREvents() {
-					wireName := reverseWireEventName(spec, ev)
-					_, inGeneratedConfig := wireEvents[wireName]
+					inGeneratedConfig := false
+					for _, registration := range spec.HookRegistrations {
+						if registration.Event != ev {
+							continue
+						}
+						wireName := registration.WireEvent
+						if wireName == "" {
+							wireName = reverseWireEventName(spec, ev)
+						}
+						if wireEvents[wireName] {
+							inGeneratedConfig = true
+							break
+						}
+					}
 					hasRegistration := hasHookRegistration(spec, ev)
 					if supported[ev] {
 						if !hasRegistration {
 							t.Errorf("supported event %q has no HookRegistration", ev)
 						}
 						if !inGeneratedConfig {
-							t.Errorf("supported event %q missing from generated config as %q", ev, wireName)
+							t.Errorf("supported event %q missing from generated config", ev)
 						}
 						continue
 					}
@@ -348,7 +377,7 @@ func TestConformance(t *testing.T) {
 						t.Errorf("unsupported event %q unexpectedly has a HookRegistration", ev)
 					}
 					if inGeneratedConfig {
-						t.Errorf("unsupported event %q unexpectedly appears in generated config as %q", ev, wireName)
+						t.Errorf("unsupported event %q unexpectedly appears in generated config", ev)
 					}
 				}
 			})
@@ -358,7 +387,7 @@ func TestConformance(t *testing.T) {
 					t.Error("ConfigStrategy.CanonicalBackupFile is empty")
 				}
 				switch spec.ConfigStrategy.EffectiveLayout() {
-				case ConfigLayoutMatcherGroups:
+				case ConfigLayoutMatcherGroups, ConfigLayoutFlatCommands:
 				default:
 					t.Errorf("unsupported config layout %q", spec.ConfigStrategy.Layout)
 				}
@@ -468,6 +497,12 @@ func TestConformance(t *testing.T) {
 				}
 				if topReason, ok := envelope["reason"].(string); ok {
 					reason = topReason
+				}
+				if userMessage, ok := envelope["user_message"].(string); ok {
+					reason = userMessage
+				}
+				if agentMessage, ok := envelope["agent_message"].(string); ok {
+					reason = agentMessage
 				}
 				if spec.Capabilities.InteractiveApproval {
 					if !strings.Contains(body, `"ask"`) {

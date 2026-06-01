@@ -6,30 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
-
-// withLedgerLockMode acquires a file lock on ledgerPath+".lock", calls fn, and
-// releases the lock afterward. Exclusive locks serialize writers, while shared
-// locks keep readers from observing partially written JSON lines.
-func withLedgerLockMode(ledgerPath string, mode int, fn func() error) error {
-	lockPath := ledgerPath + ".lock"
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return fmt.Errorf("open lock file: %w", err)
-	}
-	defer func() { _ = lockFile.Close() }()
-	if err := syscall.Flock(int(lockFile.Fd()), mode); err != nil {
-		return fmt.Errorf("acquire lock: %w", err)
-	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
-	return fn()
-}
-
-func withLedgerLock(ledgerPath string, fn func() error) error {
-	return withLedgerLockMode(ledgerPath, syscall.LOCK_EX, fn)
-}
 
 // Append adds an entry to the ledger with hash chaining.
 // A file-level lock (ledger.jsonl.lock) prevents concurrent writers from
@@ -105,7 +83,7 @@ func ReadAll(projectRoot string) ([]Entry, error) {
 		return nil, err
 	}
 	var entries []Entry
-	err := withLedgerLockMode(ledgerPath, syscall.LOCK_SH, func() error {
+	err := withLedgerReadLock(ledgerPath, func() error {
 		var readErr error
 		entries, readErr = readAllUnlocked(ledgerPath)
 		return readErr

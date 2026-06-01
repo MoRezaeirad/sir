@@ -24,6 +24,28 @@ func ApprovedServerNames(servers []ServerInventory) []string {
 	return names
 }
 
+// AutoApprovedServerNames returns the deduplicated server names that are safe
+// to feed through legacy hook-time auto approval. Project-scoped entries stored
+// inside a global config remain discoverable, but are omitted here so they keep
+// the unknown-server gate until an explicit user approval.
+func AutoApprovedServerNames(servers []ServerInventory) []string {
+	seen := make(map[string]bool)
+	names := make([]string, 0, len(servers))
+	for _, server := range servers {
+		if server.RequiresExplicitApproval {
+			continue
+		}
+		name := strings.TrimSpace(server.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // PlanProxyRewrites filters the inventory to raw command-based servers that
 // sir can rewrite through mcp-proxy.
 func PlanProxyRewrites(servers []ServerInventory) []ServerInventory {
@@ -44,9 +66,9 @@ func RewriteDiscoveredServers(servers []ServerInventory, sirPath string) ([]Rewr
 	if len(planned) == 0 {
 		return nil, nil
 	}
-	byPath := make(map[string][]string)
+	byPath := make(map[string][]ServerInventory)
 	for _, server := range planned {
-		byPath[server.SourcePath] = append(byPath[server.SourcePath], server.Name)
+		byPath[server.SourcePath] = append(byPath[server.SourcePath], server)
 	}
 
 	paths := make([]string, 0, len(byPath))
@@ -61,10 +83,10 @@ func RewriteDiscoveredServers(servers []ServerInventory, sirPath string) ([]Rewr
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
-		mcpServers, _ := doc["mcpServers"].(map[string]interface{})
 		rewritten := make([]string, 0, len(byPath[path]))
-		for _, serverName := range byPath[path] {
-			entry, _ := mcpServers[serverName].(map[string]interface{})
+		for _, server := range byPath[path] {
+			mcpServers := mcpServersMapForRewrite(doc, server.ProjectKey)
+			entry, _ := mcpServers[server.Name].(map[string]interface{})
 			if entry == nil {
 				continue
 			}
@@ -78,7 +100,7 @@ func RewriteDiscoveredServers(servers []ServerInventory, sirPath string) ([]Rewr
 			}
 			entry["command"] = sirPath
 			entry["args"] = append([]string{"mcp-proxy", command}, args...)
-			rewritten = append(rewritten, serverName)
+			rewritten = append(rewritten, server.Name)
 		}
 		if len(rewritten) == 0 {
 			continue
@@ -90,6 +112,17 @@ func RewriteDiscoveredServers(servers []ServerInventory, sirPath string) ([]Rewr
 		results = append(results, RewriteResult{Path: path, Servers: rewritten})
 	}
 	return results, nil
+}
+
+func mcpServersMapForRewrite(doc map[string]interface{}, projectKey string) map[string]interface{} {
+	if projectKey == "" {
+		servers, _ := doc["mcpServers"].(map[string]interface{})
+		return servers
+	}
+	projects, _ := doc["projects"].(map[string]interface{})
+	project, _ := projects[projectKey].(map[string]interface{})
+	servers, _ := project["mcpServers"].(map[string]interface{})
+	return servers
 }
 
 // ReadJSONFileMap reads a JSON config file into a generic map.

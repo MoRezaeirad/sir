@@ -29,10 +29,12 @@ var thinkingBlockMarkers = [][]byte{
 	[]byte(`"type": "redacted_thinking"`),
 }
 
-// thinkingGuardLedgerReason is the concise reason recorded in the ledger when
+// ThinkingGuardLedgerReason is the concise reason recorded in the ledger when
 // an ask is degraded to a deny by the thinking guard. The agent-visible wire
 // reason is the fuller FormatThinkingGuardDeny block.
-const thinkingGuardLedgerReason = "interactive approval suppressed (Claude thinking-safe): ask degraded to deny"
+// Exported so cmd/sir/approve.go can match thinking-degraded denies in the
+// ledger scan without embedding a bare string literal.
+const ThinkingGuardLedgerReason = "interactive approval suppressed (Claude thinking-safe): ask degraded to deny"
 
 // thinkingDegradeActive reports whether an interactive ask should be degraded to
 // a deny on this invocation: the host is Claude Code and extended thinking is

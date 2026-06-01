@@ -308,6 +308,117 @@ func TestUninstallForAgent_CustomManagedKeyRemovesSirHooks(t *testing.T) {
 	}
 }
 
+func TestInstallForAgent_FlatCommandsPreservesThirdPartyCursorHooks(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	if err := os.MkdirAll(filepath.Join(tmpHome, ".sir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := agent.NewCursorAgent()
+	configPath := ag.ConfigPath()
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "third-party hook"
+      }
+    ],
+    "oldEvent": [
+      {
+        "command": "` + sirBinaryPath + ` guard old --agent cursor"
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installForAgent(ag, "guard", tmpHome, true, nil); err != nil {
+		t.Fatalf("installForAgent: %v", err)
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks := doc["hooks"].(map[string]interface{})
+	if _, ok := hooks["oldEvent"]; ok {
+		t.Fatalf("stale sir cursor hook was not removed: %#v", hooks["oldEvent"])
+	}
+	beforeShell := hooks["beforeShellExecution"].([]interface{})
+	if len(beforeShell) != 2 {
+		t.Fatalf("expected sir hook plus third-party hook, got %d", len(beforeShell))
+	}
+	first := beforeShell[0].(map[string]interface{})
+	cmd := first["command"].(string)
+	if cmd != sirBinaryPath+" guard evaluate --agent cursor" {
+		t.Fatalf("sir cursor hook not installed first: %q", cmd)
+	}
+	if first["failClosed"] != true {
+		t.Fatalf("cursor hook missing failClosed: %#v", first)
+	}
+}
+
+func TestUninstallForAgent_FlatCommandsRemovesOnlySirCursorHooks(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	ag := agent.NewCursorAgent()
+	configPath := ag.ConfigPath()
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "` + sirBinaryPath + ` guard evaluate --agent cursor"
+      },
+      {
+        "command": "third-party hook"
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := uninstallForAgent(ag)
+	if err != nil {
+		t.Fatalf("uninstallForAgent: %v", err)
+	}
+	if !removed {
+		t.Fatal("uninstallForAgent returned false")
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks := doc["hooks"].(map[string]interface{})
+	beforeShell := hooks["beforeShellExecution"].([]interface{})
+	if len(beforeShell) != 1 {
+		t.Fatalf("expected third-party hook only after uninstall, got %d", len(beforeShell))
+	}
+	if cmd := beforeShell[0].(map[string]interface{})["command"].(string); cmd != "third-party hook" {
+		t.Fatalf("unexpected remaining hook: %q", cmd)
+	}
+}
+
 func TestInstallForAgent_InvalidLayoutReturnsError(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)

@@ -1,0 +1,23 @@
+{
+  "case_id": "agent-git-push-known-origin-clean",
+  "title": "Clean agent push to a known origin is allowed",
+  "description": "An AI agent pushes to a known origin on a clean session (no credential taint, low sensitivity, no policy provider). No native rule fires; push is not in the developer-workflow floor but nothing escalates it on a clean session. Final: allow. Proves a clean agent push is not hard-blocked. (A credential-tainted agent push DOES deny — see agent-push-after-cred-read-denies.)",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "expected": {
+    "verdict": "allow",
+    "decision_class": "proceed_and_reconcile",
+    "policy_rules": []
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "agent-push-clean-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_agent_push_clean_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "vcs_push", "target": {"display": "git push origin main", "sensitivity": "low"}}
+    }
+  ]
+}

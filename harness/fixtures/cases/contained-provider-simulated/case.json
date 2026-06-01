@@ -1,0 +1,32 @@
+{
+  "case_id": "contained-provider-simulated",
+  "title": "Contained Mode with a SIMULATED (stub) provider yields detects, not enforces",
+  "description": "Mode is contained and the provider declares 'contain', but its enforcement is simulated (a stub that returns applied without real OS containment). A declared-only capability must NOT yield enforces — it classifies at most detects. This is the soundness fix: enforces requires demonstrated capability, not merely declared.",
+  "mode": "contained",
+  "provider_capabilities": ["contain", "record"],
+  "provider_enforcement": "simulated",
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "contained-sim-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "sir-devcontainer",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-devcontainer",
+        "provider_version": "0.1.0"
+      },
+      "session": {"session_id": "sess_contained_sim_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {
+        "type": "network_connect",
+        "target": {"display": "https://unknown.example", "sensitivity": "external_network"}
+      }
+    }
+  ],
+  "expected": {
+    "enforceability": "detects",
+    "verdict": "ask"
+  }
+}

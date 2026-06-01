@@ -1,0 +1,24 @@
+schema_version: sir.provider.v0
+name: openshell-provider
+kind: effect_provider
+version: 0.2.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  effects: [contain, block, record, nudge]
+  contain: true
+  block: false
+  record: true
+  nudge: true
+  contain_target_kinds: [process_launch]
+  note: >
+    contain applies at process-launch time (sandbox-exec on macOS, bwrap on Linux);
+    existing PIDs cannot be retroactively contained.
+    block requires a kernel-level enforcer and is not supported.
+# Honesty signal: this is capability plumbing, not real OS-level enforcement (stub apply).
+enforcement: simulated
+fixtures:
+  - fixtures/effect-contain-launch.json
+  - fixtures/effect-contain-pid.json
+  - fixtures/effect-record.json

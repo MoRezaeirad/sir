@@ -13,7 +13,8 @@ import (
 
 func normalizePath(path string) string {
 	clean := filepath.Clean(path)
-	if runtime.GOOS == "darwin" {
+	// Both macOS and Windows use case-insensitive filesystems by default.
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		return strings.ToLower(clean)
 	}
 	return clean
@@ -39,7 +40,7 @@ func ResolveTarget(projectRoot, target string) string {
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
 	}
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		return strings.ToLower(abs)
 	}
 	return abs
@@ -211,6 +212,14 @@ func isShellMetaToken(token string) bool {
 }
 
 func matchPath(path, pattern string) bool {
+	// Normalize to forward slashes so patterns written with '/' work on
+	// Windows (where filepath.Clean produces backslash-separated paths).
+	// strings.ReplaceAll is used rather than filepath.ToSlash because
+	// filepath.ToSlash is a no-op on Unix, which would silently miss
+	// Windows-style paths in tests and mixed-OS environments.
+	path = strings.ReplaceAll(path, `\`, "/")
+	pattern = strings.ReplaceAll(pattern, `\`, "/")
+
 	if strings.Contains(pattern, "**") {
 		parts := strings.SplitN(pattern, "**", 2)
 		prefix := parts[0]

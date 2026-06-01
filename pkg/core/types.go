@@ -13,6 +13,11 @@ type Request struct {
 	ToolName  string      `json:"tool_name"`
 	Intent    Intent      `json:"intent"`
 	Session   SessionInfo `json:"session"`
+	// PolicyVerdicts carries advisory verdicts from registered PolicyProviders.
+	// Rust mister-core receives them via the wire and composes them under native
+	// safety floors. The Go fallback mirrors that composition so provider verdicts
+	// can only escalate allow to ask and never lower a native deny.
+	PolicyVerdicts []policy.PolicyVerdict `json:"-"`
 
 	// Cached structural parse of LeaseJSON's forbidden_verbs for the Go
 	// fallback. Transient (json:"-"), populated on first use by forbiddenVerbs.
@@ -61,11 +66,42 @@ type SessionInfo struct {
 	TurnCounter              int    `json:"turn_counter,omitempty"`
 }
 
+// ProviderFailure records a policy/advisory provider that failed to produce a
+// verdict during evaluation (timeout, missing entrypoint, malformed output).
+// Failures are non-fatal — evaluation falls open to native floors — but they
+// are surfaced so the ledger and `sir why` can show that a provider's input was
+// missing rather than silently absent. Provider/Reason are policy metadata, not
+// secrets.
+type ProviderFailure struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Reason   string `json:"reason"`
+	Behavior string `json:"behavior,omitempty"`
+	TimedOut bool   `json:"timed_out"`
+}
+
 // Response is the verdict from mister-core.
+//
+// ProviderVerdicts and ProviderFailures are Go-populated AFTER core.Evaluate
+// returns — they are NOT decoded from the Rust wire (json:"-"). The Go hook
+// layer collects provider verdicts before calling Rust and attaches them here so
+// they can reach the ledger and `sir why`, attributed separately from native
+// policy rules.
 type Response struct {
 	Decision policy.Verdict `json:"verdict"`
 	Reason   string         `json:"reason"`
 	Risk     string         `json:"risk_tier,omitempty"`
+
+	// BaseVerdict is the verdict BEFORE advisory policy-provider composition,
+	// Go-populated by evaluatePolicy (not on the Rust wire). When provider
+	// verdicts are present and the final verdict is "ask", it records what the
+	// native + floor decision would have been so `sir why` can tell whether a
+	// provider escalated the outcome. Empty means "same as Decision".
+	BaseVerdict policy.Verdict `json:"-"`
+
+	ProviderVerdicts []policy.PolicyVerdict `json:"-"`
+	ProviderFailures []ProviderFailure      `json:"-"`
 }
 
 // CoreBinaryPath is the path to the mister-core binary.

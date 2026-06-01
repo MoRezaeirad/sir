@@ -1,0 +1,42 @@
+{
+  "case_id": "agent-push-after-cred-read-denies",
+  "title": "Credential-tainted agent push denies — advisory allow cannot lower it",
+  "description": "The session previously read a credential (prior_taint=credential_access) and the agent now pushes to an external remote. The native deny-secret-to-egress floor fires. A policy provider returns allow, but advisory verdicts can only escalate allow->ask — they can never lower a native deny. Final decision stays deny.",
+  "mode": "contained",
+  "prior_taint": ["credential_access"],
+  "provider_capabilities": ["contain", "record"],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "allow",
+      "rules_matched": ["allow-all"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "deny",
+    "decision_class": "deny_now",
+    "policy_rules": ["deny-secret-to-egress"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "git-push-tainted-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "claude_hook",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-claude-code-hook",
+        "provider_version": "0.1.0"
+      },
+      "session": {"session_id": "sess_tainted_push_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {
+        "type": "vcs_push",
+        "target": {"display": "git push origin main", "sensitivity": "external_network"}
+      }
+    }
+  ]
+}

@@ -48,6 +48,7 @@ func TestEvaluatePolicy_BuildCoreRequestError(t *testing.T) {
 	_, err := evaluatePolicy(
 		projectRoot,
 		&HookPayload{ToolName: "Read"},
+		nil, // signals: nil is valid (no signal providers registered in test)
 		Intent{Verb: "read_ref", Target: "src/main.go"},
 		lease.DefaultLease(),
 		session.NewState(projectRoot),

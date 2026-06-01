@@ -1,0 +1,9 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "generation_id": "gen_cursor_456",
+  "hook_event_name": "afterShellExecution",
+  "command": "printf 'hello\\n'",
+  "output": "hello\n",
+  "tool_use_id": "cursor_shell_2",
+  "cwd": "/Users/dev/myproject"
+}

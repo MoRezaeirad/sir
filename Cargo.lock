@@ -12,3 +12,10 @@ dependencies = [
 [[package]]
 name = "mister-shared"
 version = "0.1.0"
+
+[[package]]
+name = "sir-core"
+version = "0.1.0"
+dependencies = [
+ "mister-shared",
+]

@@ -9,8 +9,9 @@ import (
 	"github.com/somoore/sir/pkg/agent"
 )
 
-func TestSelectAgentsForInstall_DefaultUsesDetectedAgentsOnly(t *testing.T) {
+func TestSelectAgentsForInstall_DefaultUsesClaudeOnly(t *testing.T) {
 	home := installDetectionHome(t)
+	mustMkdirAll(t, filepath.Join(home, ".claude"))
 	mustMkdirAll(t, filepath.Join(home, ".gemini"))
 	mustMkdirAll(t, filepath.Join(home, ".codex"))
 
@@ -18,8 +19,22 @@ func TestSelectAgentsForInstall_DefaultUsesDetectedAgentsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selectAgentsForInstall: %v", err)
 	}
-	if got, want := installAgentIDs(agents), []agent.AgentID{agent.Codex, agent.Gemini}; !equalAgentIDs(got, want) {
+	if got, want := installAgentIDs(agents), []agent.AgentID{agent.Claude}; !equalAgentIDs(got, want) {
 		t.Fatalf("agent selection mismatch\nwant: %v\ngot:  %v", want, got)
+	}
+}
+
+func TestSelectAgentsForInstall_DefaultRequiresEnabledTarget(t *testing.T) {
+	home := installDetectionHome(t)
+	mustMkdirAll(t, filepath.Join(home, ".gemini"))
+	mustMkdirAll(t, filepath.Join(home, ".codex"))
+
+	_, err := selectAgentsForInstall("", false)
+	if err == nil {
+		t.Fatal("expected error when only disabled agents are detected")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "none are enabled", "Currently enabled: Claude Code") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -28,9 +43,9 @@ func TestSelectAgentsForInstall_DefaultErrorsWhenNothingDetected(t *testing.T) {
 
 	_, err := selectAgentsForInstall("", false)
 	if err == nil {
-		t.Fatal("expected error when no supported agents are detected")
+		t.Fatal("expected error when no AI coding agent is detected")
 	}
-	if got := err.Error(); got == "" || !containsAll(got, "no supported agents detected on this machine", "Claude Code, Gemini CLI, or Codex") {
+	if got := err.Error(); got == "" || !containsAll(got, "no AI coding agent detected on this machine", "Currently enabled: Claude Code") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -38,24 +53,24 @@ func TestSelectAgentsForInstall_DefaultErrorsWhenNothingDetected(t *testing.T) {
 func TestSelectAgentsForInstall_ExplicitAgentRequiresDetection(t *testing.T) {
 	installDetectionHome(t)
 
-	_, err := selectAgentsForInstall("codex", false)
+	_, err := selectAgentsForInstall("claude", false)
 	if err == nil {
 		t.Fatal("expected error when explicit agent is not detected")
 	}
-	if got := err.Error(); got == "" || !containsAll(got, "--agent codex requested", "Codex is not installed on this machine") {
+	if got := err.Error(); got == "" || !containsAll(got, "--agent claude requested", "Claude Code is not installed on this machine") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestSelectAgentsForInstall_ExplicitAgentUsesDetectedSurface(t *testing.T) {
 	home := installDetectionHome(t)
-	mustMkdirAll(t, filepath.Join(home, ".gemini"))
+	mustMkdirAll(t, filepath.Join(home, ".claude"))
 
-	agents, err := selectAgentsForInstall("gemini", false)
+	agents, err := selectAgentsForInstall("claude", false)
 	if err != nil {
 		t.Fatalf("selectAgentsForInstall: %v", err)
 	}
-	if got, want := installAgentIDs(agents), []agent.AgentID{agent.Gemini}; !equalAgentIDs(got, want) {
+	if got, want := installAgentIDs(agents), []agent.AgentID{agent.Claude}; !equalAgentIDs(got, want) {
 		t.Fatalf("agent selection mismatch\nwant: %v\ngot:  %v", want, got)
 	}
 }
@@ -63,11 +78,24 @@ func TestSelectAgentsForInstall_ExplicitAgentUsesDetectedSurface(t *testing.T) {
 func TestSelectAgentsForInstall_ExplicitUnknownAgent(t *testing.T) {
 	installDetectionHome(t)
 
-	_, err := selectAgentsForInstall("cursor", false)
+	_, err := selectAgentsForInstall("factory", false)
 	if err == nil {
 		t.Fatal("expected unknown agent error")
 	}
-	if got := err.Error(); got == "" || !containsAll(got, "unknown agent: cursor", "supported:") {
+	if got := err.Error(); got == "" || !containsAll(got, "unknown agent: factory", "enabled install targets:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSelectAgentsForInstall_ExplicitKnownDisabledAgent(t *testing.T) {
+	home := installDetectionHome(t)
+	mustMkdirAll(t, filepath.Join(home, ".gemini"))
+
+	_, err := selectAgentsForInstall("gemini", false)
+	if err == nil {
+		t.Fatal("expected disabled-agent error")
+	}
+	if got := err.Error(); got == "" || !containsAll(got, "--agent gemini", "not enabled", "enabled install targets: claude") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

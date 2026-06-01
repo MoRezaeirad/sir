@@ -71,6 +71,10 @@ func TestIsPostureFile(t *testing.T) {
 		{"claude settings is posture", ".claude/settings.json", true},
 		{"CLAUDE.md is posture", "CLAUDE.md", true},
 		{".mcp.json is posture", ".mcp.json", true},
+		// Git hooks are posture (execution-on-commit vector → ask on write).
+		{"git pre-commit hook is posture", ".git/hooks/pre-commit", true},
+		{"git pre-push hook is posture", ".git/hooks/pre-push", true},
+		{"git post-checkout hook is posture", ".git/hooks/post-checkout", true},
 		// Not posture files
 		{"src file is not posture", "src/main.go", false},
 		{"package.json is not posture", "package.json", false},
@@ -78,6 +82,11 @@ func TestIsPostureFile(t *testing.T) {
 		{".env is not posture", ".env", false},
 		{"tsconfig is not posture", "tsconfig.json", false},
 		{"random claude path is not posture", ".claude/random.txt", false},
+		// .git/config holds credential.helper but editing it is routine git
+		// usage — NOT posture (the credential-helper config vector is a
+		// documented gap, not a floor). The glob must not over-match it.
+		{"git config is not posture", ".git/config", false},
+		{"app source under a git dir is not posture", "src/git/hooks.go", false},
 	}
 
 	for _, tc := range tests {

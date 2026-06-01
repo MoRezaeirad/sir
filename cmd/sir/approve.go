@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/somoore/sir/pkg/hooks"
 	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/session"
 )
@@ -49,8 +50,9 @@ func cmdApproveLast(projectRoot string, args []string) {
 	}
 	var lastAsk *ledger.Entry
 	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Decision == "ask" {
-			lastAsk = &entries[i]
+		e := &entries[i]
+		if e.Decision == "ask" || isThinkingDegradedDeny(*e) {
+			lastAsk = e
 			break
 		}
 	}
@@ -80,6 +82,15 @@ func cmdApproveLast(projectRoot string, args []string) {
 		}
 	}
 	cmdApproveGrant(projectRoot, lastAsk.Verb, lastAsk.Target, args, fmt.Sprintf("approved ledger entry #%d", lastAsk.Index))
+}
+
+// isThinkingDegradedDeny reports whether a ledger entry is an ask that was
+// converted to deny by the thinking guard. These entries are approvable via
+// `sir approve --last` even though their Decision field is "deny" — the
+// developer couldn't approve in-band (thinking-safe mode suppresses prompts)
+// but can approve out-of-band from their terminal.
+func isThinkingDegradedDeny(e ledger.Entry) bool {
+	return e.Decision == "deny" && e.Reason == hooks.ThinkingGuardLedgerReason
 }
 
 // approveForcesGrant reports whether the developer explicitly asked for the

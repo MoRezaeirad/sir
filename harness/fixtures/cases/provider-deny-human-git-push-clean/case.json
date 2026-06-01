@@ -1,0 +1,32 @@
+{
+  "case_id": "provider-deny-human-git-push-clean",
+  "title": "Provider deny on a clean human push asks, never hard-denies",
+  "description": "A policy provider recommends deny for a clean human push. Push is not in the developer-workflow floor, so advisory composition may raise allow to ask, but it cannot create a native deny.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "deny",
+      "rules_matched": ["deny-clean-human-push"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "ask",
+    "decision_class": "block_and_wait",
+    "policy_rules": ["policy:opa-bridge:deny-clean-human-push"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "human-push-provider-deny-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "shell_wrapper", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-shell-wrapper", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_human_push_provider_deny_001"},
+      "actor_claim": {"kind": "human_developer", "name": "developer"},
+      "action_claim": {"type": "vcs_push", "target": {"display": "git push origin main", "sensitivity": "low"}}
+    }
+  ]
+}

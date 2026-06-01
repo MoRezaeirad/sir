@@ -25,6 +25,11 @@ func SelectLauncher() Launcher {
 			Mode:   ContainmentModeLinuxNamespace,
 			Launch: runAgentLinux,
 		}
+	case "windows":
+		return Launcher{
+			Mode:   ContainmentModeWindowsHookGate,
+			Launch: runAgentWindows,
+		}
 	default:
 		return Launcher{
 			Mode: "unsupported",

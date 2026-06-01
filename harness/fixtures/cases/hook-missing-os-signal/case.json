@@ -1,0 +1,20 @@
+{
+  "case_id": "hook-missing-os-signal",
+  "title": "Hook Missing — No Fallback",
+  "description": "Agent runs a command in a shell that has no sir hook installed. No declared_intent signal fires. In hook_gate mode there is no OS sensor — the kernel receives no signals at all and is completely blind.",
+  "mode": "hook_gate",
+  "expected": {
+    "verdict": "allow",
+    "enforceability": "blind",
+    "decision_class": "proceed_and_reconcile",
+    "policy_rules": [],
+    "effects": [
+      {"type": "record", "required": true, "fail_closed": false}
+    ]
+  },
+  "hook_missing": true,
+  "sensitive_source": true,
+  "irreversible_sink": false,
+  "signals": [],
+  "note": "hook_gate mode has no OS sensor. When the hook is missing, the kernel receives zero signals and is blind. No attribution, no sensitivity, no policy rules. This is the documented limit of hook_gate: 'blind to missing hooks'. To detect missed actions, deploy os_observed mode alongside hook_gate, or switch to mediated mode where SIR controls the process launch."
+}

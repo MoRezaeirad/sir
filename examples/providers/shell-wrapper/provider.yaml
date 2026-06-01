@@ -1,0 +1,13 @@
+schema_version: sir.provider.v0
+name: sir-shell-wrapper
+kind: signal_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  signal_reliability: [declared_intent]
+  timing: [pre_exec]
+fixtures:
+  - fixtures/shell-curl.json
+  - fixtures/shell-cred-read.json

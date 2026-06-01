@@ -1,0 +1,20 @@
+schema_version: sir.provider.v0
+name: sir-devcontainer
+kind: effect_provider
+version: 0.2.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  contain: true
+  block: false
+  record: true
+  docker_required: true
+# Honesty signal: REAL OS-level containment. On a contain effect the provider runs
+# the action inside a `docker run --network=none --read-only` jail. Demonstrated,
+# not declared — `sir provider verify-containment` proves the boundary holds, and a
+# generated capture.json (harness/fixtures/cases/devcontainer-real-containment) backs
+# this claim for the enforcement-honesty CI gate.
+enforcement: real
+fixtures:
+  - fixtures/effect-contain.json

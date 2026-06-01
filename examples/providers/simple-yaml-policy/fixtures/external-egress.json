@@ -1,0 +1,11 @@
+{
+  "op": "evaluate",
+  "schema_version": "sir.policy_request.v0",
+  "action": "net_external",
+  "target": "https://example.com",
+  "resolved_actor": "ai_coding_agent",
+  "attribution_confidence": "medium",
+  "taint": [],
+  "enforceability": "detects",
+  "mode": "guard"
+}

@@ -131,7 +131,14 @@ func TestDefaultLease_HasPostureFiles(t *testing.T) {
 	if len(l.PostureFiles) == 0 {
 		t.Error("DefaultLease().PostureFiles must not be empty")
 	}
-	required := []string{".claude/settings.json", "CLAUDE.md"}
+	required := []string{
+		".claude/settings.json",
+		"CLAUDE.md",
+		".cursor/hooks.json",
+		".cursor/mcp.json",
+		"./.cursor/hooks.json",
+		"./.cursor/mcp.json",
+	}
 	pfSet := make(map[string]bool, len(l.PostureFiles))
 	for _, p := range l.PostureFiles {
 		pfSet[p] = true

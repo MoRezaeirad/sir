@@ -7,9 +7,10 @@ Read this before you open the long architecture docs. It is the shortest honest 
 
 ## 0. What problem sir solves
 
-AI coding agents (Claude Code, Codex, Gemini CLI) do not run as a single sandboxable process. They orchestrate tools, spawn subprocesses, and call MCP servers, and the thing you actually want to block is not a syscall — it is an *intent* like "read `.env`, then curl a host I have never seen." Traditional sandboxes cannot express that; they constrain the process from below. sir constrains the agent from above, at the hook layer where intents are still legible.
+AI coding agents (Claude Code, Cursor, Codex, Gemini CLI) do not run as a single sandboxable process. They orchestrate tools, spawn subprocesses, and call MCP servers, and the thing you actually want to block is not a syscall — it is an *intent* like "read `.env`, then curl a host I have never seen." Traditional sandboxes cannot express that; they constrain the process from below. sir constrains the agent from above, at the hook layer where intents are still legible.
 
-> **Note:** sir is experimental. It ships with known v1 tradeoffs (lexical shell classification, heuristic MCP injection detection, a permissive default lease). Read this doc so you know which guarantees are hard and which are heuristic.
+> [!NOTE]
+> sir is experimental. It ships with known v1 tradeoffs (lexical shell classification, heuristic MCP injection detection, a permissive default lease). Read this doc so you know which guarantees are hard and which are heuristic.
 
 ## 1. sir starts from zero authority
 

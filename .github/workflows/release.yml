@@ -48,11 +48,23 @@ jobs:
       matrix:
         include:
           - target: linux_amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - target: linux_arm64
             runner: ubuntu-24.04-arm
           - target: darwin_arm64
-            runner: macos-latest      # Apple Silicon (macos-15)
+            runner: macos-15          # Apple Silicon
+          - target: darwin_amd64
+            runner: macos-15-intel    # Intel macOS
+          - target: windows_amd64
+            runner: ubuntu-24.04      # cross-compiled on Linux; CGO_ENABLED=0
+            goos: windows
+            goarch: amd64
+            rust_target: x86_64-pc-windows-gnu
+          - target: windows_arm64
+            runner: ubuntu-24.04      # cross-compiled on Linux; CGO_ENABLED=0
+            goos: windows
+            goarch: arm64
+            rust_target: aarch64-pc-windows-gnullvm
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -66,37 +78,100 @@ jobs:
           rustc --version
           cargo --version
 
+      - name: Install Windows cross-compilation toolchain
+        if: matrix.goos == 'windows' && matrix.rust_target == 'x86_64-pc-windows-gnu'
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          rustup target add "${RUST_TARGET}"
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: "1.25.10"
           cache: false  # no external Go deps → no go.sum → caching not applicable
 
       - name: Build mister-core (Rust)
-        run: CARGO_INCREMENTAL=0 cargo build --release --locked
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          # windows/arm64 (aarch64-pc-windows-gnullvm) is a Rust tier-3 target
+          # requiring a complex LLVM toolchain setup not suitable for pinned
+          # release builds. That leg ships sir.exe only; the Go fallback
+          # evaluator (which is never more permissive than Rust) covers it.
+          # All other targets build the full Rust oracle.
+          if [ "${RUST_TARGET:-}" = "aarch64-pc-windows-gnullvm" ]; then
+            echo "Skipping mister-core for aarch64-pc-windows-gnullvm (Go fallback active)."
+          elif [ -n "${RUST_TARGET:-}" ]; then
+            CARGO_INCREMENTAL=0 cargo build --release --locked --target "${RUST_TARGET}"
+          else
+            CARGO_INCREMENTAL=0 cargo build --release --locked
+          fi
 
       - name: Build sir (Go)
+        env:
+          BUILD_GOOS: ${{ matrix.goos }}
+          BUILD_GOARCH: ${{ matrix.goarch }}
         run: |
-          CGO_ENABLED=0 go build \
+          GOOS="${BUILD_GOOS:-$(go env GOOS)}"
+          GOARCH="${BUILD_GOARCH:-$(go env GOARCH)}"
+          BIN_NAME="sir"
+          if [ "${GOOS}" = "windows" ]; then
+            BIN_NAME="sir.exe"
+          fi
+          GOOS="${GOOS}" GOARCH="${GOARCH}" CGO_ENABLED=0 go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o bin/sir \
+            -o "bin/${BIN_NAME}" \
             ./cmd/sir
 
       - name: Package archive
+        env:
+          BUILD_GOOS: ${{ matrix.goos }}
+          RUST_TARGET: ${{ matrix.rust_target }}
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME}"
           TARGET="${{ matrix.target }}"
-          ARCHIVE="sir_${VERSION}_${TARGET}.tar.gz"
+          GOOS="${BUILD_GOOS:-}"
 
           mkdir -p dist
-          cp target/release/mister-core dist/
-          cp bin/sir dist/
+
+          # Copy sir binary (sir or sir.exe on Windows).
+          if [ "${GOOS}" = "windows" ]; then
+            cp bin/sir.exe dist/
+          else
+            cp bin/sir dist/
+          fi
+
+          # Copy mister-core binary (platform-specific path for cross-compiled targets).
+          if [ -n "${RUST_TARGET:-}" ]; then
+            RUST_BIN="target/${RUST_TARGET}/release/mister-core"
+            # Windows cross-compiled binary has .exe extension.
+            if [ -f "${RUST_BIN}.exe" ]; then
+              cp "${RUST_BIN}.exe" dist/
+            elif [ -f "${RUST_BIN}" ]; then
+              cp "${RUST_BIN}" dist/
+            fi
+          else
+            cp target/release/mister-core dist/
+          fi
+
           cp README.md dist/ 2>/dev/null || true
           cp LICENSE dist/ 2>/dev/null || true
 
-          tar -czf "${ARCHIVE}" -C dist .
+          # Windows archives ship as .zip; all others as .tar.gz.
+          if [ "${GOOS}" = "windows" ]; then
+            ARCHIVE="sir_${VERSION}_${TARGET}.zip"
+            (cd dist && zip -r "../${ARCHIVE}" .)
+          else
+            ARCHIVE="sir_${VERSION}_${TARGET}.tar.gz"
+            tar -czf "${ARCHIVE}" -C dist .
+          fi
 
-          # sha256sum on Linux, shasum on macOS
+          # sha256sum on Linux, shasum on macOS.
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
           else
@@ -106,11 +181,14 @@ jobs:
       - name: Write subject line for SLSA provenance
         run: |
           # One sha256sum line per archive (this leg builds exactly one).
-          # On macOS, `shasum -a 256` produces the same format as `sha256sum`.
+          # Glob both .tar.gz (Unix) and .zip (Windows) archives.
+          set -euo pipefail
+          ARCHIVE=$(find . -maxdepth 1 \( -name 'sir_*.tar.gz' -o -name 'sir_*.zip' \) -print | sort | head -1)
+          ARCHIVE=${ARCHIVE#./}
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum sir_*.tar.gz > "subjects-${{ matrix.target }}.txt"
+            sha256sum "${ARCHIVE}" > "subjects-${{ matrix.target }}.txt"
           else
-            shasum -a 256 sir_*.tar.gz > "subjects-${{ matrix.target }}.txt"
+            shasum -a 256 "${ARCHIVE}" > "subjects-${{ matrix.target }}.txt"
           fi
           cat "subjects-${{ matrix.target }}.txt"
 
@@ -119,6 +197,7 @@ jobs:
           name: release-${{ matrix.target }}
           path: |
             sir_*.tar.gz
+            sir_*.zip
             sir_*.sha256
           if-no-files-found: error
 
@@ -273,7 +352,8 @@ jobs:
 
       - name: Sign each archive
         run: |
-          for archive in artifacts/sir_*.tar.gz; do
+          for archive in artifacts/sir_*.tar.gz artifacts/sir_*.zip; do
+            [ -f "${archive}" ] || continue
             cosign sign-blob --yes \
               --output-signature "${archive}.sig" \
               --output-certificate "${archive}.pem" \
@@ -339,6 +419,7 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             artifacts/sir_*.tar.gz
+            artifacts/sir_*.zip
             artifacts/sir_*.sig
             artifacts/sir_*.pem
             artifacts/checksums.txt
@@ -375,7 +456,11 @@ jobs:
           fi
           echo "Comparing artifact sizes against previous release: ${PREV_TAG}"
           mkdir -p prev
-          for asset in artifacts/sir_*.tar.gz; do
+          # Glob both .tar.gz (Unix) and .zip (Windows) so every shipped target
+          # is covered. Previously only .tar.gz was checked, leaving Windows
+          # binaries outside the injected-code canary.
+          for asset in artifacts/sir_*.tar.gz artifacts/sir_*.zip; do
+            [ -f "${asset}" ] || continue
             name=$(basename "${asset}")
             prev_name="${name/${GITHUB_REF_NAME}/${PREV_TAG}}"
             if ! gh release download "${PREV_TAG}" \
@@ -492,7 +577,8 @@ jobs:
           set -euo pipefail
           CERT_IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/release.yml@${GITHUB_REF}"
           OIDC_ISSUER="https://token.actions.githubusercontent.com"
-          for archive in verify/sir_*.tar.gz; do
+          for archive in verify/sir_*.tar.gz verify/sir_*.zip; do
+            [ -f "${archive}" ] || continue
             echo "=== Verifying ${archive} ==="
             cosign verify-blob \
               --certificate "${archive}.pem" \
@@ -530,7 +616,8 @@ jobs:
             echo "The provenance generator succeeded but the status-reporting step failed."
             exit 0
           fi
-          for archive in verify/sir_*.tar.gz; do
+          for archive in verify/sir_*.tar.gz verify/sir_*.zip; do
+            [ -f "${archive}" ] || continue
             echo "=== SLSA verify ${archive} ==="
             slsa-verifier verify-artifact "${archive}" \
               --provenance-path verify/sir.intoto.jsonl \

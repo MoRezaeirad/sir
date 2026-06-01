@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/somoore/sir/pkg/agent"
+	"github.com/somoore/sir/pkg/kernel"
 	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/session"
@@ -147,6 +148,9 @@ func renderStatusSnapshot(snapshot statusSnapshot) {
 	if snapshot.policy != nil && snapshot.leaseData != nil {
 		fmt.Printf("  %-9s %s (managed policy)\n", "mode", snapshot.leaseData.Mode)
 	}
+	if snapshot.leaseData != nil {
+		printModeEnforcementLimits(snapshot.leaseData.Mode)
+	}
 
 	if snapshot.sessionErr == nil {
 		shortID := snapshot.state.SessionID
@@ -208,6 +212,21 @@ func renderStatusSnapshot(snapshot statusSnapshot) {
 	fmt.Println(ac(auditDim, "  Run 'sir why' to see the last decision."))
 	if snapshot.sessionErr == nil && snapshot.state.HasTransientRestrictions() {
 		fmt.Println(ac(auditDim, "  Run 'sir unlock' to clear transient runtime restrictions."))
+	}
+}
+
+// printModeEnforcementLimits renders the honest enforcement boundary for the
+// active mode. Uses the same guarantee and limits maps as the harness scorecard
+// so that sir status and the harness report always agree.
+func printModeEnforcementLimits(mode string) {
+	guarantee := kernel.ModeEnforcementGuarantee[mode]
+	limits := kernel.ModeEnforcementLimits[mode]
+	if guarantee == "" {
+		return
+	}
+	fmt.Printf("             %s\n", ac(auditDim, "can:  "+guarantee))
+	if limits != "" {
+		fmt.Printf("             %s\n", ac(auditDim, "blind: "+limits))
 	}
 }
 

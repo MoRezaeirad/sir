@@ -4,23 +4,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/session"
 )
 
+// doctorHealthV2 holds v2-specific status fields for the JSON probe.
+type doctorHealthV2 struct {
+	SirCoreEvalPresent  bool   `json:"sir_core_eval_present"`
+	SirCoreEvalCallable bool   `json:"sir_core_eval_callable"`
+	ActiveEngine        string `json:"active_engine"`
+	ProviderCount       int    `json:"provider_count"`
+}
+
 // doctorHealth is a read-only health probe suitable for CI gating. `sir doctor`
 // (no flag) repairs; `sir doctor --json` only reports, and exits non-zero when
 // unhealthy so a pipeline can fail closed without sir mutating anything.
 type doctorHealth struct {
-	Healthy     bool     `json:"healthy"`
-	Installed   bool     `json:"installed"`
-	DenyAll     bool     `json:"deny_all"`
-	LedgerValid bool     `json:"ledger_valid"`
-	BinaryOK    bool     `json:"binary_ok"`
-	Issues      []string `json:"issues,omitempty"`
+	Healthy     bool            `json:"healthy"`
+	Installed   bool            `json:"installed"`
+	DenyAll     bool            `json:"deny_all"`
+	LedgerValid bool            `json:"ledger_valid"`
+	BinaryOK    bool            `json:"binary_ok"`
+	Issues      []string        `json:"issues,omitempty"`
+	V2          *doctorHealthV2 `json:"v2,omitempty"`
 }
 
 func doctorHealthJSON(projectRoot string) {
@@ -43,6 +54,8 @@ func doctorHealthJSON(projectRoot string) {
 		h.Issues = append(h.Issues, "binary integrity mismatch (run `sir verify`)")
 	}
 	h.Healthy = len(h.Issues) == 0
+	// v2 fields: Rust kernel status (best-effort, never makes h.Healthy false).
+	h.V2 = buildV2HealthFields()
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(h)
@@ -214,6 +227,135 @@ func cmdDoctor(projectRoot string, args ...string) {
 		fmt.Println()
 		fmt.Println(ac(auditDim, "Nothing to fix."))
 	}
+
+	// v2 provider health — best-effort, human output only, skipped when
+	// examples/providers is absent (keeps --json / CI path unaffected).
+	printDoctorProviderHealth()
+
+	// v2 Rust kernel check — reports sir-core-eval presence and callability.
+	printDoctorRustKernel()
+}
+
+// printDoctorProviderHealth appends a v2 provider health section to doctor output.
+// It is best-effort: if the provider directory is missing or a probe fails,
+// the section is silently skipped so `sir doctor --json` and CI gates are unaffected.
+func printDoctorProviderHealth() {
+	const dir = "examples/providers"
+	manifests, err := findProviderManifests(dir)
+	if err != nil || len(manifests) == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Println(ac(auditBold, "v2 provider health"))
+	fmt.Println()
+	for _, mpath := range manifests {
+		m, issues := loadAndValidateManifest(mpath)
+		if m == nil || len(issues) > 0 {
+			fmt.Printf("  %-26s unhealthy (manifest invalid)\n", filepath.Base(filepath.Dir(mpath)))
+			continue
+		}
+		ep := filepath.Join(filepath.Dir(mpath), m.Entrypoint)
+		capsRaw, err := queryProviderCapabilities(ep)
+		if err != nil {
+			fmt.Printf("  %-26s unavailable (%s)\n", m.Name, err)
+			continue
+		}
+		caps := summarizeCapabilities(capsRaw)
+		fmt.Printf("  %-26s healthy    %s\n", m.Name, caps)
+	}
+}
+
+// buildV2HealthFields probes the v2 Rust kernel and returns structured health fields.
+func buildV2HealthFields() *doctorHealthV2 {
+	v2 := &doctorHealthV2{}
+	engine := os.Getenv("SIR_ENGINE")
+	if engine == "" {
+		engine = "go"
+	}
+	v2.ActiveEngine = engine
+
+	home, _ := os.UserHomeDir()
+	installDir := os.Getenv("SIR_INSTALL_DIR")
+	if installDir == "" {
+		installDir = filepath.Join(home, ".local", "bin")
+	}
+	candidates := []string{
+		"target/release/sir-core-eval",
+		"target/debug/sir-core-eval",
+		filepath.Join(installDir, "sir-core-eval"),
+	}
+	evalPath := ""
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			evalPath = c
+			break
+		}
+	}
+	v2.SirCoreEvalPresent = evalPath != ""
+	if evalPath != "" {
+		probe := `{"case_id":"doctor-probe","mode":"hook_gate","signals":[],"evasion_flags":{},"prior_taint":[],"provider_capabilities":[]}` + "\n"
+		cmd := exec.Command(evalPath) // #nosec G702 -- sir-core-eval path is selected from fixed repo/install candidates and launched without a shell.
+		cmd.Stdin = strings.NewReader(probe)
+		out, err := cmd.Output()
+		v2.SirCoreEvalCallable = err == nil && len(strings.TrimSpace(string(out))) > 0
+	}
+	if manifests, err := findProviderManifests("examples/providers"); err == nil {
+		v2.ProviderCount = len(manifests)
+	}
+	return v2
+}
+
+// printDoctorRustKernel checks that sir-core-eval is present and callable.
+// This supports the trust story: the Rust decision kernel should be reachable.
+func printDoctorRustKernel() {
+	fmt.Println()
+	fmt.Println(ac(auditBold, "v2 Rust kernel"))
+	fmt.Println()
+
+	// Check both repo-local build output and installed location.
+	installDir := os.Getenv("SIR_INSTALL_DIR")
+	if installDir == "" {
+		home, _ := os.UserHomeDir()
+		installDir = filepath.Join(home, ".local", "bin")
+	}
+	candidates := []string{
+		"target/release/sir-core-eval",
+		"target/debug/sir-core-eval",
+		filepath.Join(installDir, "sir-core-eval"),
+	}
+	evalPath := ""
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			evalPath = c
+			break
+		}
+	}
+
+	if evalPath == "" {
+		fmt.Printf("  sir-core-eval:    %s\n", ac(auditBoldRed, "not found"))
+		fmt.Println("  Run: cargo build --release -p sir-core")
+		fmt.Println()
+		return
+	}
+	fmt.Printf("  sir-core-eval:    %s (%s)\n", ac(auditGreen, "present"), evalPath)
+
+	// Attempt a capability probe by sending a minimal evaluation.
+	probe := `{"case_id":"doctor-probe","mode":"hook_gate","signals":[],"evasion_flags":{},"prior_taint":[],"provider_capabilities":[]}` + "\n"
+	cmd := exec.Command(evalPath) // #nosec G702 -- sir-core-eval path is selected from fixed repo/install candidates and launched without a shell.
+	cmd.Stdin = strings.NewReader(probe)
+	out, err := cmd.Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		fmt.Printf("  Rust kernel:      %s (probe failed: %v)\n", ac(auditBoldRed, "unreachable"), err)
+	} else {
+		fmt.Printf("  Rust kernel:      %s\n", ac(auditGreen, "callable"))
+	}
+
+	engine := os.Getenv("SIR_ENGINE")
+	if engine == "" {
+		engine = "go (default; set SIR_ENGINE=rust to route runtime decisions to Rust)"
+	}
+	fmt.Printf("  active engine:    %s\n", engine)
+	fmt.Println()
 }
 
 type doctorBinaryIntegrityCheck struct {

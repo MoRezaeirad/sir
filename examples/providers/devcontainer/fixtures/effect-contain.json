@@ -1,0 +1,11 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_devcontainer_contain_001",
+  "type": "contain",
+  "required": false,
+  "fail_closed": false,
+  "target": {
+    "kind": "workspace",
+    "path": "/home/dev/myproject"
+  }
+}

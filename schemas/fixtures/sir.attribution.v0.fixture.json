@@ -1,0 +1,6 @@
+{
+  "confidence": "high",
+  "methods": ["enforced_boundary"],
+  "ambiguities": [],
+  "spoofing_risk": "none"
+}

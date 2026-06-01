@@ -3,10 +3,12 @@ package hooks
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/somoore/sir/pkg/agent"
 	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/policy"
+	"github.com/somoore/sir/pkg/secretscan"
 	"github.com/somoore/sir/pkg/session"
 )
 
@@ -22,7 +24,7 @@ func applyPostEvaluateOutputCredentialAnalysis(payload *PostHookPayload, state *
 	}
 	switch payload.ToolName {
 	case "Read", "Edit", "Bash":
-		credMatches := ScanOutputForCredentials(payload.ToolOutput)
+		credMatches := scanOutputForCredentialsInContext(payload)
 		if len(credMatches) == 0 {
 			return false
 		}
@@ -142,4 +144,52 @@ func applyPostEvaluateMCPOutputAnalysis(payload *PostHookPayload, state *session
 	fmt.Fprintln(os.Stderr, FormatMCPInjectionWarning(serverName, severity, patternNames))
 
 	return appended
+}
+
+// testRunnerPrefixes lists command prefixes that identify test runners. Output
+// from test runners routinely includes credential-shaped test data (high-entropy
+// strings, synthetic tokens, example keys) that would otherwise trip the
+// high-entropy heuristic and falsely mark the session as secret.
+//
+// The structured-pattern scan (AKIA…, ghp_…, PEM headers, JWTs, etc.) still
+// runs for test output — only the high-entropy heuristic is skipped, because
+// that heuristic relies on context-word proximity which fires on strings like
+// "session token: <test-value>". A real AWS key or GitHub PAT in test output
+// is still caught by its structural prefix.
+var testRunnerPrefixes = []string{
+	"go test",
+	"cargo test",
+	"pytest",
+	"python -m pytest",
+	"python3 -m pytest",
+	"npm test",
+	"yarn test",
+	"npx jest",
+	"bundle exec rspec",
+}
+
+// isTestRunnerBashCommand reports whether the Bash tool payload is running a
+// test suite command whose output should skip the high-entropy heuristic.
+func isTestRunnerBashCommand(payload *PostHookPayload) bool {
+	if payload.ToolName != "Bash" {
+		return false
+	}
+	cmd, _ := payload.ToolInput["command"].(string)
+	cmd = strings.TrimSpace(cmd)
+	for _, prefix := range testRunnerPrefixes {
+		if cmd == prefix || strings.HasPrefix(cmd, prefix+" ") || strings.HasPrefix(cmd, prefix+"\n") {
+			return true
+		}
+	}
+	return false
+}
+
+// scanOutputForCredentialsInContext scans tool output for credentials, skipping
+// the high-entropy heuristic when the payload is a test runner command. Structured
+// credential patterns (AKIA, ghp_, PEM, JWT, etc.) are always checked.
+func scanOutputForCredentialsInContext(payload *PostHookPayload) []secretscan.CredentialMatch {
+	if isTestRunnerBashCommand(payload) {
+		return secretscan.ScanOutputForStructuredCredentials(payload.ToolOutput)
+	}
+	return ScanOutputForCredentials(payload.ToolOutput)
 }

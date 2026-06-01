@@ -13,13 +13,13 @@ import (
 )
 
 // wizard.go implements `sir wizard` / `sir install --global`: a step-by-step
-// onboarding flow that lets the user choose which agents to protect and which
-// repositories to cover, then performs the install.
+// onboarding flow that lets the user choose an enabled protection target and
+// which repositories to cover.
 //
 // Architectural honesty (verified against pkg/hooks/evaluate_io.go and
-// pkg/lease/lease.go): sir's hooks live in the agents' global config files
-// (~/.claude, ~/.codex, ~/.gemini). Once installed they fire in EVERY repo any
-// agent runs in — including repos cloned later — with no per-repo install step.
+// pkg/lease/lease.go): sir's install path writes host-agent global config
+// files. Once installed, those hooks fire in EVERY repo that enabled agent
+// runs in — including repos cloned later — with no per-repo install step.
 // An unleashed repo automatically evaluates against lease.DefaultLease(), a
 // full guard lease (sensitive-path asks, secret-in-session network/push
 // blocking, postinstall hashing, hook-tamper detection). The ONLY thing a
@@ -28,9 +28,9 @@ import (
 //
 // Therefore the wizard does NOT build a filesystem watcher or a clone daemon:
 // the first time an agent runs in a new repo IS the detection point. Scope
-// selection here is about (a) which agents get hooks and (b) which existing
-// repos get a seeded personal-profile lease up front. Future clones are
-// covered by the global hooks at neutral-guard until they get a lease.
+// selection here is about which existing repos get a seeded personal-profile
+// lease up front. Future clones are covered by the global hooks at
+// neutral-guard until they get a lease.
 
 type wizardScope int
 
@@ -55,10 +55,25 @@ func cmdWizard(projectRoot, mode string, args []string) {
 		return
 	}
 
-	// Step 1 — agents.
-	detected := detectInstalledAgents()
+	// Step 1 — enabled agent target.
+	detectedAll := detectInstalledAgents()
+	detected := filterInstallableAgents(detectedAll)
 	if len(detected) == 0 {
-		fatal("no supported agents detected on this machine.\n  Install Claude Code, Gemini CLI, or Codex, then re-run sir wizard.")
+		if len(detectedAll) > 0 {
+			fatal("AI coding agents were detected, but none are enabled for hook protection in this build.\n  Currently enabled: Claude Code.")
+		}
+		fatal("no AI coding agent detected on this machine.\n  Install an enabled protection target, then re-run sir wizard. Currently enabled: Claude Code.")
+	}
+	if len(detectedAll) > len(detected) {
+		var disabled []string
+		for _, ag := range detectedAll {
+			if !isInstallableAgent(ag) {
+				disabled = append(disabled, ag.Name())
+			}
+		}
+		if len(disabled) > 0 {
+			fmt.Printf("Detected but disabled for hook install in this build: %s\n\n", strings.Join(disabled, ", "))
+		}
 	}
 	chosenAgents, remember, confirmed := runAgentChecklist(detected)
 	if !confirmed {
@@ -66,7 +81,7 @@ func cmdWizard(projectRoot, mode string, args []string) {
 		return
 	}
 	if len(chosenAgents) == 0 {
-		fatal("no agents selected. Re-run `sir wizard` and select at least one with Space.")
+		fatal("no agents selected. Re-run `sir wizard` and select Claude Code with Space.")
 	}
 
 	// Step 2 — scope.
@@ -125,7 +140,7 @@ func cmdWizard(projectRoot, mode string, args []string) {
 
 	fmt.Println()
 	fmt.Println(ansiBold("Wizard complete."))
-	fmt.Println("  Run any installed agent in any repo — sir is invisible until something dangerous happens.")
+	fmt.Println("  Run the protected agent in any repo — sir is invisible until something dangerous happens.")
 	if scope == scopeEverywhere {
 		fmt.Println("  New clones are covered automatically the first time an agent runs in them")
 		fmt.Println("  (neutral guard). To give a repo the redacted-secret-view default up front,")

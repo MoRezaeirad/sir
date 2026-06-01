@@ -1,0 +1,11 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_macos_sandbox_contain_001",
+  "type": "contain",
+  "required": false,
+  "fail_closed": false,
+  "target": {
+    "kind": "command",
+    "command": "/usr/bin/curl -sS -m 3 -o /dev/null http://example.com"
+  }
+}

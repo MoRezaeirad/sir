@@ -8,10 +8,14 @@ import (
 	"strings"
 )
 
-// DiscoverServerNames returns the set of MCP server names discovered across the
-// default sir config surfaces.
+// DiscoverServerNames returns the set of MCP server names that are eligible for
+// legacy hook-time auto approval across the default sir config surfaces.
+// Project-scoped servers stored in global configs are intentionally excluded:
+// they are discoverable by DiscoverInventory, but require an explicit approval
+// step because a single-workspace MCP addition is too easy to confuse with
+// already-trusted global posture.
 func DiscoverServerNames(projectRoot string) []string {
-	return ApprovedServerNames(DiscoverInventory(projectRoot).Servers)
+	return AutoApprovedServerNames(DiscoverInventory(projectRoot).Servers)
 }
 
 // DiscoverInventory returns the inventory for the default sir MCP config
@@ -57,6 +61,13 @@ func discoverConfigFiles(projectRoot string, scopes map[ConfigScope]bool) []Inve
 			Scope: ConfigProjectLocal,
 		})
 	}
+	if scopeAllowed(scopes, ConfigCursorProject) {
+		files = append(files, InventoryFile{
+			Path:  filepath.Join(projectRoot, ".cursor", "mcp.json"),
+			Label: ".cursor/mcp.json",
+			Scope: ConfigCursorProject,
+		})
+	}
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		if scopeAllowed(scopes, ConfigClaudeGlobal) {
 			files = append(files,
@@ -66,9 +77,10 @@ func discoverConfigFiles(projectRoot string, scopes map[ConfigScope]bool) []Inve
 					Scope: ConfigClaudeGlobal,
 				},
 				InventoryFile{
-					Path:  filepath.Join(homeDir, ".claude.json"),
-					Label: "~/.claude.json",
-					Scope: ConfigClaudeGlobal,
+					Path:        filepath.Join(homeDir, ".claude.json"),
+					Label:       "~/.claude.json",
+					Scope:       ConfigClaudeGlobal,
+					ProjectRoot: projectRoot,
 				},
 				InventoryFile{
 					Path:  filepath.Join(homeDir, ".claude", ".mcp.json"),
@@ -82,6 +94,13 @@ func discoverConfigFiles(projectRoot string, scopes map[ConfigScope]bool) []Inve
 				Path:  filepath.Join(homeDir, ".gemini", "settings.json"),
 				Label: "~/.gemini/settings.json",
 				Scope: ConfigGeminiGlobal,
+			})
+		}
+		if scopeAllowed(scopes, ConfigCursorGlobal) {
+			files = append(files, InventoryFile{
+				Path:  filepath.Join(homeDir, ".cursor", "mcp.json"),
+				Label: "~/.cursor/mcp.json",
+				Scope: ConfigCursorGlobal,
 			})
 		}
 	}
@@ -111,9 +130,28 @@ func ReadInventoryFile(file InventoryFile) ([]ServerInventory, error) {
 		return nil, err
 	}
 
+	var servers []ServerInventory
 	rawServers, _ := doc["mcpServers"].(map[string]interface{})
+	servers = append(servers, readMCPServerMap(file, rawServers, "", file.Label, false)...)
+
+	if file.Scope == ConfigClaudeGlobal && filepath.Base(file.Path) == ".claude.json" && file.ProjectRoot != "" {
+		if projects, _ := doc["projects"].(map[string]interface{}); len(projects) > 0 {
+			for _, key := range claudeProjectKeyCandidates(file.ProjectRoot) {
+				entry, _ := projects[key].(map[string]interface{})
+				if entry == nil {
+					continue
+				}
+				projectServers, _ := entry["mcpServers"].(map[string]interface{})
+				servers = append(servers, readMCPServerMap(file, projectServers, key, file.Label+" (project)", true)...)
+			}
+		}
+	}
+	return servers, nil
+}
+
+func readMCPServerMap(file InventoryFile, rawServers map[string]interface{}, projectKey, sourceLabel string, requiresExplicitApproval bool) []ServerInventory {
 	if len(rawServers) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	names := make([]string, 0, len(rawServers))
@@ -145,17 +183,43 @@ func ReadInventoryFile(file InventoryFile) ([]ServerInventory, error) {
 			}
 		}
 		servers = append(servers, ServerInventory{
-			Name:        name,
-			SourcePath:  file.Path,
-			SourceLabel: file.Label,
-			Scope:       file.Scope,
-			Command:     command,
-			Args:        args,
-			HasCommand:  hasCommand,
-			Proxy:       proxy,
+			Name:                     name,
+			SourcePath:               file.Path,
+			SourceLabel:              sourceLabel,
+			Scope:                    file.Scope,
+			ProjectKey:               projectKey,
+			RequiresExplicitApproval: requiresExplicitApproval,
+			Command:                  command,
+			Args:                     args,
+			HasCommand:               hasCommand,
+			Proxy:                    proxy,
 		})
 	}
-	return servers, nil
+	return servers
+}
+
+func claudeProjectKeyCandidates(projectRoot string) []string {
+	var candidates []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == path {
+				return
+			}
+		}
+		candidates = append(candidates, path)
+	}
+	add(projectRoot)
+	if abs, err := filepath.Abs(projectRoot); err == nil {
+		add(abs)
+		if realPath, err := filepath.EvalSymlinks(abs); err == nil {
+			add(realPath)
+		}
+	}
+	return candidates
 }
 
 // InterfaceSliceToStrings converts an `[]interface{}` JSON value into a string

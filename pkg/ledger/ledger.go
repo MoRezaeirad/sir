@@ -53,6 +53,48 @@ type Entry struct {
 	DiffSummary string   `json:"diff_summary,omitempty"` // concise diff summary for posture alerts
 	Restored    bool     `json:"restored,omitempty"`     // whether auto-restore succeeded
 	LatencyMs   int      `json:"latency_ms,omitempty"`   // sir decision latency in ms (perf metric)
+
+	// BaseVerdict is the native + developer-workflow-floor verdict BEFORE any
+	// advisory policy-provider composition — the same "base" that `sir policy
+	// explain` computes live. Persisting it lets `sir why` show whether a
+	// provider verdict actually changed the outcome (base allow → final ask) or
+	// was suppressed by a floor, without re-running the engine. Empty on entries
+	// written before this field existed (treated as "unknown" by readers). Not
+	// hashed (advisory, post-decision metadata; mirrors ProviderVerdicts).
+	BaseVerdict string `json:"base_verdict,omitempty"`
+	// ProviderVerdicts records advisory verdicts from registered policy
+	// providers (OPA, Cedar, custom packs) that contributed to this decision,
+	// attributed separately from native policy rules. Policy metadata only —
+	// never raw secrets. Not hashed (advisory, post-decision metadata).
+	ProviderVerdicts []ProviderVerdictRecord `json:"provider_verdicts,omitempty"`
+	// ProviderFailures records policy/advisory providers that failed to produce
+	// a verdict (timeout, missing entrypoint, malformed output). Surfaced so the
+	// audit trail shows a provider's input was missing (fail-open) rather than
+	// silently absent. Not hashed.
+	ProviderFailures []ProviderFailureRecord `json:"provider_failures,omitempty"`
+}
+
+// ProviderVerdictRecord is a single policy-provider verdict as persisted in the
+// ledger. Fields are policy metadata (provider name, decision, matched rule
+// IDs, reason) — never raw secrets.
+type ProviderVerdictRecord struct {
+	Provider     string   `json:"provider"`
+	Verdict      string   `json:"verdict"`
+	RulesMatched []string `json:"rules_matched,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
+	Used         bool     `json:"used"`
+}
+
+// ProviderFailureRecord is a single provider failure as persisted in the
+// ledger. Reason is the (non-secret) error string; Status classifies the
+// fail-open behavior and TimedOut remains as a compatibility flag.
+type ProviderFailureRecord struct {
+	Provider string `json:"provider"`
+	Kind     string `json:"kind,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Behavior string `json:"behavior,omitempty"`
+	TimedOut bool   `json:"timed_out,omitempty"`
 }
 
 const (

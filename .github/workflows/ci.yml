@@ -37,6 +37,7 @@ jobs:
     outputs:
       go: ${{ steps.detect.outputs.go }}
       rust: ${{ steps.detect.outputs.rust }}
+      platform: ${{ steps.detect.outputs.platform }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -45,7 +46,7 @@ jobs:
           # to inspect both parents and compute the touched paths cheaply.
           fetch-depth: 2
 
-      - name: Detect whether this PR needs Go or Rust CI
+      - name: Detect whether this PR needs Go, Rust, or platform CI
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -53,16 +54,22 @@ jobs:
           set -euo pipefail
 
           if [ "${EVENT_NAME}" != "pull_request" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-            echo "rust=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "go=true"
+              echo "rust=true"
+              echo "platform=true"
+            } >> "$GITHUB_OUTPUT"
             echo "Non-PR event; forcing full CI."
             exit 0
           fi
 
           if ! git rev-parse HEAD^2 >/dev/null 2>&1; then
             echo "PR merge commit parents unavailable; falling back to full CI."
-            echo "go=true" >> "$GITHUB_OUTPUT"
-            echo "rust=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "go=true"
+              echo "rust=true"
+              echo "platform=true"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -75,6 +82,7 @@ jobs:
 
           go=false
           rust=false
+          platform=false
 
           while IFS= read -r file; do
             [ -z "${file}" ] && continue
@@ -86,18 +94,55 @@ jobs:
             esac
 
             case "${file}" in
-              .github/workflows/ci.yml|mister-core/*|mister-shared/*|Cargo.toml|Cargo.lock|deny.toml)
+              .github/workflows/ci.yml|mister-core/*|mister-shared/*|sir-core/*|Cargo.toml|Cargo.lock|deny.toml)
                 rust=true
+                ;;
+            esac
+
+            case "${file}" in
+              .github/workflows/*|.github/actions/*|.goreleaser.yml|.pre-commit-config.yaml|scripts/check_os_coverage.py|scripts/download.sh|scripts/download.ps1|scripts/verify-release.sh)
+                platform=true
+                ;;
+            esac
+
+            # Harness fixtures, schemas, and provider examples directly affect the
+            # contract and proof surface -- run parity whenever they change.
+            case "${file}" in
+              harness/*|schemas/*)
+                go=true
+                rust=true
+                ;;
+            esac
+            case "${file}" in
+              examples/providers/*)
+                go=true
                 ;;
             esac
           done <<EOF
           ${CHANGED_FILES}
           EOF
 
-          echo "go=${go}" >> "$GITHUB_OUTPUT"
-          echo "rust=${rust}" >> "$GITHUB_OUTPUT"
+          {
+            echo "go=${go}"
+            echo "rust=${rust}"
+            echo "platform=${platform}"
+          } >> "$GITHUB_OUTPUT"
           echo "go=${go}"
           echo "rust=${rust}"
+          echo "platform=${platform}"
+
+  os-coverage:
+    name: OS/arch coverage contract
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Verify supported OS/arch coverage
+        run: python3 scripts/check_os_coverage.py
 
   rust:
     name: Rust (mister-core)
@@ -126,16 +171,21 @@ jobs:
       - name: Verify zero external dependencies
         if: needs.changes.outputs.rust == 'true'
         run: |
-          # mister-core and mister-shared must have ZERO external crate dependencies.
-          # Cargo.lock must contain exactly 2 packages: mister-core and mister-shared.
-          PKG_COUNT=$(grep -c '^\[\[package\]\]' Cargo.lock)
-          if [ "$PKG_COUNT" -ne 2 ]; then
-            echo "FATAL: Expected 2 packages in Cargo.lock, found $PKG_COUNT"
-            echo "mister-core MUST have zero external dependencies."
-            cat Cargo.lock
-            exit 1
-          fi
-          echo "Verified: Cargo.lock contains exactly 2 packages (mister-core + mister-shared)"
+          # All three workspace packages must have ZERO external crate dependencies.
+          # Approved packages: mister-core, mister-shared, sir-core (v2 decision kernel).
+          # mister-core/mister-shared = legacy v1 oracle (preserved for parity migration).
+          # sir-core = v2 pure decision kernel (Rust decides, Go orchestrates).
+          APPROVED="mister-core mister-shared sir-core"
+          LOCK_PKGS=$(grep '^name = ' Cargo.lock | awk '{print $3}' | tr -d '"' | sort)
+          for pkg in $LOCK_PKGS; do
+            if ! echo "$APPROVED" | grep -qw "$pkg"; then
+              echo "FATAL: Unapproved package in Cargo.lock: $pkg"
+              echo "All workspace crates must be zero-dependency. Approved: $APPROVED"
+              exit 1
+            fi
+          done
+          PKG_COUNT=$(echo "$LOCK_PKGS" | wc -w | tr -d ' ')
+          echo "Verified: Cargo.lock contains $PKG_COUNT approved packages: $LOCK_PKGS"
 
       - name: Build (locked)
         if: needs.changes.outputs.rust == 'true'
@@ -153,11 +203,11 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: |
           cargo install cargo-deny@0.16.1 --locked
-          # mister-core has zero external dependencies (Cargo.lock contains only
-          # mister-core + mister-shared), so the advisories check can never find
-          # anything. We skip it to avoid a cargo-deny/rustsec bug where CVSS 4.0
-          # advisory entries cause a hard parse failure regardless of cargo-deny
-          # version. bans, licenses, and sources are the checks that matter here.
+          # All three workspace crates have zero external dependencies:
+          #   mister-core / mister-shared = legacy v1 oracle (preserved for migration parity)
+          #   sir-core                    = v2 pure decision kernel (Rust decides, Go orchestrates)
+          # We skip advisories to avoid a cargo-deny/rustsec bug with CVSS 4.0 entries.
+          # bans, licenses, and sources are the checks that matter here.
           cargo deny check bans licenses sources
 
   go:
@@ -264,6 +314,104 @@ jobs:
             -exclude=G104,G115,G204,G301,G302,G304,G306,G703 \
             ./...
 
+      - name: Kernel parity (Go vs Rust decision agreement)
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.rust == 'true'
+        run: |
+          # Build the Rust sir-core-eval binary first (needed for parity check).
+          cargo build --release -p sir-core
+          # Build the Go sir binary.
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/sir ./cmd/sir
+          # Run parity check: CI fails if Go and Rust disagree on any harness case.
+          bin/sir harness run --engine both harness/fixtures/cases
+
+      - name: Capture-tier honesty gate
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.rust == 'true'
+        run: |
+          # Honesty regression gate: fails if any capture result is weaker than its
+          # fixture claim. A fixture that says 'enforces' but the capture shows
+          # 'detects' or 'blind' indicates an over-optimistic fixture — fix the fixture.
+          # Requires bin/sir and sir-core-eval from the parity step above.
+          bin/sir harness run --tier capture harness/fixtures/cases
+
+      - name: Enforcement-honesty gate (effect providers)
+        if: needs.changes.outputs.go == 'true'
+        run: |
+          # Every effect_provider that declares contain:true or block:true MUST be
+          # honest about whether it really enforces. It must either:
+          #   (a) declare enforcement:simulated  (capability plumbing / stub), OR
+          #   (b) declare enforcement:real AND have capture proof in
+          #       harness/fixtures/cases/*/capture.json (a capture referencing the
+          #       provider name proves real OS-level enforcement was observed).
+          # A provider that claims enforcement:real without capture proof fails CI:
+          # we never let an unproven "real" enforcement claim ship.
+          set -euo pipefail
+          fail=0
+          for manifest in examples/providers/*/provider.yaml; do
+            kind=$(grep -E '^kind:' "$manifest" | head -1 | sed 's/^kind:[[:space:]]*//')
+            [ "$kind" = "effect_provider" ] || continue
+
+            # Capability booleans live under the indented capabilities: block.
+            contain=$(grep -E '^[[:space:]]+contain:[[:space:]]*true' "$manifest" || true)
+            block=$(grep -E '^[[:space:]]+block:[[:space:]]*true' "$manifest" || true)
+            if [ -z "$contain" ] && [ -z "$block" ]; then
+              continue  # declares no containment — no honesty signal required
+            fi
+
+            # Top-level enforcement field (indent 0).
+            enforcement=$(grep -E '^enforcement:' "$manifest" | head -1 | sed 's/^enforcement:[[:space:]]*//' || true)
+            name=$(grep -E '^name:' "$manifest" | head -1 | sed 's/^name:[[:space:]]*//')
+
+            case "$enforcement" in
+              simulated)
+                echo "OK   $name: enforcement:simulated (capability plumbing)"
+                ;;
+              real)
+                if grep -rq -- "$name" harness/fixtures/cases/*/capture.json 2>/dev/null; then
+                  echo "OK   $name: enforcement:real with capture proof"
+                else
+                  echo "FAIL $name: claims enforcement:real but NO capture proof in harness/fixtures/cases/*/capture.json"
+                  fail=1
+                fi
+                ;;
+              "")
+                echo "FAIL $name: declares contain/block but has NO enforcement field (must declare simulated or real)"
+                fail=1
+                ;;
+              *)
+                echo "FAIL $name: invalid enforcement value '$enforcement' (must be simulated or real)"
+                fail=1
+                ;;
+            esac
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "Enforcement-honesty gate failed: an effect provider's enforcement claim is unproven or malformed."
+            exit 1
+          fi
+          echo "Enforcement-honesty gate passed."
+
+      - name: Cross-compile all supported platforms
+        if: needs.changes.outputs.go == 'true'
+        run: |
+          # Verify every supported target compiles cleanly.
+          # CGO_ENABLED=0 is set globally; static builds cross-compile without a C toolchain.
+          set -euo pipefail
+          targets=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+            "windows/arm64"
+          )
+          for t in "${targets[@]}"; do
+            if GOOS="${t%/*}" GOARCH="${t#*/}" go build -trimpath -ldflags="-s -w" -o /dev/null ./... 2>&1; then
+              echo "  OK  ${t}"
+            else
+              echo "FAIL ${t}"
+              exit 1
+            fi
+          done
+
       - name: Go supply chain check
         if: needs.changes.outputs.go == 'true'
         run: bash scripts/go-supply-chain.sh
@@ -300,3 +448,153 @@ jobs:
           gosec -quiet \
             -exclude=G104,G115,G204,G301,G302,G304,G306,G703 \
             ./...
+
+  go-windows:
+    name: Go (Windows cross-platform tests)
+    runs-on: windows-latest
+    needs: [changes]
+    permissions:
+      contents: read
+    steps:
+      - name: Skip when Go CI is not required
+        if: needs.changes.outputs.go != 'true'
+        run: echo "No Go-relevant changes; required check succeeds without Windows CI."
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.go == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        if: needs.changes.outputs.go == 'true'
+        with:
+          go-version: "1.25.10"
+          cache: false
+
+      - name: Build (static, stripped)
+        if: needs.changes.outputs.go == 'true'
+        run: go build -trimpath -ldflags="-s -w" -o bin/sir.exe ./cmd/sir
+
+      - name: Vet
+        if: needs.changes.outputs.go == 'true'
+        run: go vet ./...
+
+      - name: Test (cross-platform packages)
+        if: needs.changes.outputs.go == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Full Go coverage runs on Linux. The current Windows suite is limited
+          # to packages whose tests do not rely on POSIX permissions, /tmp paths,
+          # or HOME semantics that differ from Windows runner behavior.
+          go test \
+            ./pkg/detect \
+            ./pkg/friction \
+            ./pkg/relay \
+            ./pkg/runtime \
+            ./pkg/secretscan \
+            ./pkg/secretview \
+            ./pkg/signal \
+            ./pkg/telemetry
+
+  go-native-platforms:
+    name: Go native / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    needs: [changes]
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux_amd64
+            runner: ubuntu-24.04
+          - target: linux_arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin_amd64
+            runner: macos-15-intel
+          - target: darwin_arm64
+            runner: macos-15
+          - target: windows_amd64
+            runner: windows-2025
+          - target: windows_arm64
+            runner: windows-11-arm
+    steps:
+      - name: Skip when native platform CI is not required
+        if: needs.changes.outputs.go != 'true' && needs.changes.outputs.platform != 'true'
+        run: echo "No Go/platform-relevant changes; required check succeeds without native platform CI."
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
+        with:
+          go-version: "1.25.10"
+          cache: false
+
+      - name: Ensure Linux namespace prerequisites
+        if: (needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true') && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=()
+          for bin in unshare mount; do
+            if ! command -v "${bin}" >/dev/null 2>&1; then
+              missing+=("${bin}")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y util-linux
+          fi
+
+          uname -a
+          command -v unshare
+          command -v mount
+          if sudo sysctl kernel.unprivileged_userns_clone >/dev/null 2>&1; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          if sudo sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Build
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          out=bin/sir
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            out=bin/sir.exe
+          fi
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "${out}" ./cmd/sir
+
+      - name: Vet
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
+        shell: bash
+        run: go vet ./...
+
+      - name: Test
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            go test \
+              ./pkg/detect \
+              ./pkg/friction \
+              ./pkg/relay \
+              ./pkg/runtime \
+              ./pkg/secretscan \
+              ./pkg/secretview \
+              ./pkg/signal \
+              ./pkg/telemetry
+          else
+            go test ./...
+          fi

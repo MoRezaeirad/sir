@@ -1,0 +1,12 @@
+schema_version: sir.provider.v0
+name: sir-advisory-baseline
+kind: advisory_provider
+version: 0.2.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  risk_levels: [low, medium, high, critical]
+  is_advisory: true
+fixtures:
+  - fixtures/advisory-curl.json

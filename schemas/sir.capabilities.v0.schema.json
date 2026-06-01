@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.capabilities.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider",
+    "kind",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sir.capabilities.v0"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "signal_provider",
+        "effect_provider",
+        "policy_provider",
+        "advisory_provider",
+        "export_provider"
+      ]
+    },
+    "capabilities": {
+      "type": "object"
+    },
+    "enforcement": {
+      "description": "Optional honesty signal mirroring the manifest's top-level enforcement field. Same enum as sir.provider.v0: effect providers declaring contain/block capability SHOULD carry enforcement:real ONLY when they actually apply OS-level containment; stubs and capability plumbing carry enforcement:simulated. Absent is conceptually equivalent to \"simulated\".",
+      "enum": [
+        "simulated",
+        "real"
+      ]
+    }
+  }
+}

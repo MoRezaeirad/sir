@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: os-coverage-contract
+        name: supported OS/arch coverage contract
+        entry: python3 scripts/check_os_coverage.py
+        language: system
+        pass_filenames: false
+        files: ^(\.github/workflows/|\.goreleaser\.yml|scripts/(check_os_coverage\.py|download\.sh|download\.ps1|verify-release\.sh)|\.pre-commit-config\.yaml)$

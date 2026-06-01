@@ -64,7 +64,7 @@ func runProtectedWriteGuards(projectRoot string) (runWriteGuards, error) {
 	addLiteral := func(path string) { addRunWriteGuard(path, literalsSeen, &guards.literals) }
 	addSubpath := func(path string) { addRunWriteGuard(path, subpathsSeen, &guards.subpaths) }
 
-	for _, rel := range []string{".claude", ".gemini", ".codex"} {
+	for _, rel := range []string{".claude", ".gemini", ".codex", ".cursor"} {
 		addSubpath(filepath.Join(homeDir, rel))
 	}
 	for _, ag := range agent.All() {
@@ -144,6 +144,8 @@ func runProjectPostureFilesForAgent(ag agent.Agent) []string {
 		files = append(files, "GEMINI.md")
 	case agent.AgentID("codex"):
 		files = append(files, "AGENTS.md")
+	case agent.AgentID("cursor"):
+		files = append(files, "AGENTS.md", ".cursor/hooks.json", ".cursor/mcp.json")
 	}
 	return files
 }

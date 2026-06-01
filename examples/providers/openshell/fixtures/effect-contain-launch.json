@@ -1,0 +1,12 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_openshell_contain_launch_001",
+  "type": "contain",
+  "required": true,
+  "fail_closed": true,
+  "target": {
+    "kind": "process_launch",
+    "cmd": ["/usr/bin/env", "echo", "hello"],
+    "allow_network": false
+  }
+}

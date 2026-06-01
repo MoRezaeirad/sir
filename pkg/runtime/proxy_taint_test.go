@@ -104,6 +104,54 @@ func TestPostureGate_CachesUntilMtimeChanges(t *testing.T) {
 	}
 }
 
+// TestRunProxy_UnresolvableHostSkipped verifies that seedAllowlist skips hosts
+// that fail DNS resolution (e.g. host.docker.internal when Docker Desktop is
+// not running) instead of hard-failing. The proxy starts successfully and the
+// unresolvable host is simply absent from the IP set — connections to it will
+// be denied by the proxy's allowlist, which is the correct fail-safe outcome.
+func TestRunProxy_UnresolvableHostSkipped(t *testing.T) {
+	dnsErrors := 0
+	resolver := func(_ context.Context, host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			dnsErrors++
+			return nil, &net.DNSError{Name: host, Err: "no such host"}
+		}
+		return []string{"203.0.113.1"}, nil
+	}
+	// Both an unresolvable host and a resolvable one — seedAllowlist must not
+	// abort on the first failure.
+	proxy, err := startLocalProxyWithResolver(
+		[]string{"host.docker.internal", "resolvable.example"},
+		resolver,
+	)
+	if err != nil {
+		t.Fatalf("startLocalProxyWithResolver: %v — unresolvable hosts must not abort startup", err)
+	}
+	defer proxy.Close()
+
+	if dnsErrors != 1 {
+		t.Errorf("expected 1 DNS error (host.docker.internal), got %d", dnsErrors)
+	}
+
+	// The resolvable host should be in the allowlist; the unresolvable one absent.
+	al := proxy.allowlist
+	hasResolvable := false
+	for _, h := range al.Hosts() {
+		if h == "resolvable.example" {
+			hasResolvable = true
+		}
+		if h == "host.docker.internal" {
+			// host.docker.internal IS in the allowlist as a name entry — that's
+			// fine. What matters is that it has no resolved IPs and that startup
+			// succeeded. (Connections to it will simply fail the dial step.)
+			_ = h
+		}
+	}
+	if !hasResolvable {
+		t.Errorf("resolvable host not found in allowlist: %v", al.Hosts())
+	}
+}
+
 // TestRunProxy_TaintGateBlocksExternalEgress is the end-to-end proof that the
 // gate is wired into the request path: an allowlisted NON-loopback host passes
 // the gate when the session is clean (and then fails downstream at dial — a

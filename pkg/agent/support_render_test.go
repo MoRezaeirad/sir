@@ -26,18 +26,13 @@ func TestSupportNarrativeBlocksUseManifestData(t *testing.T) {
 		}
 	}
 
-	claude, _ := SupportManifestForID(Claude)
 	gemini, _ := SupportManifestForID(Gemini)
 	codex, _ := SupportManifestForID(Codex)
 
-	if !strings.Contains(scope, claude.Name) {
-		t.Fatalf("threat-model scope block missing %q", claude.Name)
-	}
-	if !strings.Contains(scope, gemini.Name) {
-		t.Fatalf("threat-model scope block missing %q", gemini.Name)
-	}
-	if !strings.Contains(scope, codex.Name) {
-		t.Fatalf("threat-model scope block missing %q", codex.Name)
+	for _, manifest := range orderedPublicSupportManifests() {
+		if !strings.Contains(scope, manifest.Name) {
+			t.Fatalf("threat-model scope block missing %q", manifest.Name)
+		}
 	}
 	if !strings.Contains(scope, missingLifecycleMitigations(gemini)) {
 		t.Fatalf("threat-model scope block missing Gemini mitigation summary %q", missingLifecycleMitigations(gemini))
@@ -47,6 +42,10 @@ func TestSupportNarrativeBlocksUseManifestData(t *testing.T) {
 	}
 	if !strings.Contains(scope, supportThreatModelDocPath(codex)) {
 		t.Fatalf("threat-model scope block missing Codex docs path %q", supportThreatModelDocPath(codex))
+	}
+	cursor, _ := SupportManifestForID(Cursor)
+	if !strings.Contains(scope, supportThreatModelDocPath(cursor)) {
+		t.Fatalf("threat-model scope block missing Cursor docs path %q", supportThreatModelDocPath(cursor))
 	}
 }
 
@@ -96,5 +95,13 @@ func TestValidateSupportContractRequiresGeneratedProseInputs(t *testing.T) {
 	nearParity.MinVersion = ""
 	if err := ValidateSupportContract(&nearParity); err == nil {
 		t.Fatal("ValidateSupportContract should reject non-reference support without a minimum version")
+	}
+}
+
+func TestValidateSupportContractRejectsStaleWireEvents(t *testing.T) {
+	stale := codexSpec
+	stale.SupportedWireEvents = append(append([]string{}, stale.SupportedWireEvents...), "StaleEvent")
+	if err := ValidateSupportContract(&stale); err == nil {
+		t.Fatal("ValidateSupportContract should reject stale wire-event claims not backed by hook registrations")
 	}
 }

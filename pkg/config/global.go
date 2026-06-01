@@ -90,19 +90,20 @@ type Config struct {
 	MCPDeepVerbGating bool `json:"mcp_deep_verb_gating,omitempty"`
 
 	// InstallAgents is the remembered set of host-agent IDs the user chose
-	// in the `sir install` interactive selector ("remember this choice").
-	// When non-empty, a bare `sir install` (no --agent flag, no override)
-	// installs for exactly these agents instead of re-prompting or
-	// auto-detecting all. Values are agent IDs ("claude", "codex",
-	// "gemini"). Empty/absent means "no remembered preference" — fall back
-	// to interactive selection on a TTY, or auto-detect-all otherwise.
+	// in `sir config`, `sir wizard`, or the `sir install` interactive selector
+	// ("remember this choice"). The enabled install set in this testing build
+	// is Claude Code. Older configs may still contain non-Claude IDs ("codex",
+	// "gemini", "cursor"); `sir install` ignores those values while those
+	// targets are disabled for hook installation. Empty/absent means "no
+	// remembered preference" — fall back to interactive selection on a TTY, or
+	// the enabled default otherwise.
 	//
 	// This is a friction-reduction convenience, not a security control:
 	// it only narrows which agents get hooks, and an explicit --agent flag
-	// always overrides it. Persisted via Save during `sir install`, which
-	// is user-initiated and out-of-band of any agent session (see the
-	// PostureFiles note in cmd/sir/install.go), so it does not route
-	// through the agent-write posture gate.
+	// always overrides it. Persisted via Save during explicit configuration,
+	// which is user-initiated and out-of-band of any agent session (see the
+	// PostureFiles note in cmd/sir/install.go), so it does not route through
+	// the agent-write posture gate.
 	InstallAgents []string `json:"install_agents,omitempty"`
 
 	// UpdatedAt is a local timestamp recorded on Save. Used for telemetry

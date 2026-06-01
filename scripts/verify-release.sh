@@ -67,10 +67,10 @@ mkdir -p "${DEST_DIR}"
 gh release download "${TAG}" --repo "${REPO}" --dir "${DEST_DIR}"
 
 shopt -s nullglob
-archives=("${DEST_DIR}"/sir_*.tar.gz)
+archives=("${DEST_DIR}"/sir_*.tar.gz "${DEST_DIR}"/sir_*.zip)
 shopt -u nullglob
 if [[ ${#archives[@]} -eq 0 ]]; then
-  echo "No sir release archives found in ${DEST_DIR}" >&2
+  echo "No sir release .tar.gz or .zip archives found in ${DEST_DIR}" >&2
   exit 1
 fi
 

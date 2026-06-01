@@ -44,8 +44,8 @@ func equalIDs(got []agent.Agent, want []agent.AgentID) bool {
 }
 
 // TestResolveAgentSelection_RememberedPreferenceWins verifies a remembered
-// config preference narrows the install set to the remembered-and-detected
-// intersection, in registry order, without prompting.
+// config preference is filtered to remembered, detected, and currently enabled
+// install targets without prompting.
 func TestResolveAgentSelection_RememberedPreferenceWins(t *testing.T) {
 	detected := agentsFromIDs(t, agent.Claude, agent.Codex, agent.Gemini)
 	res, err := resolveAgentSelection(agentSelectionInputs{
@@ -60,10 +60,8 @@ func TestResolveAgentSelection_RememberedPreferenceWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Registry order is claude, codex, gemini → remembered {gemini,claude}
-	// filters to [claude, gemini].
-	if !equalIDs(res.agents, []agent.AgentID{agent.Claude, agent.Gemini}) {
-		t.Errorf("got %v, want [claude gemini]", idsOf(res.agents))
+	if !equalIDs(res.agents, []agent.AgentID{agent.Claude}) {
+		t.Errorf("got %v, want [claude]", idsOf(res.agents))
 	}
 	if res.rememberChoice {
 		t.Error("rememberChoice must be false when reusing an existing preference")
@@ -87,11 +85,11 @@ func TestResolveAgentSelection_RememberedDropsUninstalled(t *testing.T) {
 	}
 }
 
-// TestResolveAgentSelection_RememberedAllGoneFallsToAuto verifies that when no
-// remembered ID is still detected, resolution falls through (here, to
-// auto-detect-all because interactive is false).
-func TestResolveAgentSelection_RememberedAllGoneFallsToAuto(t *testing.T) {
-	detected := agentsFromIDs(t, agent.Codex)
+// TestResolveAgentSelection_RememberedAllGoneFallsToDefault verifies that when
+// no remembered ID is still detected, resolution falls through to the
+// Claude-only default instead of broadening to every detected adapter.
+func TestResolveAgentSelection_RememberedAllGoneFallsToDefault(t *testing.T) {
+	detected := agentsFromIDs(t, agent.Claude, agent.Codex)
 	res, err := resolveAgentSelection(agentSelectionInputs{
 		remembered:  []string{"gemini"}, // not detected
 		detected:    detected,
@@ -100,15 +98,26 @@ func TestResolveAgentSelection_RememberedAllGoneFallsToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !equalIDs(res.agents, []agent.AgentID{agent.Codex}) {
-		t.Errorf("got %v, want [codex] (auto-detect-all fallback)", idsOf(res.agents))
+	if !equalIDs(res.agents, []agent.AgentID{agent.Claude}) {
+		t.Errorf("got %v, want [claude] (default fallback)", idsOf(res.agents))
 	}
 }
 
-// TestResolveAgentSelection_NonInteractiveAutoDetectsAll pins the CI / --yes /
-// piped fallback: no prompt, install for every detected agent. This is the
-// behavior that must not regress.
-func TestResolveAgentSelection_NonInteractiveAutoDetectsAll(t *testing.T) {
+func TestResolveAgentSelection_RememberedAllGoneWithoutClaudeErrors(t *testing.T) {
+	detected := agentsFromIDs(t, agent.Codex)
+	_, err := resolveAgentSelection(agentSelectionInputs{
+		remembered:  []string{"gemini"}, // not detected
+		detected:    detected,
+		interactive: false,
+	})
+	if err == nil {
+		t.Fatal("expected an error when no remembered agent survives and Claude is absent")
+	}
+}
+
+// TestResolveAgentSelection_NonInteractiveDefaultsToClaude pins the CI / --yes
+// / piped fallback: no prompt, install for the enabled default target.
+func TestResolveAgentSelection_NonInteractiveDefaultsToClaude(t *testing.T) {
 	detected := agentsFromIDs(t, agent.Claude, agent.Codex, agent.Gemini)
 	res, err := resolveAgentSelection(agentSelectionInputs{
 		detected:    detected,
@@ -121,38 +130,41 @@ func TestResolveAgentSelection_NonInteractiveAutoDetectsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !equalIDs(res.agents, []agent.AgentID{agent.Claude, agent.Codex, agent.Gemini}) {
-		t.Errorf("got %v, want all detected", idsOf(res.agents))
+	if !equalIDs(res.agents, []agent.AgentID{agent.Claude}) {
+		t.Errorf("got %v, want [claude]", idsOf(res.agents))
 	}
 }
 
 // TestResolveAgentSelection_InteractivePickSubsetAndRemember verifies that an
-// interactive selection narrows the set and propagates the remember flag.
+// interactive selection receives the currently enabled targets and propagates
+// the remember flag.
 func TestResolveAgentSelection_InteractivePickSubsetAndRemember(t *testing.T) {
 	detected := agentsFromIDs(t, agent.Claude, agent.Codex, agent.Gemini)
 	res, err := resolveAgentSelection(agentSelectionInputs{
 		detected:    detected,
 		interactive: true,
 		selector: func(d []agent.Agent) ([]agent.Agent, bool, bool) {
-			// Pick claude + gemini, ask to remember.
-			return []agent.Agent{d[0], d[2]}, true, true
+			if !equalIDs(d, []agent.AgentID{agent.Claude}) {
+				t.Fatalf("selector got %v, want only enabled target [claude]", idsOf(d))
+			}
+			return []agent.Agent{d[0]}, true, true
 		},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !equalIDs(res.agents, []agent.AgentID{agent.Claude, agent.Gemini}) {
-		t.Errorf("got %v, want [claude gemini]", idsOf(res.agents))
+	if !equalIDs(res.agents, []agent.AgentID{agent.Claude}) {
+		t.Errorf("got %v, want [claude]", idsOf(res.agents))
 	}
 	if !res.rememberChoice {
 		t.Error("rememberChoice must propagate from the selector")
 	}
 }
 
-// TestResolveAgentSelection_InteractiveCancelFallsToAuto verifies that
+// TestResolveAgentSelection_InteractiveCancelFallsToDefault verifies that
 // cancelling the selector (confirmed=false) does not abort — it falls back to
-// the safe auto-detect-all default.
-func TestResolveAgentSelection_InteractiveCancelFallsToAuto(t *testing.T) {
+// the safe Claude-only default.
+func TestResolveAgentSelection_InteractiveCancelFallsToDefault(t *testing.T) {
 	detected := agentsFromIDs(t, agent.Claude, agent.Codex)
 	res, err := resolveAgentSelection(agentSelectionInputs{
 		detected:    detected,
@@ -164,8 +176,8 @@ func TestResolveAgentSelection_InteractiveCancelFallsToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !equalIDs(res.agents, []agent.AgentID{agent.Claude, agent.Codex}) {
-		t.Errorf("cancel should fall back to auto-detect-all, got %v", idsOf(res.agents))
+	if !equalIDs(res.agents, []agent.AgentID{agent.Claude}) {
+		t.Errorf("cancel should fall back to default [claude], got %v", idsOf(res.agents))
 	}
 }
 
@@ -204,6 +216,29 @@ func TestResolveAgentSelection_UnknownExplicitErrors(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected an error for an unknown --agent value")
+	}
+}
+
+func TestResolveAgentSelection_KnownButDisabledExplicitErrors(t *testing.T) {
+	_, err := resolveAgentSelection(agentSelectionInputs{
+		explicit: "codex",
+		detected: agentsFromIDs(t, agent.Claude, agent.Codex),
+	})
+	if err == nil {
+		t.Fatal("expected an error for a known but disabled --agent value")
+	}
+	if got := err.Error(); !containsAll(got, "--agent codex", "not enabled", "enabled install targets: claude") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDisabledInstallTargetNames(t *testing.T) {
+	names := disabledInstallTargetNames(
+		agentsFromIDs(t, agent.Claude, agent.Codex, agent.Gemini),
+		agentsFromIDs(t, agent.Claude),
+	)
+	if got, want := names, []string{"Codex", "Gemini CLI"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("disabled names = %v, want %v", got, want)
 	}
 }
 
@@ -254,6 +289,55 @@ func TestWizardMCPScope_CodexOnlyNeverCollapsesToNil(t *testing.T) {
 	}
 	if len(s) != 1 {
 		t.Errorf("codex-only scope should be exactly {ProjectLocal}, got %v", s)
+	}
+}
+
+func TestMCPScopeForAgent_CursorOnlyDoesNotImplyOtherScopes(t *testing.T) {
+	s := mcpScopesForAgent(string(agent.Cursor))
+	if s == nil {
+		t.Fatal("explicit cursor scope must be non-nil (nil = all scopes allowed)")
+	}
+	if !s[mcpConfigCursorGlobal] {
+		t.Error("explicit cursor scope must include Cursor global MCP")
+	}
+	if !s[mcpConfigCursorProject] {
+		t.Error("explicit cursor scope must include project .cursor/mcp.json")
+	}
+	if s[mcpConfigProjectLocal] || s[mcpConfigClaudeGlobal] || s[mcpConfigGeminiGlobal] {
+		t.Errorf("explicit cursor install must not include non-Cursor MCP scopes, got %v", s)
+	}
+	if len(s) != 2 {
+		t.Errorf("explicit cursor scope should be exactly {CursorProject, CursorGlobal}, got %v", s)
+	}
+
+	codex := mcpScopesForAgent(string(agent.Codex))
+	if codex == nil {
+		t.Fatal("explicit codex scope must be non-nil (nil = all scopes allowed)")
+	}
+	if len(codex) != 0 {
+		t.Errorf("codex has no supported MCP scope today; got %v", codex)
+	}
+}
+
+func TestWizardMCPScope_CursorOnlyIncludesProjectAndCursorOnly(t *testing.T) {
+	s := wizardMCPScope(agentsFromIDs(t, agent.Cursor))
+	if s == nil {
+		t.Fatal("wizard scope must never be nil (nil = all scopes allowed)")
+	}
+	if !s[mcpConfigProjectLocal] {
+		t.Error("cursor wizard scope must include project-local .mcp.json")
+	}
+	if !s[mcpConfigCursorGlobal] {
+		t.Error("cursor wizard scope must include Cursor global MCP")
+	}
+	if !s[mcpConfigCursorProject] {
+		t.Error("cursor wizard scope must include project .cursor/mcp.json")
+	}
+	if s[mcpConfigClaudeGlobal] || s[mcpConfigGeminiGlobal] {
+		t.Errorf("cursor wizard scope must not include unchosen globals, got %v", s)
+	}
+	if len(s) != 3 {
+		t.Errorf("cursor wizard scope should be exactly {ProjectLocal, CursorProject, CursorGlobal}, got %v", s)
 	}
 }
 

@@ -3,9 +3,10 @@
 > [!NOTE]
 > sir is experimental — test on your own machine, not shared infrastructure. `sir doctor` recovers any wedged state; [report bugs](https://github.com/somoore/sir/issues).
 
-sir — Sandbox in Reverse — is an experimental security runtime for AI coding agents. Codex has **limited support** today: sir now registers Bash, native-write, MCP, and permission-request hooks where Codex exposes them, but lifecycle coverage remains narrower than Claude Code and upstream hook delivery is still the boundary. If your Codex workflow is mostly shell, build, test, native patching, git, and approved MCP calls, you get meaningful enforcement. If it needs full lifecycle coverage, prefer Claude Code.
+sir — Sandbox in Reverse — is an experimental security runtime for AI coding agents. Codex has **limited adapter support** today: sir can parse and evaluate Codex hook payloads where Codex exposes Bash, native-write, MCP, and permission-request hooks, but lifecycle coverage remains narrower than Claude Code and upstream hook delivery is still the boundary. `sir install` detects Codex, but Codex hook installation is disabled in this testing build. If your workflow needs installed hook protection right now, choose the currently enabled target: Claude Code.
 
-> **Note:** Minimum supported version is `0.118.0`. `sir doctor` warns on older versions.
+> [!NOTE]
+> Minimum supported version is `0.118.0`. `sir doctor` warns on older versions.
 
 <!-- BEGIN GENERATED SUPPORT DOC -->
 ## Status: limited support on codex-cli 0.118.0+ (partial tool coverage)
@@ -28,19 +29,16 @@ sir — Sandbox in Reverse — is an experimental security runtime for AI coding
 | Terminal posture sweep | ✅ Yes | The final posture sweep runs on Stop because Codex exposes no SessionEnd hook. |
 <!-- END GENERATED SUPPORT DOC -->
 
-## Required setup
+## Current install boundary
 
-Codex hooks do not fire until you enable the feature flag:
+`sir install` rejects `--agent codex` in this build and does not create or update `~/.codex/hooks.json` or `~/.codex/config.toml`. Use the enabled target for installed hook protection:
 
 ```bash
-codex features enable codex_hooks
-sir install --agent codex
+sir install --agent claude
 sir doctor
 ```
 
-Plain `sir install` also auto-detects Codex when it is already present on this machine.
-
-sir writes `~/.codex/hooks.json` and may create or update `~/.codex/config.toml` to enable `codex_hooks` for you. In interactive mode it asks first; under `--yes` it enables the feature flag automatically.
+Codex hooks still require `codex_hooks` when evaluating an existing or manual Codex hook setup, but SIR will not enable that feature flag while Codex install is disabled.
 
 ## What works today
 
@@ -78,6 +76,6 @@ That is why Codex is documented as limited support, not near-parity.
 
 ## Troubleshooting
 
-- **`sir doctor` warns about `codex_hooks`:** run `codex features enable codex_hooks`.
-- **`sir status` shows missing Codex hooks:** rerun `sir install --agent codex`.
+- **`sir doctor` warns about `codex_hooks`:** enable it only if you are maintaining an existing or manual Codex hook setup.
+- **`sir status` shows missing Codex hooks:** Codex install is disabled in this build; use the enabled target for installed protection.
 - **A file write was not pre-gated:** confirm the Codex version and whether the tool emitted `apply_patch`, `Edit`, or `Write` through the hook surface.

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/somoore/sir/pkg/lease"
@@ -373,51 +372,6 @@ func TestCmdInstall_RewritesRawMCPServersThroughProxy(t *testing.T) {
 	}
 }
 
-func TestCmdInstall_ExplicitAgentDoesNotRewriteOtherMCPSurfaces(t *testing.T) {
-	env := newTestEnv(t)
-
-	if err := os.WriteFile(filepath.Join(env.projectRoot, ".mcp.json"), []byte(`{"mcpServers":{"project-raw":{"command":"node","args":["server.js"]}}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	env.writeSettingsJSON(map[string]interface{}{
-		"mcpServers": map[string]interface{}{
-			"claude-raw": map[string]interface{}{
-				"command": "python3",
-				"args":    []string{"global.py"},
-			},
-		},
-	})
-
-	codexDir := filepath.Join(env.home, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	origArgs := os.Args
-	os.Args = []string{"sir", "install", "--yes", "--agent", "codex"}
-	defer func() { os.Args = origArgs }()
-
-	cmdInstall(env.projectRoot, "guard")
-
-	projectDoc, err := readJSONFileMap(filepath.Join(env.projectRoot, ".mcp.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	projectEntry := projectDoc["mcpServers"].(map[string]interface{})["project-raw"].(map[string]interface{})
-	if projectEntry["command"] != "node" {
-		t.Fatalf("expected explicit codex install to leave project MCP alone, got %#v", projectEntry["command"])
-	}
-
-	claudeDoc := env.readSettingsJSON()
-	claudeEntry := claudeDoc["mcpServers"].(map[string]interface{})["claude-raw"].(map[string]interface{})
-	if claudeEntry["command"] != "python3" {
-		t.Fatalf("expected explicit codex install to leave Claude MCP alone, got %#v", claudeEntry["command"])
-	}
-}
-
 func TestCmdInstall_SavesCanonicalHooksCopy(t *testing.T) {
 	env := newTestEnv(t)
 
@@ -478,12 +432,9 @@ func TestCmdInstall_ReinstallDeduplicates(t *testing.T) {
 	}
 }
 
-func TestCmdInstall_DefaultDetectsGeminiOnly(t *testing.T) {
+func TestCmdInstall_DefaultDoesNotWriteGeminiWhenGeminiAlsoDetected(t *testing.T) {
 	env := newTestEnv(t)
 
-	if err := os.RemoveAll(filepath.Join(env.home, ".claude")); err != nil {
-		t.Fatal(err)
-	}
 	geminiPath := filepath.Join(env.home, ".gemini", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -491,7 +442,7 @@ func TestCmdInstall_DefaultDetectsGeminiOnly(t *testing.T) {
 	if err := os.WriteFile(geminiPath, []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeProjectInstallFixtures(t, env.projectRoot, "GEMINI.md", ".mcp.json")
+	writeProjectInstallFixtures(t, env.projectRoot, "CLAUDE.md", "GEMINI.md", ".mcp.json")
 
 	origArgs := os.Args
 	os.Args = []string{"sir", "install", "--yes"}
@@ -503,24 +454,18 @@ func TestCmdInstall_DefaultDetectsGeminiOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hooks, ok := geminiDoc["hooks"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected hooks key in Gemini settings, got %#v", geminiDoc)
+	if _, ok := geminiDoc["hooks"]; ok {
+		t.Fatalf("default install must not write Gemini hooks while Gemini install is disabled, got %#v", geminiDoc)
 	}
-	if _, ok := hooks["BeforeTool"]; !ok {
-		t.Fatalf("expected Gemini hooks to contain BeforeTool, got %#v", hooks)
-	}
-	if _, err := os.Stat(filepath.Join(env.home, ".claude", "settings.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected Claude settings to stay absent, got err=%v", err)
+	claudeDoc := env.readSettingsJSON()
+	if hooks, ok := claudeDoc["hooks"].(map[string]interface{}); !ok || hooks["PreToolUse"] == nil {
+		t.Fatalf("expected Claude hooks to be installed, got %#v", claudeDoc)
 	}
 }
 
-func TestCmdInstall_DefaultDetectsCodexOnlyAndEnablesFeatureFlag(t *testing.T) {
+func TestCmdInstall_DefaultProtectsClaudeOnlyWhenCodexAlsoDetected(t *testing.T) {
 	env := newTestEnv(t)
 
-	if err := os.RemoveAll(filepath.Join(env.home, ".claude")); err != nil {
-		t.Fatal(err)
-	}
 	codexDir := filepath.Join(env.home, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -529,7 +474,43 @@ func TestCmdInstall_DefaultDetectsCodexOnlyAndEnablesFeatureFlag(t *testing.T) {
 	if err := os.WriteFile(hooksPath, []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeProjectInstallFixtures(t, env.projectRoot, "AGENTS.md", ".mcp.json")
+	writeProjectInstallFixtures(t, env.projectRoot, "CLAUDE.md", "AGENTS.md", ".mcp.json")
+
+	origArgs := os.Args
+	os.Args = []string{"sir", "install", "--yes"}
+	defer func() { os.Args = origArgs }()
+
+	cmdInstall(env.projectRoot, "guard")
+
+	claudeDoc := env.readSettingsJSON()
+	if hooks, ok := claudeDoc["hooks"].(map[string]interface{}); !ok || hooks["PreToolUse"] == nil {
+		t.Fatalf("expected Claude hooks to be installed, got %#v", claudeDoc)
+	}
+
+	codexDoc, err := readJSONFileMap(hooksPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := codexDoc["hooks"]; ok {
+		t.Fatalf("default install must not write Codex hooks without opt-in, got %#v", codexDoc)
+	}
+	if _, err := os.Stat(filepath.Join(codexDir, "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("default install must not enable Codex feature flag, got err=%v", err)
+	}
+}
+
+func TestCmdInstall_DefaultDoesNotWriteCodexFeatureFlagWhenCodexAlsoDetected(t *testing.T) {
+	env := newTestEnv(t)
+
+	codexDir := filepath.Join(env.home, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hooksPath := filepath.Join(codexDir, "hooks.json")
+	if err := os.WriteFile(hooksPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectInstallFixtures(t, env.projectRoot, "CLAUDE.md", "AGENTS.md", ".mcp.json")
 
 	origArgs := os.Args
 	os.Args = []string{"sir", "install", "--yes"}
@@ -541,22 +522,11 @@ func TestCmdInstall_DefaultDetectsCodexOnlyAndEnablesFeatureFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hooks, ok := codexDoc["hooks"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected hooks key in Codex hooks.json, got %#v", codexDoc)
+	if _, ok := codexDoc["hooks"]; ok {
+		t.Fatalf("default install must not write Codex hooks while Codex install is disabled, got %#v", codexDoc)
 	}
-	if _, ok := hooks["PreToolUse"]; !ok {
-		t.Fatalf("expected Codex hooks to contain PreToolUse, got %#v", hooks)
-	}
-	configToml, err := os.ReadFile(filepath.Join(codexDir, "config.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(configToml) == "" || !strings.Contains(string(configToml), "codex_hooks = true") {
-		t.Fatalf("expected Codex config.toml to enable codex_hooks, got %q", string(configToml))
-	}
-	if _, err := os.Stat(filepath.Join(env.home, ".claude", "settings.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected Claude settings to stay absent, got err=%v", err)
+	if _, err := os.Stat(filepath.Join(codexDir, "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("default install must not enable Codex feature flag, got err=%v", err)
 	}
 }
 

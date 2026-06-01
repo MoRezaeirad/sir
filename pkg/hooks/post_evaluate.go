@@ -248,7 +248,8 @@ func promoteSessionApprovalsOnPost(payload *PostHookPayload, l *lease.Lease, sta
 	if l.ReuseSessionApprovals && intent.Verb == policy.VerbRunEphemeral {
 		state.PromotePendingEphemeralApproval(intent.Target)
 	}
-	if l.AutoLeaseApprovedRemotes && intent.Verb == policy.VerbPushRemote && intent.RemoteName != "" {
+	if l.AutoLeaseApprovedRemotes && intent.RemoteName != "" &&
+		(intent.Verb == policy.VerbPushRemote || intent.Verb == policy.VerbPushOrigin) {
 		state.PromotePendingPushRemote(intent.RemoteName)
 	}
 }

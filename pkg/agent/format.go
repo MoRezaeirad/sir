@@ -38,6 +38,28 @@ func formatLegacyPreToolUse(decision, reason, denyLiteral string, hasAsk bool) (
 	})
 }
 
+func formatCursorPreToolUse(decision, reason string) ([]byte, error) {
+	return formatCursorPermission(decision, reason, AskToDenySuffix)
+}
+
+func formatCursorPostToolUse(decision, reason string) ([]byte, error) {
+	return formatCursorPermission(decision, reason, AskToDenySuffixPost)
+}
+
+func formatCursorPermission(decision, reason, askSuffix string) ([]byte, error) {
+	if decision == "allow" {
+		return []byte("{}"), nil
+	}
+	if decision == "ask" {
+		reason += askSuffix
+	}
+	return json.Marshal(map[string]interface{}{
+		"permission":    "deny",
+		"user_message":  reason,
+		"agent_message": reason,
+	})
+}
+
 // formatLegacyPostToolUse emits the flat { decision, reason } shape for a
 // PostToolUse verdict. When emitEnvelope is true, a hookSpecificOutput
 // envelope with additionalContext is included alongside (used by Codex to

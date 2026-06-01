@@ -85,6 +85,7 @@ mod tests {
             is_sensitive_path: false,
             is_delegation: false,
             is_tripwire: false,
+            policy_verdicts: vec![],
         }
     }
 

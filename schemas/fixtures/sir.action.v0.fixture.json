@@ -1,0 +1,17 @@
+{
+  "action_id": "act-deadbeef",
+  "mode": "hook_gate",
+  "action_type": "file_read",
+  "sensitivity": "credential",
+  "labels": ["credential_access", "ai_agent_actor"],
+  "attribution": {
+    "confidence": "medium",
+    "methods": ["declared_intent"],
+    "ambiguities": [],
+    "spoofing_risk": "low"
+  },
+  "enforceability": {
+    "class": "enforces",
+    "reason": "cooperative pre-exec hook can gate"
+  }
+}

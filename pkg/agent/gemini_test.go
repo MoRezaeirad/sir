@@ -453,8 +453,8 @@ func TestForID_Gemini(t *testing.T) {
 
 func TestAll_IncludesGemini(t *testing.T) {
 	all := All()
-	if len(all) != 3 {
-		t.Fatalf("All() len = %d, want 3", len(all))
+	if len(all) < 3 {
+		t.Fatalf("All() len = %d, want >= 3", len(all))
 	}
 	if _, ok := all[2].(*GeminiAgent); !ok {
 		t.Errorf("All()[2] = %T, want *GeminiAgent", all[2])

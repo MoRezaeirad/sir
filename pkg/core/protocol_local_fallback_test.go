@@ -232,6 +232,60 @@ func TestLocalEvaluate_PushOrigin_NoSecret_Allow(t *testing.T) {
 	}
 }
 
+func TestLocalEvaluate_PolicyVerdictEscalatesCleanPush(t *testing.T) {
+	req := &Request{
+		Intent:  Intent{Verb: "push_origin", Target: "origin"},
+		Session: SessionInfo{SecretSession: false},
+		PolicyVerdicts: []policy.PolicyVerdict{
+			{Provider: "opa-bridge", Verdict: "deny", RulesMatched: []string{"deny-all-push"}, IsAdvisory: true},
+		},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Errorf("provider deny on clean push should escalate allow to ask, got %q", resp.Decision)
+	}
+	if !strings.Contains(resp.Reason, "policy:opa-bridge") {
+		t.Errorf("provider attribution missing from reason: %q", resp.Reason)
+	}
+}
+
+func TestLocalEvaluate_PolicyVerdictCannotOverrideCleanCommitFloor(t *testing.T) {
+	req := &Request{
+		Intent:  Intent{Verb: "commit", Target: "git commit -m test"},
+		Session: SessionInfo{SecretSession: false},
+		PolicyVerdicts: []policy.PolicyVerdict{
+			{Provider: "opa-bridge", Verdict: "deny", RulesMatched: []string{"deny-all-commit"}, IsAdvisory: true},
+		},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "allow" {
+		t.Errorf("clean commit floor should suppress provider deny, got %q", resp.Decision)
+	}
+}
+
+func TestLocalEvaluate_PolicyVerdictCannotLowerNativeDeny(t *testing.T) {
+	req := &Request{
+		Intent:  Intent{Verb: "net_external", Target: "https://example.com"},
+		Session: SessionInfo{SecretSession: true},
+		PolicyVerdicts: []policy.PolicyVerdict{
+			{Provider: "opa-bridge", Verdict: "allow", RulesMatched: []string{"allow-all"}, IsAdvisory: true},
+		},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "deny" {
+		t.Errorf("provider allow must not lower native deny, got %q", resp.Decision)
+	}
+}
+
 // TestLocalEvaluate_PushOrigin_WasSecret_Ask locks in the monotonic high-water
 // mark in the Go fallback: the turn-scoped secret flag has cleared
 // (SecretSession=false) but the session held a secret earlier this session
@@ -387,6 +441,27 @@ func TestLocalEvaluate_DenyAll_OverridesEverything(t *testing.T) {
 				t.Errorf("deny_all + %s: decision = %q, want deny", verb, resp.Decision)
 			}
 		})
+	}
+}
+
+// A git-hook write classified as posture must ask in the production fallback
+// engine — proving the floor fires through core.Evaluate, not only the harness
+// kernel. (IsPosture is set upstream by classify.IsPostureFile; see
+// pkg/hooks.TestIsPostureFile for the classification link.)
+func TestLocalEvaluate_GitHookWrite_Asks(t *testing.T) {
+	req := &Request{
+		Intent: Intent{
+			Verb:      "stage_write",
+			Target:    ".git/hooks/pre-commit",
+			IsPosture: true,
+		},
+	}
+	resp, err := localEvaluate(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Errorf("git-hook write: decision = %q, want ask", resp.Decision)
 	}
 }
 

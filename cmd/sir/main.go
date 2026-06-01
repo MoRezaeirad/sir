@@ -81,9 +81,7 @@ func main() {
 	case "log", "ledger":
 		cmdLogLifecycle(projectRoot, os.Args[2:])
 	case "why":
-		// UX-1: the instant answer — verdict / why / did-data-leave / fix in a
-		// few lines. The full causal chain lives in `sir explain`.
-		cmdWhy(projectRoot)
+		cmdKernelWhy(os.Args[2:])
 	case "explain":
 		index := -1 // default: last entry
 		for i, arg := range os.Args[2:] {
@@ -121,9 +119,15 @@ func main() {
 		cmdApprove(projectRoot, os.Args[2:])
 	case "policy":
 		cmdPolicy(projectRoot, os.Args[2:])
-	case "config":
-		// Memorable alias for the canonical config view.
-		cmdPolicy(projectRoot, append([]string{"show"}, os.Args[2:]...))
+	case "config", "configure":
+		// `sir config` / `sir configure` — guided interactive setup.
+		// With no arguments: guided setup (discover agents, select, install, receipt).
+		// With subcommand arguments: forward to `sir policy show` for backward compatibility.
+		if len(os.Args) > 2 {
+			cmdPolicy(projectRoot, append([]string{"show"}, os.Args[2:]...))
+		} else {
+			cmdConfigure(projectRoot)
+		}
 	case "protect-path":
 		cmdProtectPath(projectRoot, os.Args[2:])
 	case "unprotect-path":
@@ -151,13 +155,27 @@ func main() {
 	case "friction":
 		cmdFriction(projectRoot, os.Args[2:])
 	case "replay":
-		cmdReplay(projectRoot, os.Args[2:])
+		cmdKernelReplay(os.Args[2:])
 	case "run", "launch", "contain":
 		cmdRun(projectRoot, os.Args[2:])
 	case "relay":
 		cmdRelay(os.Args[2:])
 	case "completion":
 		cmdCompletion(os.Args[2:])
+	case "on":
+		cmdOn(os.Args[2:])
+	case "off":
+		cmdOff(os.Args[2:])
+	case "allow":
+		cmdAllow(os.Args[2:])
+	case "export":
+		cmdExport(os.Args[2:])
+	case "provider":
+		cmdProvider(os.Args[2:])
+	case "harness":
+		cmdHarness(os.Args[2:])
+	case "kernel":
+		cmdKernel(os.Args[2:])
 	case "verify":
 		cmdVerify()
 	case "version":
@@ -177,22 +195,26 @@ func main() {
 
 func printUsage() {
 	fmt.Println(`sir — sandbox in reverse
-A security runtime for AI coding agents (Claude Code, Codex, and Gemini CLI).
+A security runtime for AI coding agents.
 Invisible during normal work. Loud at the exits.
 
 Get started
+  sir config                     Guided setup: discover agents, choose a protection target, install hooks
   sir setup [--personal|--team|--strict|--managed]  Guided first-run setup for policy + hooks
-  sir wizard                     Step-by-step setup: pick agents + scope, then install
-  sir install [--agent <id>] [--observe] [--no-rebaseline] [--global] [--forget]
-                                 Set up sir hooks for installed agents.
+  sir wizard                     Step-by-step setup: pick enabled agent + scope, then install
+  sir install [--agent claude] [--observe] [--no-rebaseline] [--global] [--forget]
+                                 Set up sir hooks for a selected enabled agent.
+                                 This build detects multiple agents, but hook
+                                 protection is currently enabled for Claude Code.
                                  With no --agent on a terminal, prompts an
-                                 interactive multi-select (Space toggles, last
-                                 row remembers the choice for next time).
-                                 Non-interactive (--yes / CI / piped) falls back
-                                 to all detected agents. An explicit --agent
-                                 always overrides the remembered choice.
-                                 (--agent: claude, codex, gemini)
-                                 --global runs the wizard (agent + scope select).
+                                 interactive selection and can remember that
+                                 choice for next time.
+                                 Non-interactive (--yes / CI / piped) installs
+                                 Claude Code hooks when Claude Code is detected.
+                                 An explicit --agent always overrides the
+                                 remembered choice.
+                                 (--agent: claude)
+                                 --global runs the wizard (scope select).
                                  --forget clears the remembered agent choice.
                                  --observe records would_allow/ask/deny and
                                  detections without blocking (observe-only
@@ -245,10 +267,19 @@ Review a session
   sir mcp wrap [--yes]           Rewrite raw command-based MCP servers through sir mcp-proxy
   sir mcp scope <name> [flags]   Add per-server MCP capability scopes
 
+Provider SDK + Kernel (v2)
+  sir provider validate <manifest.yaml>  Validate a provider manifest against sir.provider.v0
+  sir provider test <manifest.yaml>      Start provider, check capabilities, run fixture round-trips
+  sir provider health [directory]        Report health for all providers in a directory
+  sir harness run [fixtures/cases]       Score evasion fixture cases: enforces|detects|blind
+  sir kernel replay [cases-dir]          Process cases through v2 decision kernel, write ledger
+  sir kernel why [--id <id>]            Explain the last (or specific) kernel decision
+  sir kernel status                      Show mode, last decision, and provider health
+
 Maintenance
   sir doctor [--json]            Check sir's health and auto-repair (--json: read-only probe for CI)
   sir verify                     Verify binary integrity against install-time manifest
-  sir uninstall [--agent <id>]   Remove sir hooks from one or all installed agents
+  sir uninstall [--agent <id>]   Remove sir hooks from one or all known agent configs
   sir update                     Check for a newer release and show the upgrade command
   sir version [--check]          Show sir's version (--check compares with GitHub Releases)
   sir completion bash|zsh|fish   Print a shell completion script

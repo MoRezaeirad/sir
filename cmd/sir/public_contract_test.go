@@ -77,7 +77,7 @@ func TestPublicContractParity(t *testing.T) {
 		requireContainsFile(t, root, "README.md", "sir status", "README verification status command")
 		requireContainsFile(t, root, "README.md", "sir doctor", "README verification doctor command")
 		requireContainsFile(t, root, "README.md", "sir log verify", "README verification log verify command")
-		requireContainsFile(t, root, "README.md", "sir install            # auto-detect supported agents already on this machine", "README auto-detect install guidance")
+		requireContainsFile(t, root, "README.md", "sir config             # discover agents and choose an enabled protection target", "README install guidance")
 		requireContainsFile(t, root, "README.md", "ask the agent to read `.env`", "README secret-read check")
 		requireContainsFile(t, root, "README.md", "denies the raw read", "README deny-raw-read default narrative")
 		requireContainsFile(t, root, "README.md", "curl https://httpbin.org/get", "README blocked egress check")
@@ -95,11 +95,15 @@ func TestPublicContractParity(t *testing.T) {
 		requireGeneratedBlock(t, root, "docs/user/claude-code-hooks-integration.md", "GENERATED CLAUDE SUPPORT MATRIX", agent.RenderClaudeSupportMatrixBlock())
 		requireGeneratedBlock(t, root, "docs/user/gemini-support.md", "GENERATED SUPPORT DOC", agent.RenderSupportDocBlock(agent.Gemini))
 		requireGeneratedBlock(t, root, "docs/user/codex-support.md", "GENERATED SUPPORT DOC", agent.RenderSupportDocBlock(agent.Codex))
+		requireGeneratedBlock(t, root, "docs/user/cursor-support.md", "GENERATED SUPPORT DOC", agent.RenderSupportDocBlock(agent.Cursor))
 		requireContainsFile(t, root, "docs/user/claude-code-hooks-integration.md", "**Gemini CLI 0.36.0+ with near-parity support**", "Claude hooks integration Gemini tier")
 		requireContainsFile(t, root, "docs/user/claude-code-hooks-integration.md", "**Codex 0.118.0+ has limited support**", "Claude hooks integration Codex tier")
-		requireContainsFile(t, root, "docs/user/codex-support.md", "sir writes `~/.codex/hooks.json` and may create or update `~/.codex/config.toml`", "Codex support config.toml guidance")
+		requireContainsFile(t, root, "docs/user/codex-support.md", "Codex hook installation is disabled in this testing build", "Codex install boundary guidance")
+		requireContainsFile(t, root, "docs/user/cursor-support.md", "sir enforces only when Cursor emits the corresponding hook", "Cursor hook delivery boundary")
+		requireContainsFile(t, root, "docs/user/cursor-support.md", "Cursor hook ask/allow behavior is not treated as a reliable security boundary", "Cursor ask boundary")
+		requireContainsFile(t, root, "docs/user/cursor-support.md", "`afterFileEdit` is after-action", "Cursor after-file-edit boundary")
 		requireContainsFile(t, root, "docs/research/security-verification-guide.md", "Codex remains limited support with **partial** tool-path coverage", "verification guide Codex tier")
-		requireContainsFile(t, root, "docs/research/security-verification-guide.md", "auto-detected or explicitly selected agent configs gain sir hook entries", "verification guide auto-detect install guidance")
+		requireContainsFile(t, root, "docs/research/security-verification-guide.md", "selected enabled agent config gains sir hook entries", "verification guide install guidance")
 	})
 
 	t.Run("runtime_and_managed_contract", func(t *testing.T) {
@@ -247,8 +251,9 @@ on:
 	})
 
 	t.Run("docs_budgets", func(t *testing.T) {
+		// Concise docs (user guides, contributor guides): each ≤ 250 lines, total ≤ 3500.
 		total := 0
-		for _, rel := range activeDocAllowlist() {
+		for _, rel := range conciseDocs() {
 			lines := countLines(readFile(t, root, rel))
 			if lines > 250 {
 				t.Fatalf("%s has %d lines, want <= 250", rel, lines)
@@ -256,7 +261,7 @@ on:
 			total += lines
 		}
 		if total > 3500 {
-			t.Fatalf("active docs total %d lines, want <= 3500", total)
+			t.Fatalf("concise docs total %d lines, want <= 3500", total)
 		}
 
 		requireMaxLines(t, root, "README.md", 175)
@@ -266,8 +271,22 @@ on:
 	})
 }
 
+// activeDocAllowlist is the complete set of docs the repository must contain —
+// concise user/contributor docs plus reference API docs. This list is the
+// enforcement boundary for doc sprawl: any .md file in docs/ that is not
+// here fails the active_docs_surface test. The list is sorted to match
+// collectActiveDocs which returns docs in sorted order.
 func activeDocAllowlist() []string {
+	all := append(conciseDocs(), referenceDocAllowlist()...)
+	sort.Strings(all)
+	return all
+}
+
+// conciseDocs returns the focused user- and contributor-facing docs that must
+// each stay under 250 lines. Checked by docs_budgets.
+func conciseDocs() []string {
 	return []string{
+		"AGENTS.md",
 		"ARCHITECTURE.md",
 		"CHANGELOG.md",
 		"CLAUDE.md",
@@ -288,10 +307,29 @@ func activeDocAllowlist() []string {
 		"docs/research/validation-summary.md",
 		"docs/user/claude-code-hooks-integration.md",
 		"docs/user/codex-support.md",
+		"docs/user/cursor-support.md",
 		"docs/user/faq.md",
 		"docs/user/gemini-support.md",
 		"docs/user/runtime-security-overview.md",
 		"docs/user/siem-integration.md",
+	}
+}
+
+// referenceDocAllowlist returns the comprehensive reference docs (API, SDK,
+// provider guides, etc.) linked from README. These are not subject to the
+// per-file 250-line budget enforced on conciseDocs.
+func referenceDocAllowlist() []string {
+	return []string{
+		"docs/api.md",
+		"docs/architecture.md",
+		"docs/competitive-analysis.md",
+		"docs/contributing.md",
+		"docs/getting-started.md",
+		"docs/observability.md",
+		"docs/policy.md",
+		"docs/providers.md",
+		"docs/sdk.md",
+		"docs/security.md",
 	}
 }
 

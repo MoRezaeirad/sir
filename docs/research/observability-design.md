@@ -1,4 +1,4 @@
-# Observability Design — sir and the three-tier model
+# Observability Design — The Three-Tier Model
 
 > [!NOTE]
 > sir is experimental — test on your own machine, not shared infrastructure. `sir doctor` recovers any wedged state; [report bugs](https://github.com/somoore/sir/issues).

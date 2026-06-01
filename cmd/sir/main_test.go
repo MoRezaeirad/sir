@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/somoore/sir/pkg/agent"
 	"github.com/somoore/sir/pkg/lease"
@@ -192,6 +193,55 @@ func TestCmdGuardHelperProcess(t *testing.T) {
 	}
 
 	cmdGuard(os.Getenv("SIR_TEST_PROJECT_ROOT"), args)
+}
+
+func TestMainDispatchStatusJSONUsesOperatorStatus(t *testing.T) {
+	home := t.TempDir()
+	projectRoot := t.TempDir()
+	argsJSON, err := json.Marshal([]string{"status", "--json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSirMainHelperProcess$")
+	cmd.Dir = projectRoot
+	cmd.Env = append(os.Environ(),
+		"SIR_TEST_MAIN=1",
+		"SIR_TEST_MAIN_ARGS="+string(argsJSON),
+		"HOME="+home,
+	)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run main helper: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Mode:") {
+		t.Fatalf("sir status --json routed to kernel status, stdout:\n%s", stdout.String())
+	}
+	var report postureReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("status stdout is not JSON: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if report.Installed {
+		t.Fatalf("Installed = true in empty HOME, stdout:\n%s", stdout.String())
+	}
+}
+
+func TestSirMainHelperProcess(t *testing.T) {
+	if os.Getenv("SIR_TEST_MAIN") != "1" {
+		return
+	}
+
+	var args []string
+	if err := json.Unmarshal([]byte(os.Getenv("SIR_TEST_MAIN_ARGS")), &args); err != nil {
+		t.Fatalf("unmarshal main args: %v", err)
+	}
+	os.Args = append([]string{"sir"}, args...)
+	main()
+	os.Exit(0)
 }
 
 // -------------------------------------------------------------------
@@ -477,6 +527,42 @@ func TestCmdClearSession_ClearsTransientRestrictions(t *testing.T) {
 	}
 	if reloaded.PendingInjectionAlert {
 		t.Fatal("expected pending injection alert to be cleared")
+	}
+}
+
+func TestCmdClearSession_ClearsActiveRunShadowState(t *testing.T) {
+	env := newTestEnv(t)
+
+	durable := session.NewState(env.projectRoot)
+	env.writeSession(durable)
+
+	shadowHome := t.TempDir()
+	shadow := session.NewState(env.projectRoot)
+	shadow.MarkSecretSession()
+	if err := shadow.SaveToHome(shadowHome); err != nil {
+		t.Fatalf("save shadow state: %v", err)
+	}
+
+	now := time.Now()
+	if err := session.SaveRuntimeContainment(env.projectRoot, &session.RuntimeContainment{
+		Mode:            "darwin_local_proxy",
+		ShadowStateHome: shadowHome,
+		StartedAt:       now,
+		HeartbeatAt:     now,
+	}); err != nil {
+		t.Fatalf("save runtime containment: %v", err)
+	}
+	t.Cleanup(func() { _ = session.RemoveRuntimeContainment(env.projectRoot) })
+
+	cmdClearSession(env.projectRoot)
+
+	reloaded, err := session.LoadFromHome(shadowHome, env.projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.SecretSession || reloaded.SessionEverSecret {
+		t.Fatalf("expected shadow transient secret state cleared, got SecretSession=%v SessionEverSecret=%v",
+			reloaded.SecretSession, reloaded.SessionEverSecret)
 	}
 }
 

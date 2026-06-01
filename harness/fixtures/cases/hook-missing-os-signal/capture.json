@@ -1,0 +1,13 @@
+{
+  "_capture_evidence": {
+    "hook_active": false,
+    "reproduction": "env -i sh -c '...' — bare shell, no SIR hook → zero signals",
+    "signals_to_kernel": 0
+  },
+  "_capture_note": "Generated from a REAL run: a command ran in a bare `env -i` shell with no SIR hook present; zero signals reached the kernel (hook_missing derived from real absence). hook_gate with no signal → blind.",
+  "case_id": "hook-missing-os-signal",
+  "hook_missing": true,
+  "mode": "hook_gate",
+  "sensitive_source": true,
+  "signals": []
+}

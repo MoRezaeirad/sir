@@ -22,6 +22,10 @@ func SessionEnd(projectRoot string) error {
 // cmd/ layer do not have to import the lifecycle subpackage directly.
 type RebaselineSummary = hookslifecycle.RebaselineSummary
 
+// RebaselineSkip mirrors hookslifecycle.RebaselineSkip for the same cmd-layer
+// boundary as RebaselineSummary.
+type RebaselineSkip = hookslifecycle.RebaselineSkip
+
 // RebaselineAllProjects refreshes posture/lease/global-hook baselines across
 // every ~/.sir/projects/* state directory. Called by `sir install` after it
 // rewrites the host-agent hook files so sessions that were alive across the

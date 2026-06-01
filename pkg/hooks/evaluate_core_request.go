@@ -68,7 +68,7 @@ func appendEvaluationLedgerEntry(projectRoot string, payload *HookPayload, inten
 	// matches the agent-visible wire decision when the guard fired.
 	if degraded := thinkingDegradedLedgerDecision(state, decision); degraded != decision {
 		decision = degraded
-		reason = thinkingGuardLedgerReason
+		reason = ThinkingGuardLedgerReason
 	}
 	recorded := decision
 	if observe {
@@ -89,6 +89,18 @@ func appendEvaluationLedgerEntry(projectRoot string, payload *HookPayload, inten
 	if isToolMCP(payload.ToolName) && EnvLogToolContent() {
 		entry.Evidence = marshalMCPEvidence(payload.ToolInput)
 	}
+	// Attach policy-provider verdicts and fail-open failures collected during
+	// this evaluation (item 4/8). They reach the ledger separately from native
+	// policy rules. The holder is populated by evaluatePolicy and reset at the
+	// start of each evaluation, so it is empty on paths that never call Rust
+	// (e.g. the secret-read gate short-circuit).
+	verdicts, failures, base := takeLastProviderEvaluation()
+	// base is non-empty only when an advisory provider escalated the verdict
+	// (evaluatePolicy already compared it against the composed decision). Record
+	// it so `sir why` can show the base→final transition.
+	entry.BaseVerdict = base
+	entry.ProviderVerdicts = providerVerdictRecords(verdicts, string(decision), base)
+	entry.ProviderFailures = providerFailureRecords(failures)
 	entry.LatencyMs = decisionLatencyMs(state)
 	stampStatefulDetection(projectRoot, payload, intent, labels, recorded, state, entry)
 	if err := ledger.Append(projectRoot, entry); err != nil {
@@ -150,6 +162,52 @@ func stampStatefulDetection(projectRoot string, payload *HookPayload, intent Int
 	if entry.Severity == "" {
 		entry.Severity = string(d.Severity)
 	}
+}
+
+// providerVerdictRecords maps collected policy-provider verdicts to their
+// ledger record form (policy metadata only — no secrets, no IsAdvisory flag).
+func providerVerdictRecords(verdicts []policy.PolicyVerdict, finalDecision, baseVerdict string) []ledger.ProviderVerdictRecord {
+	if len(verdicts) == 0 {
+		return nil
+	}
+	out := make([]ledger.ProviderVerdictRecord, 0, len(verdicts))
+	for _, v := range verdicts {
+		out = append(out, ledger.ProviderVerdictRecord{
+			Provider:     v.Provider,
+			Verdict:      v.Verdict,
+			RulesMatched: v.RulesMatched,
+			Reason:       v.Reason,
+			Used:         providerVerdictWasUsed(v, finalDecision, baseVerdict),
+		})
+	}
+	return out
+}
+
+func providerVerdictWasUsed(v policy.PolicyVerdict, finalDecision, baseVerdict string) bool {
+	if baseVerdict != string(policy.VerdictAllow) || finalDecision != string(policy.VerdictAsk) {
+		return false
+	}
+	return v.Verdict == string(policy.VerdictAsk) || v.Verdict == string(policy.VerdictDeny)
+}
+
+// providerFailureRecords maps collected provider failures to their ledger
+// record form.
+func providerFailureRecords(failures []core.ProviderFailure) []ledger.ProviderFailureRecord {
+	if len(failures) == 0 {
+		return nil
+	}
+	out := make([]ledger.ProviderFailureRecord, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, ledger.ProviderFailureRecord{
+			Provider: f.Provider,
+			Kind:     f.Kind,
+			Status:   f.Status,
+			Reason:   f.Reason,
+			Behavior: f.Behavior,
+			TimedOut: f.TimedOut,
+		})
+	}
+	return out
 }
 
 // detectIDsToStrings converts detection IDs to strings for the transient

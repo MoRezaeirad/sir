@@ -3,9 +3,10 @@
 > [!NOTE]
 > sir is experimental — test on your own machine, not shared infrastructure. `sir doctor` recovers any wedged state; [report bugs](https://github.com/somoore/sir/issues).
 
-sir — Sandbox in Reverse — is an experimental security runtime for AI coding agents. Gemini CLI has **near-parity support**: it fires hooks on the full tool path (not just Bash), so sir's file IFC labeling, shell classification, MCP argument and response scanning, and credential output scanning all run end to end. The main gap versus Claude Code is lifecycle hooks — Gemini has no sub-agent delegation, config-change, instructions-loaded, or elicitation hook, and it has no native `ask` verdict, so sir converts internal `ask` decisions into deny-with-remediation.
+sir — Sandbox in Reverse — is an experimental security runtime for AI coding agents. Gemini CLI has **near-parity adapter support**: it fires hooks on the full tool path (not just Bash), so sir's file IFC labeling, shell classification, MCP argument and response scanning, and credential output scanning can run end to end where Gemini hooks are present. `sir install` detects Gemini CLI, but Gemini hook installation is disabled in this testing build. The main gap versus Claude Code is lifecycle hooks — Gemini has no sub-agent delegation, config-change, instructions-loaded, or elicitation hook, and it has no native `ask` verdict, so sir converts internal `ask` decisions into deny-with-remediation.
 
-> **Note:** Minimum supported version is `0.36.0`. `sir doctor` warns on older versions.
+> [!NOTE]
+> Minimum supported version is `0.36.0`. `sir doctor` warns on older versions.
 
 <!-- BEGIN GENERATED SUPPORT DOC -->
 ## Status: near-parity support on Gemini CLI 0.36.0+
@@ -51,17 +52,17 @@ Gemini does not expose the lifecycle hooks sir would need for:
 
 If those gaps matter for your workflow, prefer Claude Code.
 
-## Install and verify
+## Current install boundary
+
+`sir install` rejects `--agent gemini` in this build and does not create or update `~/.gemini/settings.json`. Use the enabled target for installed hook protection:
 
 ```bash
-sir install            # auto-detects Gemini when it is present
-# or:
-sir install --agent gemini
+sir install --agent claude
 sir status
 sir doctor
 ```
 
-The live config is `~/.gemini/settings.json`. sir keeps a canonical backup of the sir-owned hooks subtree at `~/.sir/hooks-canonical-gemini.json`.
+This page remains the coverage contract for existing/manual Gemini hook payloads and status surfaces.
 
 ## Operational notes
 
@@ -71,6 +72,6 @@ The live config is `~/.gemini/settings.json`. sir keeps a canonical backup of th
 
 ## Troubleshooting
 
-- **`sir install --agent gemini` says Gemini was not detected:** make sure `~/.gemini/` or a `gemini` binary exists.
-- **`sir status` shows missing Gemini hooks:** rerun install and inspect `~/.gemini/settings.json`.
+- **`sir install --agent gemini` is rejected:** expected in this build; Gemini hook installation is not enabled.
+- **`sir status` shows missing Gemini hooks:** Gemini install is disabled in this build; use the enabled target for installed protection.
 - **A tool call looked wrong:** run `sir explain --last` and verify the tool name and target were normalized as expected.

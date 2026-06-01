@@ -9,6 +9,7 @@ import (
 	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/policy"
 	"github.com/somoore/sir/pkg/session"
+	"github.com/somoore/sir/pkg/signal"
 )
 
 // HookPayload is sir's normalized internal hook payload. It is a type alias
@@ -178,6 +179,13 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		}
 	}()
 
+	// Collect signals from all sources (hook + registered signal providers).
+	// The hook signal is declared_intent/pre_exec → ClassEnforces in hook_gate
+	// mode. Signal providers augment with corroborating observations. If only
+	// runtime signals are present (future non-hook path), enforceability
+	// degrades to ClassDetects automatically via AnalyzeEnforceability.
+	signals := signal.CollectSignals(payload, projectRoot)
+
 	intent := MapToolToIntent(payload.ToolName, payload.ToolInput, l)
 	labels := labelsForEvaluation(payload, intent, l, projectRoot)
 
@@ -221,6 +229,36 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 			Floor:    true,
 		}
 		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, false, ag)
+		return resp, nil
+	}
+
+	// sir self-protection: an agent write into sir's own state dir (~/.sir) or
+	// config is a control-plane tamper. Hard deny (Go-only restriction — the
+	// resolved state-dir path is a runtime fact Rust cannot see; never widens a
+	// deny). Floor so observe mode does not downgrade an attempt to disable the
+	// guard. v2's deny-sir-config-tamper already denies this; this is the
+	// production-path parity.
+	if sreason, tamper := sirStateTamper(intent, projectRoot); tamper {
+		resp := &HookResponse{
+			Decision: policy.VerdictDeny,
+			Reason:   "Blocked — " + sreason + ". sir must not be modified by an agent. Run `sir unlock` only if you are certain this is intended.",
+			Floor:    true,
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, false, ag)
+		return resp, nil
+	}
+
+	// Credential-helper / hooks-path config rewrite: the shell/config form of
+	// credential theft and hook redirection. Ask (Go-only restriction, allow->ask,
+	// never widens a deny; self-guards on verb risk so it never preempts a
+	// stricter gate). Ask, not deny, because husky/lefthook legitimately set
+	// core.hooksPath — same stance as the .git/hooks file floor.
+	if greason, sensitive := gitConfigSensitiveAsk(payload, intent); sensitive {
+		resp := &HookResponse{
+			Decision: policy.VerdictAsk,
+			Reason:   "Approve — this rewrites " + greason + ". A malicious value can exfiltrate credentials or redirect execution on the next git operation. Approve only if you set this yourself.",
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, l.ObserveOnly, ag)
 		return resp, nil
 	}
 
@@ -281,7 +319,7 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		return resp, nil
 	}
 
-	coreResp, err := evaluatePolicy(projectRoot, payload, intent, l, state, labels)
+	coreResp, err := evaluatePolicy(projectRoot, payload, signals, intent, l, state, labels)
 	if err != nil {
 		return nil, err
 	}
@@ -323,9 +361,8 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		}
 	}
 
-	// REMOTE-1: a git push to a remote approved earlier this session stops
-	// re-prompting (the exact-target ask re-asks today because grants key on
-	// verb+target). First push still asks; on observed approval PostToolUse
+	// REMOTE-1: a git push to an unapproved remote approved earlier this session
+	// stops re-prompting. First push still asks; on observed approval PostToolUse
 	// records the remote, and subsequent pushes to the SAME remote under clean
 	// posture are silent. Gated by profile (AutoLeaseApprovedRemotes).
 	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushRemote &&
@@ -333,6 +370,25 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		if state.PushRemoteApproved(intent.RemoteName) {
 			coreResp.Decision = policy.VerdictAllow
 			coreResp.Reason = "git remote approved earlier this session (sir policy show)"
+		} else {
+			state.MarkPendingPushRemote(intent.RemoteName)
+		}
+	}
+
+	// ORIGIN-1: a git push to an already-approved remote (origin) that was
+	// re-asked because the session previously held secret data. Mirrors REMOTE-1:
+	// the first push still asks (or denies in thinking mode), but once the
+	// developer approves via `sir approve --last` the remote is recorded in
+	// session and subsequent same-session pushes are silent.
+	//
+	// Security contract: autoLeaseSafeContext is false while SecretSession is
+	// true (active credentials), so auto-approval only fires after the secret
+	// context clears — preserving the IFC floor for the live-secret case.
+	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushOrigin &&
+		intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+		if state.PushRemoteApproved(intent.RemoteName) {
+			coreResp.Decision = policy.VerdictAllow
+			coreResp.Reason = "git origin approved earlier this session (sir approve remote origin)"
 		} else {
 			state.MarkPendingPushRemote(intent.RemoteName)
 		}
@@ -373,6 +429,12 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 	// security event as hypothetical during an observe rollout.
 	recordObserve := l.ObserveOnly && !hookResp.Floor
 	appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, coreResp.Decision, coreResp.Reason, state, recordObserve, ag)
+
+	// Dispatch effects to registered effect_providers and export_providers.
+	// Block effects (deny) are invoked synchronously before returning so that
+	// OS-level sandbox enforcement can be confirmed before the agent sees the
+	// response. Export effects are always async (fire-and-forget, non-blocking).
+	go DispatchEffects(coreResp.Decision, intent, signals, projectRoot)
 
 	return hookResp, nil
 }

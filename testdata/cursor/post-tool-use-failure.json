@@ -1,0 +1,12 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "generation_id": "gen_cursor_456",
+  "hook_event_name": "postToolUseFailure",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "false"
+  },
+  "tool_use_id": "cursor_shell_failure_1",
+  "output": "exit status 1\n",
+  "cwd": "/Users/dev/myproject"
+}

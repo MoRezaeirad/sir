@@ -8,9 +8,11 @@ import (
 type ConfigScope string
 
 const (
-	ConfigProjectLocal ConfigScope = "project_local"
-	ConfigClaudeGlobal ConfigScope = "claude_global"
-	ConfigGeminiGlobal ConfigScope = "gemini_global"
+	ConfigProjectLocal  ConfigScope = "project_local"
+	ConfigClaudeGlobal  ConfigScope = "claude_global"
+	ConfigGeminiGlobal  ConfigScope = "gemini_global"
+	ConfigCursorProject ConfigScope = "cursor_project"
+	ConfigCursorGlobal  ConfigScope = "cursor_global"
 )
 
 // ProxySpec describes whether an MCP server entry is already wrapped by sir.
@@ -35,10 +37,18 @@ type ServerInventory struct {
 	SourcePath  string
 	SourceLabel string
 	Scope       ConfigScope
-	Command     string
-	Args        []string
-	HasCommand  bool
-	Proxy       ProxySpec
+	// ProjectKey is set for MCP servers stored inside a project-specific
+	// section of a global agent config, for example
+	// ~/.claude.json projects[<realpath>].mcpServers.
+	ProjectKey string
+	// RequiresExplicitApproval marks project-scoped server config that should
+	// be discoverable/wrappable but must not be silently added to the approval
+	// lease by hook-time legacy auto-refresh.
+	RequiresExplicitApproval bool
+	Command                  string
+	Args                     []string
+	HasCommand               bool
+	Proxy                    ProxySpec
 }
 
 // InventoryError records an MCP config that could not be parsed.
@@ -88,9 +98,10 @@ type RuntimeAssessment struct {
 
 // InventoryFile identifies one MCP config file to inspect.
 type InventoryFile struct {
-	Path  string
-	Label string
-	Scope ConfigScope
+	Path        string
+	Label       string
+	Scope       ConfigScope
+	ProjectRoot string
 }
 
 var execLookPath = exec.LookPath

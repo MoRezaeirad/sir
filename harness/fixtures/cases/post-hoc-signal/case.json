@@ -1,0 +1,51 @@
+{
+  "case_id": "post-hoc-signal",
+  "title": "Post Hoc Signal",
+  "mode": "os_observed",
+  "expected": {
+    "verdict": "ask",
+    "enforceability": "detects",
+    "policy_rules": ["ask-external-egress"],
+    "effects": [
+      {"type": "prompt", "required": false, "fail_closed": false},
+      {"type": "record", "required": true, "fail_closed": false}
+    ]
+  },
+  "sensitive_source": true,
+  "irreversible_sink": true,
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "sig1",
+      "signal_time": "2026-05-30T00:00:00Z",
+      "source": {
+        "kind": "os_network_sensor",
+        "reliability": "observed_runtime",
+        "timing": "post_exec",
+        "provider": "os_network_sensor",
+        "provider_version": "0.1.0"
+      },
+      "session": {
+        "trace_id": "trace_demo",
+        "session_id": "ses_demo",
+        "turn_id": "turn_demo"
+      },
+      "actor_claim": {
+        "kind": "ai_coding_agent",
+        "name": "claude-code",
+        "pid": 1234,
+        "process_tree": [
+          "zsh",
+          "claude"
+        ]
+      },
+      "action_claim": {
+        "type": "network_connect",
+        "target": {
+          "display": "unknown.example",
+          "sensitivity": "external_network"
+        }
+      }
+    }
+  ]
+}

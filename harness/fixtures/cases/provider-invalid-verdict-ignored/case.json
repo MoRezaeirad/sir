@@ -1,0 +1,32 @@
+{
+  "case_id": "provider-invalid-verdict-ignored",
+  "title": "Invalid provider verdict strings are ignored safely",
+  "description": "A malformed direct fixture verdict uses an unsupported verdict string. Composition ignores it and preserves the native allow.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "block",
+      "rules_matched": ["invalid-verdict"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "allow",
+    "decision_class": "proceed_and_reconcile",
+    "policy_rules": []
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "provider-invalid-verdict-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_provider_invalid_verdict_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "vcs_push", "target": {"display": "git push origin main", "sensitivity": "low"}}
+    }
+  ]
+}

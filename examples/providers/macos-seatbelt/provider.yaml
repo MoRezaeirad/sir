@@ -1,0 +1,17 @@
+schema_version: sir.provider.v0
+name: sir-macos-seatbelt
+kind: effect_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos]
+capabilities:
+  contain: true
+  block: false
+  record: true
+  contain_target_kinds: [process_launch]
+  note: sandbox-exec is used at process launch; existing PIDs cannot be contained
+# Honesty signal: this is capability plumbing, not real OS-level enforcement (stub apply).
+enforcement: simulated
+fixtures:
+  - fixtures/effect-contain-pid.json

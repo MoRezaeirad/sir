@@ -1,0 +1,11 @@
+{
+  "op": "evaluate",
+  "schema_version": "sir.policy_request.v0",
+  "action": "read_ref",
+  "target": "~/.aws/credentials",
+  "resolved_actor": "ai_coding_agent",
+  "attribution_confidence": "high",
+  "taint": ["credential_access"],
+  "enforceability": "enforces",
+  "mode": "guard"
+}

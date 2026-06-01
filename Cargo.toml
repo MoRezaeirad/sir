@@ -1,3 +1,5 @@
 [workspace]
 resolver = "2"
-members = ["mister-core", "mister-shared"]
+members = ["mister-core", "mister-shared", "sir-core"]
+# mister-core / mister-shared = legacy v1 oracle (preserved for migration parity)
+# sir-core                     = v2 pure decision kernel (Rust decides, Go orchestrates)

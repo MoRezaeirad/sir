@@ -1,0 +1,110 @@
+{
+  "id": "cursor",
+  "name": "Cursor",
+  "minimum_version": "3.6.21",
+  "support_tier": "near_parity",
+  "tool_coverage": "partial",
+  "hook_event_count": 15,
+  "supported_sir_events": [
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "SubagentStart",
+    "SessionStart",
+    "Stop",
+    "SessionEnd"
+  ],
+  "unsupported_sir_events": [
+    "PermissionRequest",
+    "ConfigChange",
+    "InstructionsLoaded",
+    "Elicitation"
+  ],
+  "supported_wire_events": [
+    "preToolUse",
+    "postToolUse",
+    "postToolUseFailure",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "beforeMCPExecution",
+    "afterMCPExecution",
+    "beforeReadFile",
+    "afterFileEdit",
+    "subagentStart",
+    "beforeSubmitPrompt",
+    "sessionStart",
+    "preCompact",
+    "stop",
+    "sessionEnd"
+  ],
+  "required_feature_flag": "",
+  "feature_flag_enable_command": "",
+  "surfaces": [
+    {
+      "key": "interactive_approval",
+      "title": "Interactive approvals",
+      "supported": false,
+      "notes": "Cursor hook ask behavior is not treated as a reliable security boundary; sir folds ask into deny with remediation text."
+    },
+    {
+      "key": "permission_request",
+      "title": "Permission-request broker",
+      "supported": false,
+      "notes": "Cursor exposes no PermissionRequest-equivalent hook."
+    },
+    {
+      "key": "file_read_ifc",
+      "title": "File-read IFC labeling",
+      "supported": true,
+      "notes": "beforeReadFile and preToolUse label sensitive reads before execution where Cursor emits those hooks."
+    },
+    {
+      "key": "file_write_ifc",
+      "title": "File-write pre-gating",
+      "supported": false,
+      "notes": "Cursor's dedicated file-edit hook is after-action; sir relies on post-hook checks and posture sentinels unless Cursor also emits a generic preToolUse for that edit path."
+    },
+    {
+      "key": "shell_classification",
+      "title": "Shell classification",
+      "supported": true,
+      "notes": "Bash commands are classified for egress, DNS, persistence, sudo, and install risk."
+    },
+    {
+      "key": "mcp_tool_hooks",
+      "title": "MCP tool hooks",
+      "supported": true,
+      "notes": "beforeMCPExecution/afterMCPExecution expose MCP arguments and responses when Cursor emits those hooks."
+    },
+    {
+      "key": "subagent_start",
+      "title": "Delegation gating",
+      "supported": true,
+      "notes": "Delegation policy is enforced at Cursor's subagentStart hook."
+    },
+    {
+      "key": "config_change",
+      "title": "Config change detection",
+      "supported": false,
+      "notes": "Cursor exposes no ConfigChange-equivalent hook."
+    },
+    {
+      "key": "instructions_loaded",
+      "title": "InstructionsLoaded scanning",
+      "supported": false,
+      "notes": "Cursor exposes no InstructionsLoaded-equivalent hook."
+    },
+    {
+      "key": "elicitation",
+      "title": "Elicitation interception",
+      "supported": false,
+      "notes": "Cursor exposes no Elicitation-equivalent hook."
+    },
+    {
+      "key": "session_terminal_sweep",
+      "title": "Terminal posture sweep",
+      "supported": true,
+      "notes": "sessionEnd and stop provide final posture sweep coverage where Cursor emits them."
+    }
+  ]
+}

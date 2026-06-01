@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "id": "deny-agent-credential-read",
+      "match": { "action": "read_ref", "taint": "credential_access", "actor": "ai_coding_agent" },
+      "verdict": "deny",
+      "reason": "AI agents cannot read raw credential files directly"
+    },
+    {
+      "id": "was-secret-push-origin",
+      "match": { "action": "push_origin", "taint": "credential_access" },
+      "verdict": "ask",
+      "reason": "session previously held credentials; re-approve push to origin"
+    },
+    {
+      "id": "ask-external-egress",
+      "match": { "action": "net_external" },
+      "verdict": "ask",
+      "reason": "ask before new external network egress"
+    }
+  ]
+}

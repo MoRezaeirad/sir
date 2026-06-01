@@ -1,0 +1,22 @@
+schema_version: sir.provider.v0
+name: test-block-effect
+kind: effect_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+# CAPABILITY PLUMBING ONLY — NOT REAL OS ENFORCEMENT.
+# Declares block=true to exercise the capability-present path in the kernel.
+# Does NOT enforce anything at the OS level.
+# The first real enforcement provider is devcontainer, then macOS Seatbelt / Linux Sandlock.
+capabilities:
+  effects: [block, record]
+  block: true
+  record: true
+  contain: false
+  plumbing_only: true
+# Honesty signal: this is capability plumbing, not real OS-level enforcement (stub apply).
+enforcement: simulated
+fixtures:
+  - fixtures/effect-block.json
+  - fixtures/effect-record.json

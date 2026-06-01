@@ -1,0 +1,41 @@
+{
+  "case_id": "opa-ask-agent-push-clean",
+  "title": "OPA ask on an agent push changes the final decision through both kernels",
+  "description": "A policy provider returns ask on an agent git push. Push is NOT in the developer-workflow floor (it stays escalatable), so the advisory verdict escalates the base allow to ask. This is the case that proves policy composition is exercised by the harness: an OPA verdict changes the final decision, and Go and Rust must agree.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "ask",
+      "rules_matched": ["agent-push-review"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "ask",
+    "decision_class": "block_and_wait",
+    "policy_rules": ["policy:opa-bridge:agent-push-review"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "git-push-agent-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "claude_hook",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-claude-code-hook",
+        "provider_version": "0.1.0"
+      },
+      "session": {"session_id": "sess_agent_push_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {
+        "type": "vcs_push",
+        "target": {"display": "git push origin main", "sensitivity": "low"}
+      }
+    }
+  ]
+}

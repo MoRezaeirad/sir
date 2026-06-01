@@ -86,7 +86,7 @@ func orderedPublicSupportManifests() []SupportManifest {
 	for _, reg := range regs {
 		byID[reg.ID] = reg.Spec
 	}
-	canonical := []AgentID{Claude, Gemini, Codex}
+	canonical := []AgentID{Claude, Gemini, Codex, Cursor}
 	out := make([]SupportManifest, 0, len(regs))
 	seen := make(map[AgentID]struct{}, len(regs))
 	for _, id := range canonical {
@@ -133,7 +133,7 @@ func SupportManifestForSpec(spec *AgentSpec) SupportManifest {
 		MinimumVersion:           spec.MinVersion,
 		SupportTier:              spec.Capabilities.SupportTier,
 		ToolCoverage:             spec.Capabilities.ToolCoverage,
-		HookEventCount:           len(supportedSIREvents),
+		HookEventCount:           len(spec.HookRegistrations),
 		SupportedSIREvents:       supportedSIREvents,
 		UnsupportedSIREvents:     unsupported,
 		SupportedWireEvents:      supportedWireEvents,
@@ -256,9 +256,51 @@ func derivedSupportedWireEvents(spec *AgentSpec, supported []string) []string {
 	if spec == nil {
 		return nil
 	}
-	out := make([]string, 0, len(supported))
-	for _, event := range supported {
-		out = append(out, wireEventNameForSpec(spec, event))
+	expected := make([]string, 0, len(spec.HookRegistrations))
+	expectedSet := make(map[string]struct{}, len(spec.HookRegistrations))
+	for _, registration := range spec.HookRegistrations {
+		if !spec.Capabilities.SupportsEvent(registration.Event) {
+			continue
+		}
+		event := registration.WireEvent
+		if event == "" {
+			event = wireEventNameForSpec(spec, registration.Event)
+		}
+		if _, ok := expectedSet[event]; ok {
+			continue
+		}
+		expected = append(expected, event)
+		expectedSet[event] = struct{}{}
+	}
+	if len(expected) == 0 {
+		for _, event := range supported {
+			wireEvent := wireEventNameForSpec(spec, event)
+			if _, ok := expectedSet[wireEvent]; ok {
+				continue
+			}
+			expected = append(expected, wireEvent)
+			expectedSet[wireEvent] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(expected))
+	seen := make(map[string]struct{}, len(expected))
+	for _, event := range spec.SupportedWireEvents {
+		if _, ok := expectedSet[event]; !ok {
+			continue
+		}
+		if _, ok := seen[event]; ok {
+			continue
+		}
+		out = append(out, event)
+		seen[event] = struct{}{}
+	}
+	for _, event := range expected {
+		if _, ok := seen[event]; ok {
+			continue
+		}
+		out = append(out, event)
+		seen[event] = struct{}{}
 	}
 	return out
 }

@@ -3,8 +3,7 @@ package secretscan
 import "strings"
 
 // credentialPatterns are substrings in MCP tool argument values that suggest
-// credentials are being passed. These are checked when the session carries
-// secrets and the MCP server is not trusted.
+// credentials are being passed. These are checked for every untrusted MCP call.
 var credentialPatterns = []string{
 	"sk-", "pk-", "Bearer ", "token:", "api_key",
 	"apikey", "api-key", "access_token", "refresh_token",
@@ -38,8 +37,8 @@ func RedactMCPValue(key, value string) string {
 	return value
 }
 
-// ScanMCPArgsForCredentials checks MCP tool arguments for credential patterns.
-// Called for all untrusted MCP server calls.
+// ScanMCPArgsForCredentials checks MCP tool arguments for credentials and
+// structured sensitive data. Called for all untrusted MCP server calls.
 func ScanMCPArgsForCredentials(toolInput map[string]interface{}) (bool, string) {
 	return scanArgsRecursive(toolInput, "")
 }
@@ -98,6 +97,9 @@ func checkCredentialString(key, val string) (bool, string) {
 			}
 		}
 	}
+	if patternName, ok := structuredCredentialPattern(val); ok {
+		return true, key + " contains " + patternName
+	}
 	if len(val) > 100 && looksBase64(val) {
 		return true, key + " contains long base64-like value"
 	}
@@ -119,10 +121,36 @@ func sensitiveMCPIndicator(key, value string) (bool, string) {
 			return true, "sensitive_value"
 		}
 	}
+	if patternName, ok := structuredCredentialPattern(value); ok {
+		return true, patternName
+	}
 	if len(value) > 100 && looksBase64(value) {
 		return true, "long_token"
 	}
 	return false, ""
+}
+
+func structuredCredentialPattern(value string) (string, bool) {
+	for _, pattern := range outputPatterns {
+		matches := pattern.RE.FindAllString(value, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		if pattern.Validator != nil {
+			valid := false
+			for _, match := range matches {
+				if pattern.Validator(match) {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
+		}
+		return pattern.Name, true
+	}
+	return "", false
 }
 
 func looksBase64(s string) bool {

@@ -3,7 +3,7 @@
 // between the agent's wire format and sir's normalized internal types, and
 // formats sir's verdicts back into the shape the agent expects.
 //
-// Adapters currently registered: Claude Code, Codex, Gemini CLI. New agents
+// Adapters currently registered: Claude Code, Cursor, Codex, Gemini CLI. New agents
 // plug in by implementing the Agent interface and registering themselves in
 // the package registry below.
 //
@@ -32,6 +32,8 @@ const (
 	Codex AgentID = "codex"
 	// Gemini is the Google Gemini CLI adapter.
 	Gemini AgentID = "gemini"
+	// Cursor is the Cursor IDE / cursor-agent adapter.
+	Cursor AgentID = "cursor"
 )
 
 // AskToDenySuffix is appended to the reason when an "ask" verdict is folded
@@ -152,6 +154,7 @@ var registry = []Registration{
 	{ID: Claude, Spec: &claudeSpec, New: func() Agent { return NewClaudeAgent() }},
 	{ID: Codex, Spec: &codexSpec, New: func() Agent { return NewCodexAgent() }},
 	{ID: Gemini, Spec: &geminiSpec, New: func() Agent { return NewGeminiAgent() }},
+	{ID: Cursor, Spec: &cursorSpec, New: func() Agent { return NewCursorAgent() }},
 }
 
 // Registry returns the supported agents in deterministic order.

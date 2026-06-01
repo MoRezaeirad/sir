@@ -3,11 +3,10 @@
 > [!NOTE]
 > sir is experimental — test on your own machine, not shared infrastructure. `sir doctor` recovers any wedged state; [report bugs](https://github.com/somoore/sir/issues).
 
-This is the short version of the engineering guide. Use it when you need the rules quickly and do not want to start from the full architecture reference.
+The quick-reference engineering rules for sir contributors. `mister-core` (Rust) is the pure, zero-dependency policy oracle that sets the upper bound on what is allowed. Go collects facts, classifies tool calls, and enforces session-level gates — always stricter than Rust, never looser. Everything in this document serves that split.
 
-sir is a "sandbox in reverse": `mister-core` (Rust) is a pure, zero-dependency policy oracle that sets the upper bound on what is allowed, and Go collects facts, classifies tool calls, and enforces session-level gates — always stricter than Rust, never looser. Everything below is in service of that split.
-
-> **Note:** sir is experimental. The invariants below are the load-bearing pieces you cannot quietly relax.
+> [!WARNING]
+> The invariants below are load-bearing. Violating them degrades the security model in ways tests may not catch alone.
 
 When you need broader context, jump to [ARCHITECTURE.md](../../ARCHITECTURE.md) or the package docs for the subsystem you are touching.
 

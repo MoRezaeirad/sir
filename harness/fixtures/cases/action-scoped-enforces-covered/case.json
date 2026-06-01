@@ -1,0 +1,24 @@
+{
+  "case_id": "action-scoped-enforces-covered",
+  "title": "Action-scoped provider enforces a covered action",
+  "description": "Item 8: a network-only sandbox declares real enforcement scoped to network_connect (provider_enforced_actions). The action IS network_connect, so the provider can actually contain it: enforces. Proves action-scoping does not regress the covered case. Forward-looking v2 modeling — no shipping provider partially-enforces yet (the devcontainer contains everything).",
+  "mode": "contained",
+  "provider_capabilities": ["block", "record"],
+  "provider_enforcement": "real",
+  "provider_enforced_actions": ["network_connect", "network_fetch", "dns_lookup"],
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "action-scoped-covered-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "sir-netjail", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-netjail", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_action_scoped_covered_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "network_connect", "target": {"display": "https://unknown.example", "sensitivity": "external_network"}}
+    }
+  ],
+  "expected": {
+    "enforceability": "enforces",
+    "verdict": "ask"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.enforceability.v0",
+  "description": "Enforceability analysis result. Describes whether the SIR kernel can prevent, detect, or is blind to an action in the active protection mode. This is a per-action per-mode claim, not a global guarantee.",
+  "type": "object",
+  "required": ["class", "reason"],
+  "properties": {
+    "class": {
+      "enum": ["enforces", "detects", "blind"],
+      "description": "enforces=kernel can block the action before it executes; detects=kernel can observe and record but cannot prevent; blind=kernel has no signal and cannot act or record."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable explanation of this enforceability classification, including which signals and mode properties drove the decision."
+    }
+  },
+  "additionalProperties": false
+}

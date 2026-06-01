@@ -9,9 +9,11 @@ import (
 type mcpConfigScope = mcppkg.ConfigScope
 
 const (
-	mcpConfigProjectLocal = mcppkg.ConfigProjectLocal
-	mcpConfigClaudeGlobal = mcppkg.ConfigClaudeGlobal
-	mcpConfigGeminiGlobal = mcppkg.ConfigGeminiGlobal
+	mcpConfigProjectLocal  = mcppkg.ConfigProjectLocal
+	mcpConfigClaudeGlobal  = mcppkg.ConfigClaudeGlobal
+	mcpConfigGeminiGlobal  = mcppkg.ConfigGeminiGlobal
+	mcpConfigCursorProject = mcppkg.ConfigCursorProject
+	mcpConfigCursorGlobal  = mcppkg.ConfigCursorGlobal
 )
 
 type mcpProxySpec = mcppkg.ProxySpec

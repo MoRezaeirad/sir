@@ -1,0 +1,4 @@
+{
+  "class": "enforces",
+  "reason": "cooperative pre-exec hook can gate"
+}

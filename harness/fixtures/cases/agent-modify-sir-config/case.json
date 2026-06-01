@@ -1,0 +1,32 @@
+{
+  "case_id": "agent-modify-sir-config",
+  "title": "Agent modifying SIR config denies — provider allow cannot lower it",
+  "description": "An AI agent writes to SIR's own config (.sir/). deny-sir-config-tamper is a native floor (agent disabling sir). file_write IS in the developer-workflow floor set, but the floor only suppresses advisory escalation of a base ALLOW — it cannot rescue a base deny. A policy provider returns allow; an advisory verdict can never lower a native deny. Final: deny. Proves the native deny survives BOTH the workflow floor AND a provider allow.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "allow",
+      "rules_matched": ["allow-all"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "deny",
+    "decision_class": "deny_now",
+    "policy_rules": ["deny-sir-config-tamper"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "sir-tamper-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_sir_tamper_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "file_write", "target": {"display": ".sir/config.json", "sensitivity": "low"}}
+    }
+  ]
+}

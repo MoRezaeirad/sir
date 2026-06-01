@@ -12,7 +12,7 @@ mod policy_sinks;
 
 use crate::lease::Lease;
 use crate::session::SessionState;
-use mister_shared::{EvalRequest, Verdict};
+use mister_shared::{EvalRequest, PolicyVerdict, Verb, Verdict};
 pub use policy_common::PolicyResult;
 use policy_common::{
     ask_verb_result, default_unknown_verb_result, evaluate_allowed_verb, forbidden_verb_result,
@@ -42,6 +42,14 @@ use policy_sinks::evaluate_derived_secret_sink;
 /// Normal coding (read/write/test/commit) -> silent allow
 /// ```
 pub fn evaluate(req: &EvalRequest, lease: &Lease, session: &SessionState) -> PolicyResult {
+    let result = evaluate_inner(req, lease, session);
+    // Apply advisory policy verdicts from external providers AFTER all native
+    // safety floors have run. Advisory providers can only escalate allow → ask;
+    // they cannot override a deny or bypass any native floor.
+    compose_policy_verdicts(&req.policy_verdicts, result, req)
+}
+
+fn evaluate_inner(req: &EvalRequest, lease: &Lease, session: &SessionState) -> PolicyResult {
     if let Some(result) = evaluate_session_preconditions(req, lease, session) {
         return result;
     }
@@ -89,6 +97,88 @@ pub fn evaluate(req: &EvalRequest, lease: &Lease, session: &SessionState) -> Pol
     default_unknown_verb_result(req, verb)
 }
 
+/// Compose advisory policy verdicts from external providers with the base
+/// kernel verdict.
+///
+/// Composition rules (in priority order):
+/// 1. Developer workflow floor: canonical coding verbs (read, write, test,
+///    commit, list, search) on a clean session are NEVER escalated by advisory
+///    providers. This protects developers from policy packs that might ask on
+///    every file read or test run. Taint (session_was_secret, session_secret)
+///    lifts this floor so the was-secret push rule still fires when needed.
+/// 2. Native safety floors already ran in evaluate_inner and cannot be overridden.
+/// 3. Advisory providers can only escalate: allow → ask (never allow → deny).
+/// 4. A deny from an advisory provider is treated as ask (cannot mandate deny).
+/// 5. The base verdict is returned unchanged if no advisory escalation applies.
+///
+/// This preserves the invariant: Rust sir-core is the final authority; external
+/// providers supply evidence, not enforcement.
+fn compose_policy_verdicts(
+    verdicts: &[PolicyVerdict],
+    base: PolicyResult,
+    req: &EvalRequest,
+) -> PolicyResult {
+    let mut result = base;
+
+    // Developer workflow floor: protect clean-session coding verbs from advisory
+    // escalation. A policy provider that asks on `git commit` or `ls` would make
+    // SIR unusable; this floor prevents that without restricting the policy
+    // provider's ability to supply verdicts for genuinely risky actions.
+    if matches!(result.verdict, Verdict::Allow) && is_clean_developer_workflow(req) {
+        return result;
+    }
+
+    for pv in verdicts {
+        if !pv.is_advisory {
+            continue; // non-advisory verdicts rejected at parse time; belt-and-suspenders
+        }
+        if matches!(pv.verdict, Verdict::Ask | Verdict::Deny)
+            && matches!(result.verdict, Verdict::Allow)
+        {
+            result.verdict = Verdict::Ask;
+            if !pv.rules_matched.is_empty() {
+                result.reason = format!(
+                    "{}. [policy:{} rules:{}]",
+                    result.reason,
+                    pv.provider_name,
+                    pv.rules_matched.join(",")
+                );
+            }
+        }
+    }
+    result
+}
+
+/// Reports whether this request is a clean-session developer workflow action
+/// that advisory policy providers must not escalate.
+///
+/// The floor only holds when BOTH conditions are true:
+/// - No live credentials in session (session_secret = false)
+/// - No prior credential taint (session_was_secret = false)
+///
+/// Once either flag is set, the floor lifts and advisory providers (e.g.
+/// was-secret-push-origin) can escalate normally.
+fn is_clean_developer_workflow(req: &EvalRequest) -> bool {
+    if req.session_secret || req.session_was_secret {
+        return false;
+    }
+    let verb = match parse_verb(req) {
+        Ok(v) => v,
+        Err(_) => return false, // unknown verb: not protected
+    };
+    matches!(
+        verb,
+        Verb::ReadRef
+            | Verb::StageWrite
+            | Verb::ExecuteDryRun
+            | Verb::RunTests
+            | Verb::Commit
+            | Verb::ListFiles
+            | Verb::SearchCode
+            | Verb::NetLocal
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +213,7 @@ mod tests {
             is_sensitive_path: false,
             is_delegation: false,
             is_tripwire: false,
+            policy_verdicts: vec![],
         }
     }
 
@@ -276,16 +367,35 @@ mod tests {
     // --- High-water mark (was-secret, turn-scoped flag cleared) ---
 
     #[test]
-    fn test_push_origin_was_secret_asks_not_allows() {
-        // The turn-scoped secret flag has cleared (session_secret=false) but the
-        // session held a secret earlier (session_was_secret=true). push_origin
-        // would silently allow on a truly clean session; the high-water mark
-        // forces a re-approval instead.
+    fn test_push_origin_was_secret_allows_from_oracle() {
+        // The was-secret re-prompt rule has been moved to the policy provider
+        // layer (compose_policy_verdicts). Without an advisory verdict in
+        // policy_verdicts, push_origin + session_was_secret = Allow from the
+        // Rust oracle — PushOrigin is in AllowedVerbs and the live-secret floor
+        // did not fire (session_secret=false). The policy provider (sir-policy-pack)
+        // supplies the was-secret advisory verdict that escalates this to Ask.
         let mut req = make_request("push_origin");
         req.session_was_secret = true;
         let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Allow);
+    }
+
+    #[test]
+    fn test_push_origin_was_secret_asks_with_advisory_verdict() {
+        // When a policy provider supplies an advisory ask verdict (as the native
+        // policy pack does for was-secret sessions), compose_policy_verdicts
+        // escalates Allow → Ask.
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("push_origin");
+        req.session_was_secret = true;
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "sir-policy-pack".to_string(),
+            verdict: Verdict::Ask,
+            rules_matched: vec!["was-secret-push-origin".to_string()],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &clean_session());
         assert_eq!(result.verdict, Verdict::Ask);
-        assert!(result.reason.contains("previously held secret"));
     }
 
     #[test]
@@ -766,5 +876,142 @@ mod tests {
         let req = make_request("net_external");
         let result = evaluate(&req, &default_lease(), &clean_session());
         assert_eq!(result.verdict, Verdict::Deny);
+    }
+
+    // ── Developer workflow floor tests ──────────────────────────────────────
+
+    #[test]
+    fn test_clean_session_commit_not_escalated_by_advisory() {
+        // A clean-session commit must never be escalated by advisory providers.
+        // This is the core developer-workflow protection: a policy pack that
+        // inadvertently matches "commit" on a clean session is suppressed.
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("commit");
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "overzealous-pack".to_string(),
+            verdict: Verdict::Ask,
+            rules_matched: vec!["ask-everything".to_string()],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(
+            result.verdict,
+            Verdict::Allow,
+            "clean-session commit must be Allow even with advisory ask verdict"
+        );
+    }
+
+    #[test]
+    fn test_clean_session_read_ref_not_escalated() {
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("read_ref");
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "test".to_string(),
+            verdict: Verdict::Ask,
+            rules_matched: vec![],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(
+            result.verdict,
+            Verdict::Allow,
+            "clean-session read_ref must stay Allow regardless of advisory verdicts"
+        );
+    }
+
+    #[test]
+    fn test_tainted_session_lifts_developer_floor() {
+        // When session_was_secret=true the developer floor lifts, allowing
+        // advisory providers to escalate push_origin to Ask.
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("push_origin");
+        req.session_was_secret = true;
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "sir-policy-pack".to_string(),
+            verdict: Verdict::Ask,
+            rules_matched: vec!["was-secret-push-origin".to_string()],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(
+            result.verdict,
+            Verdict::Ask,
+            "was-secret push_origin must escalate to Ask when session_was_secret=true"
+        );
+    }
+
+    #[test]
+    fn test_live_secret_session_lifts_developer_floor_for_push() {
+        // With session_secret=true the developer floor lifts and the native
+        // secret-session guard fires — advisory composition is irrelevant.
+        let mut req = make_request("push_origin");
+        req.session_secret = true;
+        let result = evaluate(&req, &default_lease(), &secret_session());
+        // Native guard produces Ask (live credentials, known remote).
+        assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    #[test]
+    fn test_non_workflow_verb_not_protected_by_floor() {
+        // push_origin on a clean session is in AllowedVerbs → Allow.
+        // An advisory ask verdict CAN escalate it (floor only covers
+        // the core coding verbs, not push).
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("push_origin");
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "custom-pack".to_string(),
+            verdict: Verdict::Ask,
+            rules_matched: vec!["always-ask-push".to_string()],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        // push_origin is not in the developer workflow floor — advisory can escalate.
+        assert_eq!(result.verdict, Verdict::Ask);
+    }
+
+    #[test]
+    fn test_advisory_verdict_cannot_widen_native_deny() {
+        // Item 7: an advisory verdict (ask OR deny) must never change a native
+        // deny. A lease that forbids a verb produces a native deny; no advisory
+        // verdict from any provider can flip it to allow or otherwise weaken it.
+        use mister_shared::PolicyVerdict;
+        for adv in [Verdict::Ask, Verdict::Deny, Verdict::Allow] {
+            let mut req = make_request("push_origin");
+            req.policy_verdicts = vec![PolicyVerdict {
+                provider_name: "rogue-pack".to_string(),
+                verdict: adv,
+                rules_matched: vec!["override-attempt".to_string()],
+                is_advisory: true,
+            }];
+            let mut lease = default_lease();
+            lease.forbidden_verbs.push(Verb::PushOrigin);
+            let result = evaluate(&req, &lease, &clean_session());
+            assert_eq!(
+                result.verdict,
+                Verdict::Deny,
+                "advisory {adv:?} must not change a native (forbidden-verb) deny",
+            );
+        }
+    }
+
+    #[test]
+    fn test_advisory_cannot_lower_secret_session_deny() {
+        // Item 7: the live-credential floor (secret session + unapproved push)
+        // is a hard deny. An advisory allow must not lower it.
+        use mister_shared::PolicyVerdict;
+        let mut req = make_request("push_remote");
+        req.session_secret = true;
+        req.policy_verdicts = vec![PolicyVerdict {
+            provider_name: "rogue-pack".to_string(),
+            verdict: Verdict::Allow,
+            rules_matched: vec!["allow-all".to_string()],
+            is_advisory: true,
+        }];
+        let result = evaluate(&req, &default_lease(), &secret_session());
+        assert_eq!(
+            result.verdict,
+            Verdict::Deny,
+            "advisory allow must not lower a live-secret push_remote deny"
+        );
     }
 }

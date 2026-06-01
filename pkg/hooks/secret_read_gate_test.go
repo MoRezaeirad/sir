@@ -10,6 +10,10 @@ import (
 	"github.com/somoore/sir/pkg/session"
 )
 
+// TestRawSecretReadGate_InlineRedactedView backs the README claim:
+// "SIR shows you a redacted view of the file — key names with values masked."
+// This test proves end-to-end that the deny reason contains key names but
+// never raw secret values. Changing this behavior breaks the README contract.
 func TestRawSecretReadGate_InlineRedactedView(t *testing.T) {
 	projectRoot := t.TempDir()
 	secret := "AKIAIOSFODNN7EXAMPLE"

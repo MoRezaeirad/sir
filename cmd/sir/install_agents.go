@@ -16,6 +16,10 @@ func supportedAgentIDs() string {
 	return strings.Join(ids, ", ")
 }
 
+func supportedInstallAgentIDs() string {
+	return string(agent.Claude)
+}
+
 func mustHomeDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -27,7 +31,7 @@ func mustHomeDir() string {
 // parseInstallAgentFlag scans install/uninstall args for --agent <id> or
 // --agent=<id>. Unlike parseAgentFlag (cmd/sir/main.go) which defaults to
 // "claude" for guard dispatch, this variant returns "" when the flag is
-// absent so the install path can auto-detect all available agents.
+// absent so the install path can resolve the configured/default agent set.
 func parseInstallAgentFlag(args []string) string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -50,6 +54,7 @@ type installOptions struct {
 	noRebaseline  bool
 	global        bool
 	forget        bool
+	withProviders []string // --with-provider <manifest.yaml> (repeatable)
 }
 
 func parseInstallOptions(args []string) installOptions {
@@ -70,6 +75,11 @@ func parseInstallOptions(args []string) installOptions {
 			i++
 		case strings.HasPrefix(a, "--agent="):
 			opts.explicitAgent = strings.TrimPrefix(a, "--agent=")
+		case a == "--with-provider" && i+1 < len(args):
+			opts.withProviders = append(opts.withProviders, args[i+1])
+			i++
+		case strings.HasPrefix(a, "--with-provider="):
+			opts.withProviders = append(opts.withProviders, strings.TrimPrefix(a, "--with-provider="))
 		}
 	}
 	return opts
@@ -84,6 +94,8 @@ func mcpScopesForAgent(explicitAgent string) map[mcpConfigScope]bool {
 		return map[mcpConfigScope]bool{mcpConfigClaudeGlobal: true}
 	case agent.Gemini:
 		return map[mcpConfigScope]bool{mcpConfigGeminiGlobal: true}
+	case agent.Cursor:
+		return map[mcpConfigScope]bool{mcpConfigCursorProject: true, mcpConfigCursorGlobal: true}
 	default:
 		return map[mcpConfigScope]bool{}
 	}
@@ -144,8 +156,9 @@ type agentSelectionInputs struct {
 	// selector, when non-nil, is invoked to run the interactive multi-select.
 	// It receives the detected agents and returns the chosen subset plus
 	// whether the user asked to remember the choice. A nil selector with
-	// interactive=true is treated as "no selection made" (fall through to
-	// auto-detect-all) so tests can exercise the resolver without a terminal.
+	// interactive=true is treated as "no selection made" (fall through to the
+	// non-interactive default) so tests can exercise the resolver without a
+	// terminal.
 	selector func(detected []agent.Agent) (chosen []agent.Agent, remember bool, confirmed bool)
 }
 
@@ -162,22 +175,29 @@ type agentSelectionResult struct {
 //     or not detected — never silently fall back to a different agent. An
 //     explicit flag always wins over any remembered preference.
 //  2. Remembered preference (config InstallAgents): use those of the
-//     remembered IDs that are still detected on this machine. Unknown or
-//     no-longer-installed remembered IDs are dropped with the rest still
-//     honored; if none survive, fall through to selection.
-//  3. Interactive selector (TTY only): let the user pick a subset and
-//     optionally remember it.
-//  4. Auto-detect-all: install for every detected agent (today's default,
-//     and the non-interactive / CI fallback).
+//     remembered IDs that are still detected and installable on this machine.
+//     Unknown, no-longer-installed, or non-installable remembered IDs are
+//     dropped; if none survive, fall through to selection.
+//  3. Interactive selector (TTY only): let the user pick from the currently
+//     enabled protection targets and optionally remember it.
+//  4. Default install: protect Claude Code when it is detected. Other
+//     adapters are still detected and supported for payload parsing/status, but
+//     hook installation is not enabled for them in this build.
 //
 // Returns an operator-facing error when nothing can be resolved (no agents
 // detected, or an explicit/remembered selection resolves to the empty set in
 // a way the user must fix).
 func resolveAgentSelection(in agentSelectionInputs) (agentSelectionResult, error) {
 	if in.explicit != "" {
+		if agent.AgentID(in.explicit) != agent.Claude {
+			if agent.ForID(agent.AgentID(in.explicit)) == nil {
+				return agentSelectionResult{}, fmt.Errorf("unknown agent: %s (enabled install targets: %s; known adapters: %s)", in.explicit, supportedInstallAgentIDs(), supportedAgentIDs())
+			}
+			return agentSelectionResult{}, fmt.Errorf("--agent %s is detected/supported, but hook protection is not enabled for it in this build (enabled install targets: %s)", in.explicit, supportedInstallAgentIDs())
+		}
 		ag := agent.ForID(agent.AgentID(in.explicit))
 		if ag == nil {
-			return agentSelectionResult{}, fmt.Errorf("unknown agent: %s (supported: %s)", in.explicit, supportedAgentIDs())
+			return agentSelectionResult{}, fmt.Errorf("unknown agent: %s (enabled install targets: %s)", in.explicit, supportedInstallAgentIDs())
 		}
 		if !ag.DetectInstallation() {
 			return agentSelectionResult{}, fmt.Errorf("--agent %s requested but %s is not installed on this machine.\n  Install %s first, then re-run sir install.", in.explicit, ag.Name(), ag.Name())
@@ -185,27 +205,59 @@ func resolveAgentSelection(in agentSelectionInputs) (agentSelectionResult, error
 		return agentSelectionResult{agents: []agent.Agent{ag}}, nil
 	}
 
-	if len(in.detected) == 0 {
-		return agentSelectionResult{}, fmt.Errorf("no supported agents detected on this machine.\n  Install Claude Code, Gemini CLI, or Codex, then re-run sir install.\n  To pin one surface explicitly later, use --agent <%s> once that agent is present.", supportedAgentIDs())
+	detected := filterInstallableAgents(in.detected)
+	if len(detected) == 0 {
+		if len(in.detected) == 0 {
+			return agentSelectionResult{}, fmt.Errorf("no AI coding agent detected on this machine.\n  Install an enabled agent target, then re-run sir install. Currently enabled: Claude Code.")
+		}
+		return agentSelectionResult{}, fmt.Errorf("AI coding agents were detected, but none are enabled for hook protection in this build.\n  Currently enabled: Claude Code. Install Claude Code, then re-run sir install.")
 	}
 
-	if remembered := filterDetectedByIDs(in.detected, in.remembered); len(remembered) > 0 {
+	if remembered := filterDetectedByIDs(detected, in.remembered); len(remembered) > 0 {
 		return agentSelectionResult{agents: remembered}, nil
 	}
 
 	if in.interactive && in.selector != nil {
-		chosen, remember, confirmed := in.selector(in.detected)
+		chosen, remember, confirmed := in.selector(detected)
 		if confirmed {
 			if len(chosen) == 0 {
-				return agentSelectionResult{}, fmt.Errorf("no agents selected. Re-run `sir install` and select at least one with Space, or pass --agent <id>.")
+				return agentSelectionResult{}, fmt.Errorf("no agents selected. Re-run `sir install` and select Claude Code with Space, or pass --agent claude.")
 			}
 			return agentSelectionResult{agents: chosen, rememberChoice: remember}, nil
 		}
-		// User cancelled the selector: fall through to auto-detect-all so the
-		// safe default still applies rather than aborting the install.
+		// User cancelled the selector: fall through to the deterministic
+		// default so the safe default still applies rather than aborting the
+		// install.
 	}
 
-	return agentSelectionResult{agents: in.detected}, nil
+	if defaults := defaultInstallAgents(detected); len(defaults) > 0 {
+		return agentSelectionResult{agents: defaults}, nil
+	}
+
+	return agentSelectionResult{}, fmt.Errorf("no enabled protection target detected.\n  Currently enabled: Claude Code.")
+}
+
+func defaultInstallAgents(detected []agent.Agent) []agent.Agent {
+	for _, ag := range detected {
+		if ag.ID() == agent.Claude {
+			return []agent.Agent{ag}
+		}
+	}
+	return nil
+}
+
+func isInstallableAgent(ag agent.Agent) bool {
+	return ag != nil && ag.ID() == agent.Claude
+}
+
+func filterInstallableAgents(detected []agent.Agent) []agent.Agent {
+	out := make([]agent.Agent, 0, len(detected))
+	for _, ag := range detected {
+		if isInstallableAgent(ag) {
+			out = append(out, ag)
+		}
+	}
+	return out
 }
 
 // filterDetectedByIDs returns the detected agents whose IDs appear in ids,

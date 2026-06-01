@@ -5,6 +5,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash -s -- v0.1.3
 #
+# Supported platforms (Unix/macOS only — see scripts/download.ps1 for Windows):
+#   macOS   Apple Silicon (arm64) and Intel (amd64)
+#   Linux   amd64 and arm64 (Ubuntu, Debian, RHEL, SUSE, Alpine, and derivatives)
+#
 # Installs sir and mister-core to ~/.local/bin. Pass a version tag as
 # the first argument to pin a specific release; defaults to latest.
 #
@@ -47,9 +51,16 @@ OS=$(uname -s)
 ARCH=$(uname -m)
 case "${OS}-${ARCH}" in
     Darwin-arm64)   PLATFORM="darwin_arm64" ;;
+    Darwin-x86_64)  PLATFORM="darwin_amd64" ;;
     Linux-x86_64)   PLATFORM="linux_amd64"  ;;
     Linux-aarch64)  PLATFORM="linux_arm64"  ;;
-    *)              error "Unsupported platform: ${OS}-${ARCH}. sir supports macOS (Apple Silicon) and Linux (amd64, arm64)." ;;
+    Linux-arm64)    PLATFORM="linux_arm64"  ;;
+    *)
+        # Windows users: use scripts/download.ps1 or download manually from
+        # https://github.com/somoore/sir/releases
+        error "Unsupported platform: ${OS}-${ARCH}.
+    Supported: macOS (arm64, x86_64) and Linux (x86_64, aarch64).
+    Windows users: use scripts/download.ps1 or download the .zip from GitHub Releases." ;;
 esac
 info "Platform: ${PLATFORM}"
 

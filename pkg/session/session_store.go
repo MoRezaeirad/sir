@@ -31,6 +31,25 @@ func Update(projectRoot string, fn func(*State) error) error {
 	})
 }
 
+// UpdateFromHome is the explicit-home equivalent of Update. It is used by
+// recovery commands that need to mutate active `sir run` shadow state from the
+// host terminal without relying on process-wide SIR_STATE_HOME mutation.
+func UpdateFromHome(home, projectRoot string, fn func(*State) error) error {
+	return WithSessionLockUnder(home, projectRoot, func() error {
+		state, err := LoadFromHome(home, projectRoot)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("load session for update: %w", err)
+			}
+			state = NewState(projectRoot)
+		}
+		if err := fn(state); err != nil {
+			return err
+		}
+		return state.SaveToHome(home)
+	})
+}
+
 // Snapshot is a value-type copy of the racy session fields. It is returned by
 // State.Snapshot() under the read lock so that callers reading multiple fields
 // see a self-consistent view without acquiring the mutex themselves.

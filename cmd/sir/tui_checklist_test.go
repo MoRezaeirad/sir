@@ -52,7 +52,7 @@ func TestReadKey_EOF(t *testing.T) {
 
 // TestIsInteractiveTerminal_NonTTY confirms the gate returns false under the
 // test runner (stdin/stdout are pipes), which is what drives the
-// auto-detect-all fallback in selectAgentsForInstall.
+// non-interactive default fallback in selectAgentsForInstall.
 func TestIsInteractiveTerminal_NonTTY(t *testing.T) {
 	if isInteractiveTerminal() {
 		t.Skip("running attached to a TTY; gate behavior is environment-specific here")

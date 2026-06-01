@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.action.v0",
+  "description": "Correlated attributed action, output of the SIR signal normalization and attribution pipeline. This is the input to policy evaluation and the entity recorded in the ledger.",
+  "type": "object",
+  "required": ["action_id", "mode", "action_type", "sensitivity", "attribution", "enforceability"],
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable action identifier derived from the case/request context."
+    },
+    "mode": {
+      "enum": ["observe", "advise", "hook_gate", "os_observed", "mediated", "contained", "managed"],
+      "description": "Protection mode active when this action was attributed."
+    },
+    "action_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Primary action type from normalized signals (e.g. shell_exec, file_read, network_connect, mcp_trust)."
+    },
+    "sensitivity": {
+      "enum": ["credential", "external_network", "high", "medium", "low"],
+      "description": "Highest sensitivity label across signal targets."
+    },
+    "labels": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Human-readable labels assigned by the labeling pipeline (e.g. credential_access, external_egress, shell_execution, dangerous_shell, cicd_edit, sir_config_tamper)."
+    },
+    "attribution": {
+      "type": "object",
+      "required": ["confidence"],
+      "properties": {
+        "confidence": {
+          "enum": ["high", "medium", "low", "unknown"]
+        },
+        "methods": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "ambiguities": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "spoofing_risk": {
+          "enum": ["none", "low", "medium", "high"]
+        }
+      },
+      "description": "Attribution result. See sir.attribution.v0 for the full contract."
+    },
+    "enforceability": {
+      "type": "object",
+      "required": ["class", "reason"],
+      "properties": {
+        "class": {"enum": ["enforces", "detects", "blind"]},
+        "reason": {"type": "string"}
+      },
+      "description": "Enforceability analysis for this action in the active mode. See sir.enforceability.v0."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.ledger.v0",
+  "description": "Append-only ledger entry. SIEM exporters and evidence consumers depend on this shape. The hash chain (prev_hash → hash) enables tamper detection.",
+  "type": "object",
+  "required": ["entry_id", "decision", "prev_hash", "hash"],
+  "properties": {
+    "entry_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique ledger entry identifier."
+    },
+    "case_id": {
+      "type": "string",
+      "description": "Optional harness case identifier (present when decision originated from a harness run)."
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "decision_id", "timestamp", "mode", "verdict",
+        "decision_class", "enforceability", "attribution",
+        "action_type", "sensitivity"
+      ],
+      "properties": {
+        "decision_id": {
+          "type": "string",
+          "description": "Unique decision identifier (Go-stamped after Rust evaluation)."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO 8601 UTC timestamp of the decision."
+        },
+        "mode": {
+          "enum": ["observe", "advise", "hook_gate", "os_observed", "mediated", "contained", "managed"],
+          "description": "Protection mode active at decision time."
+        },
+        "verdict": {
+          "enum": ["allow", "ask", "deny"],
+          "description": "Policy verdict."
+        },
+        "decision_class": {
+          "enum": ["proceed_and_reconcile", "block_and_wait", "deny_now", "record_post_hoc"],
+          "description": "Enforcement timing class (CORRELATION block-and-wait model)."
+        },
+        "policy_rules": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Policy rule IDs that triggered this verdict, in match order."
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "required", "fail_closed"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Effect kind: block, record, prompt, nudge, contain."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "If true, absence of this effect provider fails closed."
+              },
+              "fail_closed": {
+                "type": "boolean",
+                "description": "If true, provider failure denies the action."
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Ordered list of effects planned for this decision."
+        },
+        "enforceability": {
+          "enum": ["enforces", "detects", "blind"],
+          "description": "Whether the kernel can prevent (enforces), observe (detects), or is blind to the action in the active mode."
+        },
+        "attribution": {
+          "type": "string",
+          "enum": ["high", "medium", "low", "unknown"],
+          "description": "Attribution confidence at decision time. See sir.attribution.v0 for the full structured form."
+        },
+        "action_type": {
+          "type": "string",
+          "description": "Primary action type from normalized signals (e.g. shell_exec, file_read, network_connect)."
+        },
+        "sensitivity": {
+          "type": "string",
+          "description": "Highest sensitivity label across signal targets."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Human-readable decision explanation. Not a parity field; Go-only."
+        }
+      },
+      "additionalProperties": false
+    },
+    "prev_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the previous ledger entry (hex). Empty string for the first entry."
+    },
+    "hash": {
+      "type": "string",
+      "description": "SHA-256 hash of this entry's canonical representation (hex)."
+    }
+  },
+  "additionalProperties": false
+}

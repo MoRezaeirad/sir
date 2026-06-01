@@ -1,8 +1,7 @@
 // Package hooks — subagent.go handles the SubagentStart hook event.
-// Fires when the host agent launches a sub-agent. Claude Code is the
-// only agent with a native SubagentStart event today; Gemini CLI and
-// Codex do not expose sub-agent lifecycle hooks, so delegation
-// gating is Claude-Code-only in practice. Checks lease.AllowDelegation,
+// Fires when the host agent launches a sub-agent. Claude Code and Cursor expose
+// native SubagentStart events today; Gemini CLI and Codex do not expose
+// sub-agent lifecycle hooks. Checks lease.AllowDelegation,
 // session secret state, and posture integrity before allowing delegation.
 package hooks
 
@@ -23,6 +22,7 @@ type SubagentPayload struct {
 	SessionID     string   `json:"session_id"`
 	HookEventName string   `json:"hook_event_name"`
 	AgentName     string   `json:"agent_name,omitempty"`
+	SubagentName  string   `json:"subagent_name,omitempty"`
 	Tools         []string `json:"tools,omitempty"`
 	// CWD and TranscriptPath drive the thinking guard so an interactive
 	// delegation ask cannot wedge a thinking-enabled Claude session.
@@ -44,6 +44,7 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return fmt.Errorf("unmarshal payload: %w", err)
 	}
+	payload.normalize()
 
 	// An interactive ask suspends and resumes the assistant turn; under Claude
 	// extended thinking that resume wedges the conversation. Degrade delegation
@@ -122,10 +123,20 @@ func EvaluateSubagentStart(projectRoot string, ag agent.Agent) error {
 			return nil
 		}
 
-		// Check posture integrity
+		// Check posture integrity — only files critical to the active agent's
+		// own hook/instruction surface are session-fatal. Changes to other
+		// agents' config files (e.g. ~/.codex/config.toml during a Claude
+		// session) are logged as informational warnings rather than triggering
+		// a session-wide DenyAll.
 		tampered := CheckPostureIntegrity(projectRoot, state, l)
-		if len(tampered) > 0 {
-			state.SetDenyAll(fmt.Sprintf("posture tampered before delegation: %v", tampered))
+		critical := filterCriticalTampered(tampered, ag)
+		for _, f := range tampered {
+			if !sliceContains(critical, f) {
+				fmt.Fprintf(os.Stderr, "sir: posture note: %s changed (not critical for %s session, monitoring only)\n", f, ag.ID())
+			}
+		}
+		if len(critical) > 0 {
+			state.SetDenyAll(fmt.Sprintf("posture tampered before delegation: %v", critical))
 			if saveErr := state.Save(); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "sir: save session error: %v\n", saveErr)
 			}
@@ -209,6 +220,81 @@ func subagentDelegationRequiresApproval(state *session.State) bool {
 		return true
 	}
 	return len(state.TaintedMCPServers) > 0
+}
+
+// filterCriticalTampered returns the subset of tampered files that are
+// security-critical for the given agent's session. Files owned by other agents
+// (e.g. .codex/config.toml during a Claude session) are not critical: a change
+// to Codex's config cannot inject hooks into a Claude session.
+// Returns the full tampered list when ag is nil (fail-closed for unknown agents).
+func filterCriticalTampered(tampered []string, ag agent.Agent) []string {
+	critical := criticalPostureFilesForAgent(ag)
+	if critical == nil {
+		return tampered
+	}
+	var result []string
+	for _, f := range tampered {
+		if critical[f] {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
+// criticalPostureFilesForAgent returns the set of posture files whose
+// modification is security-critical for the given agent's session.
+// Returns nil when the agent is unknown (callers treat nil as "all critical").
+func criticalPostureFilesForAgent(ag agent.Agent) map[string]bool {
+	if ag == nil {
+		return nil
+	}
+	switch ag.ID() {
+	case agent.Claude:
+		return map[string]bool{
+			".claude/settings.json": true,
+			"CLAUDE.md":             true,
+			".mcp.json":             true,
+		}
+	case agent.Gemini:
+		return map[string]bool{
+			".gemini/settings.json": true,
+			"GEMINI.md":             true,
+			".mcp.json":             true,
+		}
+	case agent.Codex:
+		return map[string]bool{
+			".codex/config.toml": true,
+			".codex/hooks.json":  true,
+			"AGENTS.md":          true,
+			".mcp.json":          true,
+		}
+	case agent.Cursor:
+		return map[string]bool{
+			".cursor/hooks.json":   true,
+			".cursor/mcp.json":     true,
+			"./.cursor/hooks.json": true,
+			"./.cursor/mcp.json":   true,
+			"AGENTS.md":            true,
+			".mcp.json":            true,
+		}
+	default:
+		return nil
+	}
+}
+
+func (p *SubagentPayload) normalize() {
+	if p.AgentName == "" {
+		p.AgentName = p.SubagentName
+	}
+}
+
+func sliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func writeSubagentResponse(w io.Writer, resp *HookResponse, ag agent.Agent) error {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/somoore/sir/pkg/config"
 	"github.com/somoore/sir/pkg/hooks"
 	"github.com/somoore/sir/pkg/lease"
+	"github.com/somoore/sir/pkg/provider"
 	"github.com/somoore/sir/pkg/session"
 )
 
@@ -185,14 +187,20 @@ func runInstall(projectRoot, mode string, opts installOptions, agentsOverride []
 		}
 	}
 
-	// Resolve the set of agents to install for. The default path auto-detects
-	// the supported agents already present on the machine; explicit selection
-	// stays fail-closed.
+	// Resolve the set of agents to install for. This build only enables hook
+	// installation for Claude Code; other adapters may still be
+	// parsed/statused, but this install path must not create or update their
+	// hook configuration.
 	agents := agentsOverride
 	if agents == nil {
 		agents, err = selectAgentsForInstall(opts.explicitAgent, opts.skipPreview)
 		if err != nil {
 			fatal("%v", err)
+		}
+	}
+	for _, ag := range agents {
+		if !isInstallableAgent(ag) {
+			fatal("%s is detected/supported, but hook protection is not enabled for it in this build", ag.Name())
 		}
 	}
 
@@ -201,7 +209,7 @@ func runInstall(projectRoot, mode string, opts installOptions, agentsOverride []
 	for _, ag := range agents {
 		if policy != nil {
 			if _, ok := policy.HookSubtree(string(ag.ID())); !ok {
-				fatal("managed policy %s does not define hooks for %s; re-run with --agent for a covered adapter or update %s",
+				fatal("managed policy %s does not define hooks for %s; re-run with --agent claude or update %s",
 					policy.PolicyVersion, ag.Name(), policy.ManagedPolicySourcePath())
 			}
 		}
@@ -301,11 +309,7 @@ func runInstall(projectRoot, mode string, opts installOptions, agentsOverride []
 			fmt.Fprintf(os.Stderr, "warning: cross-project rebaseline failed: %v\n", err)
 			fmt.Fprintln(os.Stderr, "  Run `sir doctor` in each active agent session to recover manually.")
 		} else if summary.Refreshed > 0 || summary.DenyAllCleared > 0 || len(summary.Skipped) > 0 {
-			fmt.Printf("  Refreshed baselines across %d project session(s); cleared deny-all on %d.\n",
-				summary.Refreshed, summary.DenyAllCleared)
-			for _, s := range summary.Skipped {
-				fmt.Fprintf(os.Stderr, "  Skipped %s: %s\n", s.Project, s.Reason)
-			}
+			printRebaselineSummary(os.Stdout, os.Stderr, summary)
 		}
 	} else {
 		fmt.Println("  --no-rebaseline set: existing project sessions keep their old posture baselines.")
@@ -366,6 +370,98 @@ func runInstall(projectRoot, mode string, opts installOptions, agentsOverride []
 	fmt.Println()
 	fmt.Println("See it work now:  sir demo        (60-second tour of what sir catches)")
 	fmt.Println("Check anytime:    sir status      ·  if blocked: sir why  (full chain: sir explain)")
+
+	// Register any providers passed via --with-provider.
+	if len(opts.withProviders) > 0 {
+		fmt.Println()
+		for _, manifestPath := range opts.withProviders {
+			registerProviderFromInstall(manifestPath)
+		}
+	}
+}
+
+const rebaselineSkipDetailLimit = 5
+
+func printRebaselineSummary(stdout, stderr io.Writer, summary hooks.RebaselineSummary) {
+	fmt.Fprintf(stdout, "  Refreshed baselines across %d project session(s); cleared deny-all on %d.\n",
+		summary.Refreshed, summary.DenyAllCleared)
+	if len(summary.Skipped) == 0 {
+		return
+	}
+	fmt.Fprintf(stderr, "  Skipped %d stale/bad project session(s) during rebaseline.\n", len(summary.Skipped))
+	limit := len(summary.Skipped)
+	if limit > rebaselineSkipDetailLimit {
+		limit = rebaselineSkipDetailLimit
+	}
+	for _, s := range summary.Skipped[:limit] {
+		fmt.Fprintf(stderr, "    - %s: %s\n", s.Project, s.Reason)
+	}
+	if remaining := len(summary.Skipped) - limit; remaining > 0 {
+		fmt.Fprintf(stderr, "    ... %d more skipped; run `sir doctor` in an affected project to inspect.\n", remaining)
+	}
+}
+
+// registerProviderFromInstall validates and registers a provider manifest
+// specified via --with-provider during sir install.
+func registerProviderFromInstall(manifestPath string) {
+	absPath, err := filepath.Abs(manifestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: --with-provider %s: resolve path: %v\n", manifestPath, err)
+		return
+	}
+	m, issues := loadAndValidateManifest(absPath)
+	if len(issues) > 0 {
+		fmt.Fprintf(os.Stderr, "  warning: --with-provider %s: validation failed:\n", manifestPath)
+		for _, iss := range issues {
+			fmt.Fprintf(os.Stderr, "    %s\n", iss)
+		}
+		return
+	}
+	reg, err := provider.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: load provider registry: %v\n", err)
+		return
+	}
+	dir := filepath.Dir(absPath)
+	entrypoint, err := filepath.Abs(filepath.Join(dir, m.Entrypoint))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: resolve entrypoint: %v\n", err)
+		return
+	}
+	e := provider.Entry{
+		Name:         m.Name,
+		Kind:         m.Kind,
+		Version:      m.Version,
+		ManifestPath: absPath,
+		Entrypoint:   entrypoint,
+		Platforms:    m.Platforms,
+		Capabilities: m.Capabilities,
+		Enabled:      true,
+		InstalledBy:  "sir install --with-provider",
+	}
+	if existing, ok := reg.ByName(m.Name); ok {
+		// Already registered — update entrypoint and version.
+		existing.Version = m.Version
+		existing.ManifestPath = absPath
+		existing.Entrypoint = entrypoint
+	} else {
+		if err := reg.Add(e); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: register provider: %v\n", err)
+			return
+		}
+	}
+	healthy, reason := provider.HealthCheck(e)
+	healthStatus := provider.HealthHealthy
+	if !healthy {
+		healthStatus = provider.HealthUnhealthy
+		fmt.Fprintf(os.Stderr, "  warning: provider %s health check: %s\n", m.Name, reason)
+	}
+	reg.UpdateHealth(m.Name, healthStatus, reason)
+	if err := reg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: save registry: %v\n", err)
+		return
+	}
+	fmt.Printf("  Provider: %s (%s) — %s\n", m.Name, m.Kind, healthStatus)
 }
 
 // describeProfile returns a human label for the lease's profile axis

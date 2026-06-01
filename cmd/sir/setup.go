@@ -56,7 +56,7 @@ func cmdSetup(projectRoot string, args []string) {
 		if yes {
 			cmdInstall(projectRoot, "guard")
 		} else {
-			fmt.Print("Install hooks for detected agents now? [Y/n] ")
+			fmt.Print("Install hooks for selected/default agents now? [Y/n] ")
 			var answer string
 			fmt.Scanln(&answer)
 			answer = strings.TrimSpace(strings.ToLower(answer))

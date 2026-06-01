@@ -117,7 +117,7 @@ func TestFormatHookTamper_WhatWhyHow(t *testing.T) {
 	// WHY
 	assertContains(t, "FormatHookTamper", msg, "settings.json", "changed without approval")
 	// HOW
-	assertContains(t, "FormatHookTamper", msg, "NEW terminal", "sir doctor", "sir install --force")
+	assertContains(t, "FormatHookTamper", msg, "NEW terminal", "sir doctor", "sir install --agent claude")
 }
 
 func TestFormatHookTamper_TruncatesLongPath(t *testing.T) {
@@ -350,7 +350,7 @@ func TestFormatLeaseIntegrityFatal_WhatWhyHow(t *testing.T) {
 	msg := FormatLeaseIntegrityFatal()
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "\u00d7 deny", "Security policy")
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "reason:", "hash", "changed")
-	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir doctor", "sir install --force")
+	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir doctor", "sir install --agent claude")
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir why")
 }
 

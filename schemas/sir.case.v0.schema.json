@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.case.v0",
+  "description": "A harness test case: signals + evasion context + expected scoring mode.",
+  "type": "object",
+  "required": [
+    "case_id",
+    "mode",
+    "signals"
+  ],
+  "properties": {
+    "case_id": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "mode": {
+      "enum": [
+        "observe", "advise", "hook_gate", "os_observed",
+        "mediated", "contained", "managed"
+      ]
+    },
+    "signals": {
+      "type": "array",
+      "items": { "$ref": "sir.signal.v0.schema.json" }
+    },
+    "sensitive_source": { "type": "boolean" },
+    "irreversible_sink": { "type": "boolean" },
+    "required_effect_unavailable": { "type": "boolean" },
+    "fail_closed": { "type": "boolean" },
+    "span_stripped": { "type": "boolean" },
+    "span_forged": { "type": "boolean" },
+    "detached_child": { "type": "boolean" },
+    "hook_missing": { "type": "boolean" },
+    "shared_shell": { "type": "boolean" },
+    "prior_taint": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Taint labels carried from prior actions in the session (e.g. credential_access), for cross-action and was-secret tests."
+    },
+    "provider_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Effect capabilities the active providers declare (block, contain, record)."
+    },
+    "provider_enforcement": {
+      "enum": ["real", "simulated"],
+      "description": "Whether the active effect provider demonstrably enforces (real) or only declares the capability (simulated/stub). A declared block/contain only yields enforces when this is 'real'."
+    },
+    "resolved_actor_kind": {
+      "type": "string",
+      "description": "Actor identity resolved by the orchestrator (e.g. ai_coding_agent)."
+    },
+    "policy_verdicts": {
+      "type": "array",
+      "description": "Advisory policy-provider verdicts (e.g. an OPA deny) injected so the harness exercises policy composition through both kernels. Composed under native + developer-workflow floors.",
+      "items": { "$ref": "sir.policy_verdict.v0.schema.json" }
+    },
+    "note": { "type": "string" }
+  }
+}

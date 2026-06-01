@@ -83,6 +83,40 @@ func cmdExplain(projectRoot string, index int) {
 	}
 	fmt.Println()
 
+	// Section 4.4: Policy providers (managed policy — OPA/Cedar/custom packs).
+	// Rendered separately from the native Policy Rule above so managed-policy
+	// input is distinguishable from sir's own floors. Failures are fail-open
+	// notes: the provider did not contribute and native policy applied.
+	if len(e.ProviderVerdicts) > 0 || len(e.ProviderFailures) > 0 {
+		fmt.Println("Policy Providers:")
+		for _, v := range e.ProviderVerdicts {
+			line := fmt.Sprintf("  %s: %s", v.Provider, v.Verdict)
+			if len(v.RulesMatched) > 0 {
+				line += fmt.Sprintf(" (rules: %s)", strings.Join(v.RulesMatched, ", "))
+			}
+			fmt.Println(line)
+			if v.Reason != "" {
+				fmt.Printf("    reason: %s\n", v.Reason)
+			}
+			fmt.Printf("    used: %t\n", v.Used)
+		}
+		for _, f := range e.ProviderFailures {
+			status := f.Status
+			if status == "" {
+				status = "failed"
+				if f.TimedOut {
+					status = "timeout"
+				}
+			}
+			behavior := f.Behavior
+			if behavior == "" {
+				behavior = "native policy applied (fail-open)"
+			}
+			fmt.Printf("  %s\n", ac(auditDim, fmt.Sprintf("Note: provider %s %s — %s", f.Provider, status, behavior)))
+		}
+		fmt.Println()
+	}
+
 	// Section 4.5: Detection (stable behavior-detection taxonomy)
 	if det := ledger.DetectionID(e); det != "" {
 		if meta, ok := detect.Lookup(detect.ID(det)); ok {

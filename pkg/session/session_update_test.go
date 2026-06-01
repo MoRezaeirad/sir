@@ -51,6 +51,34 @@ func TestUpdate_AppliesMutationAndPersists(t *testing.T) {
 	}
 }
 
+func TestUpdateFromHome_AppliesMutationAndPersistsToExplicitHome(t *testing.T) {
+	projectRoot := withTempProject(t)
+	shadowHome := t.TempDir()
+
+	initial := NewState(projectRoot)
+	if err := initial.SaveToHome(shadowHome); err != nil {
+		t.Fatalf("save initial shadow state: %v", err)
+	}
+
+	if err := UpdateFromHome(shadowHome, projectRoot, func(st *State) error {
+		st.MarkSecretSession()
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateFromHome: %v", err)
+	}
+
+	loaded, err := LoadFromHome(shadowHome, projectRoot)
+	if err != nil {
+		t.Fatalf("reload shadow: %v", err)
+	}
+	if !loaded.SecretSession {
+		t.Error("shadow SecretSession mutation did not persist")
+	}
+	if _, err := os.Stat(StatePath(projectRoot)); !os.IsNotExist(err) {
+		t.Fatalf("ambient state path was unexpectedly written: %v", err)
+	}
+}
+
 func TestUpdate_MissingFileCreatesFreshState(t *testing.T) {
 	projectRoot := withTempProject(t)
 

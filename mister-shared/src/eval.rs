@@ -28,6 +28,30 @@ pub struct LeaseResource {
 }
 
 // ---------------------------------------------------------------------------
+// PolicyVerdict (advisory input from Go policy providers to the Rust oracle)
+// ---------------------------------------------------------------------------
+
+/// Advisory verdict emitted by an external policy provider (OPA, Cedar, custom
+/// policy packs). These are inputs to the Rust composition layer; they do not
+/// directly enforce. The Rust oracle combines them with native safety floors to
+/// produce the final decision.
+///
+/// Design rules:
+/// - `is_advisory` must be true. Non-advisory verdicts from external providers
+///   are rejected (fail closed).
+/// - Advisory providers can escalate allow → ask. They cannot escalate allow → deny
+///   directly; that requires native floor evaluation. They cannot widen a deny.
+/// - The native safety floors (secret session + external egress, tripwire, IFC
+///   violations) always run before advisory composition and cannot be overridden.
+#[derive(Debug, Clone)]
+pub struct PolicyVerdict {
+    pub provider_name: String,
+    pub verdict: Verdict,
+    pub rules_matched: Vec<String>,
+    pub is_advisory: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Evaluation Request (sent from Go to Rust via MSTR/1)
 // ---------------------------------------------------------------------------
 
@@ -57,6 +81,10 @@ pub struct EvalRequest {
     pub is_sensitive_path: bool,
     pub is_delegation: bool,
     pub is_tripwire: bool,
+    /// Advisory policy verdicts from registered policy providers. The Go layer
+    /// populates this before calling the oracle; the oracle composes them with
+    /// native floors. Empty slice preserves existing behavior exactly.
+    pub policy_verdicts: Vec<PolicyVerdict>,
 }
 
 // ---------------------------------------------------------------------------
@@ -188,8 +216,71 @@ impl EvalRequest {
             }
         }
 
+        // policy_verdicts: optional advisory inputs from external policy providers.
+        // Missing → empty (existing behavior preserved). Present but malformed → fail closed.
+        // is_advisory MUST be true; non-advisory entries are rejected to prevent
+        // external providers from bypassing the native safety floor composition.
+        fn parse_policy_verdict_array(
+            val: &JsonValue,
+            key: &str,
+        ) -> Result<Vec<PolicyVerdict>, String> {
+            let arr = match val.get(key) {
+                None => return Ok(Vec::new()),
+                Some(v) => match v.as_array() {
+                    Some(a) => a,
+                    None => return Err(format!("field '{}' must be an array", key)),
+                },
+            };
+            let mut out = Vec::with_capacity(arr.len());
+            for pv in arr.iter() {
+                let provider_name = pv
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let verdict_str = pv
+                    .get("verdict")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "policy_verdict missing 'verdict' field".to_string())?;
+                let verdict = match verdict_str {
+                    "allow" => Verdict::Allow,
+                    "ask" => Verdict::Ask,
+                    "deny" => Verdict::Deny,
+                    other => return Err(format!("policy_verdict unknown verdict: '{}'", other)),
+                };
+                let is_advisory = pv
+                    .get("is_advisory")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true); // missing field defaults to advisory (safe default)
+                if !is_advisory {
+                    return Err(format!(
+                        "policy_verdict from '{}' has is_advisory=false; \
+                         external providers must be advisory only (is_advisory must be true)",
+                        provider_name
+                    ));
+                }
+                let rules_matched = pv
+                    .get("rules_matched")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|r| r.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                out.push(PolicyVerdict {
+                    provider_name,
+                    verdict,
+                    rules_matched,
+                    is_advisory,
+                });
+            }
+            Ok(out)
+        }
+
         let labels = parse_label_array(&val, "labels")?;
         let derived_labels = parse_label_array(&val, "derived_labels")?;
+        let policy_verdicts = parse_policy_verdict_array(&val, "policy_verdicts")?;
 
         Ok(EvalRequest {
             verb,
@@ -205,6 +296,7 @@ impl EvalRequest {
             is_sensitive_path,
             is_delegation,
             is_tripwire,
+            policy_verdicts,
         })
     }
 

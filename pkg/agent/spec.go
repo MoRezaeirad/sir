@@ -46,6 +46,9 @@ const (
 	// ConfigLayoutMatcherGroups is the Claude/Codex/Gemini shape:
 	// event -> [{ matcher?, hooks: [{ type, command, timeout }] }].
 	ConfigLayoutMatcherGroups ConfigLayout = "matcher_groups"
+	// ConfigLayoutFlatCommands is the Cursor native hooks shape:
+	// event -> [{ command, failClosed?, ... }].
+	ConfigLayoutFlatCommands ConfigLayout = "flat_commands"
 )
 
 // AgentCapabilities declares the major enforcement surfaces an adapter
@@ -169,6 +172,8 @@ const (
 	// (Codex uses "block", Gemini uses "deny" — the literal is
 	// controlled by Spec.LegacyDenyLiteral).
 	ResponseFormatLegacy
+	// ResponseFormatCursor emits Cursor's native hook response shape.
+	ResponseFormatCursor
 )
 
 // HookRegistration describes a single hook event to wire into the agent's
@@ -179,6 +184,9 @@ type HookRegistration struct {
 	// base layer translates this to the agent's native wire name via
 	// reverse-lookup of Spec.EventNames when emitting the config.
 	Event string
+	// WireEvent overrides the reverse EventNames lookup for adapters that
+	// expose multiple native hook events for one sir-internal event.
+	WireEvent string
 	// Matcher is the tool-name matcher expression. Empty means the hook
 	// is non-tool-scoped (no "matcher" field in the emitted entry).
 	Matcher string
@@ -189,6 +197,9 @@ type HookRegistration struct {
 	// Timeout is the hook timeout expressed in Spec.TimeoutUnit (seconds
 	// for Claude/Codex, milliseconds for Gemini).
 	Timeout int
+	// FailClosed asks the host agent to fail closed if this hook cannot be
+	// executed or parsed, for agents whose hook config supports it.
+	FailClosed bool
 }
 
 // AgentSpec is the pure data declaration for an adapter.

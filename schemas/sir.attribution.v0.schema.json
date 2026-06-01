@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.attribution.v0",
+  "description": "Attribution result from the SIR signal correlation pipeline. The confidence field is the primary policy key; the remaining fields are emitted when available and will become required in v1.",
+  "type": "object",
+  "required": ["confidence"],
+  "properties": {
+    "confidence": {
+      "enum": ["high", "medium", "low", "unknown"],
+      "description": "Attribution confidence level. Policy rules key on this field. high=enforced boundary; medium=declared intent or mediated action; low=observed runtime only; unknown=no usable signals."
+    },
+    "methods": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Signal reliability methods that contributed to this attribution, in descending confidence order.",
+      "examples": [["enforced_boundary"], ["declared_intent", "observed_runtime"]]
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Known attribution ambiguities (e.g. 'shared_shell', 'detached_child', 'span_absent')."
+    },
+    "spoofing_risk": {
+      "enum": ["none", "low", "medium", "high"],
+      "description": "Risk that actor attribution was spoofed. high=span forged or span absent with no fallback; medium=span absent but runtime fallback present; low=span present but unverified; none=enforced boundary verified."
+    }
+  },
+  "additionalProperties": false
+}

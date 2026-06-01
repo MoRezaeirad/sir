@@ -54,7 +54,7 @@ func validateGeneratedHooksPolicy(ag agent.Agent, hooksConfig map[string]interfa
 }
 
 func filterSirHookEntries(entries []interface{}, layout agent.ConfigLayout) ([]interface{}, bool, error) {
-	if layout != agent.ConfigLayoutMatcherGroups {
+	if layout != agent.ConfigLayoutMatcherGroups && layout != agent.ConfigLayoutFlatCommands {
 		return nil, false, fmt.Errorf("unsupported config layout: %s", layout)
 	}
 

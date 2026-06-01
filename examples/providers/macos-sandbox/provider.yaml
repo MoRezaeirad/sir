@@ -1,0 +1,25 @@
+schema_version: sir.provider.v0
+name: sir-macos-sandbox
+kind: effect_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos]
+capabilities:
+  contain: true
+  block: false
+  record: true
+  sandbox_exec_required: true
+# Honesty signal: REAL OS-level containment via macOS Seatbelt (sandbox-exec).
+# On a contain effect the provider runs the action under
+# `sandbox-exec -p '(version 1)(allow default)(deny network*)'`, which the
+# kernel genuinely enforces — a network-egress command inside the profile cannot
+# resolve or connect. This is a SECOND real enforcement mechanism independent of
+# Docker: it backs `mediated` mode (SIR launches/proxies the process under the
+# profile) the way the devcontainer backs `contained`. Demonstrated, not
+# declared — `sir provider verify-containment` runs a real sandboxed egress and
+# confirms the boundary held, and harness/fixtures/cases/mediated-sandbox-real/
+# capture.json backs this claim for the enforcement-honesty CI gate.
+enforcement: real
+fixtures:
+  - fixtures/effect-contain.json

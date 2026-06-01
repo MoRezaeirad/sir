@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.advisory_request.v0",
+  "description": "The input sent to an advisory_provider on stdin. Mirrors sir.policy_request.v0. Advisory providers (risk scoring, threat feeds, ML models) receive this and return sir.advisory_signal.v0. They may RAISE risk but never lower deterministic risk (PRD §10.6-7).",
+  "type": "object",
+  "required": [
+    "op",
+    "schema_version",
+    "action"
+  ],
+  "properties": {
+    "op": {
+      "const": "assess",
+      "description": "Always 'assess' for advisory requests. 'capabilities' is handled separately."
+    },
+    "schema_version": {
+      "const": "sir.advisory_request.v0"
+    },
+    "action": {
+      "type": "string",
+      "description": "The verb being assessed.",
+      "examples": ["push_origin", "shell_exec", "net_external", "read_ref"]
+    },
+    "target": {
+      "type": "string",
+      "description": "The target of the action: command, file path, remote name, URL."
+    },
+    "resolved_actor": {
+      "type": "string",
+      "enum": ["ai_coding_agent", "human_developer", "unknown"]
+    },
+    "attribution_confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "unknown"]
+    },
+    "taint": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Prior-session taint labels."
+    },
+    "enforceability": {
+      "type": "string",
+      "enum": ["enforces", "detects", "blind"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["guard", "observe", "hook_gate", "mediated", "contained", "managed", "advise"]
+    }
+  }
+}

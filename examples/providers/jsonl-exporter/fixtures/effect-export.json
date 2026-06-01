@@ -1,0 +1,17 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_export_001",
+  "type": "export",
+  "required": false,
+  "fail_closed": false,
+  "target": {
+    "payload": {
+      "decision_id": "dec-test001",
+      "verdict": "deny",
+      "action_type": "file_read",
+      "sensitivity": "credential",
+      "target_display": "~/.aws/credentials"
+    },
+    "output_path": "/tmp/sir-test-export.jsonl"
+  }
+}

@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/somoore/sir/pkg/session"
@@ -223,7 +222,7 @@ func runAgentLinuxLifecycle(projectRoot, bin string, opts Options, plan linuxLau
 	}
 
 	cmd := exec.Command("unshare", unshareArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setLinuxContainmentSysProcAttr(cmd)
 	baseEnv, scrubbedEnv := sanitizeContainmentEnv(os.Environ())
 	cmd.Env = WithEnvOverride(baseEnv, session.StateHomeEnvVar, stateHome)
 	cmd.Stdin = os.Stdin

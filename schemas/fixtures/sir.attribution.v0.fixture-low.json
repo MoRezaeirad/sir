@@ -1,0 +1,6 @@
+{
+  "confidence": "low",
+  "methods": ["observed_runtime"],
+  "ambiguities": ["detached_child"],
+  "spoofing_risk": "medium"
+}

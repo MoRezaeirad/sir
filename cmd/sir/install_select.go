@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/somoore/sir/pkg/agent"
 	"github.com/somoore/sir/pkg/config"
@@ -15,9 +16,10 @@ import (
 
 // selectAgentsForInstall resolves the set of agents to install for, consulting
 // (in precedence order) the explicit --agent flag, the remembered config
-// preference, an interactive multi-select on a TTY, and finally
-// auto-detect-all. When suppressPrompt is true (e.g. --yes / CI), the
-// interactive selector is skipped.
+// preference, an interactive selector on a TTY, and finally the default enabled
+// install target. The resolver filters detected agents to the currently enabled
+// install set. For this testing build, that set is Claude Code. When
+// suppressPrompt is true (e.g. --yes / CI), the interactive selector is skipped.
 //
 // It also persists the user's "remember this choice" selection to the global
 // config when requested. This write is user-initiated and out-of-band of any
@@ -29,9 +31,12 @@ func selectAgentsForInstall(explicit string, suppressPrompt bool) ([]agent.Agent
 	in := agentSelectionInputs{
 		explicit:    explicit,
 		remembered:  remembered,
-		detected:    detectInstalledAgents(),
 		interactive: !suppressPrompt && isInteractiveTerminal(),
-		selector:    runAgentChecklist,
+	}
+	in.detected = detectInstalledAgents()
+	in.selector = func(enabled []agent.Agent) ([]agent.Agent, bool, bool) {
+		printDisabledInstallTargets(in.detected, enabled)
+		return runAgentChecklist(enabled)
 	}
 
 	res, err := resolveAgentSelection(in)
@@ -48,7 +53,8 @@ func selectAgentsForInstall(explicit string, suppressPrompt bool) ([]agent.Agent
 
 // loadRememberedInstallAgents returns the persisted InstallAgents preference,
 // or nil when absent or unreadable. A read failure is non-fatal here: the
-// preference is advisory, and resolution falls through to interactive/auto.
+// preference is advisory, and resolution falls through to interactive/default
+// selection.
 func loadRememberedInstallAgents() []string {
 	cfg, _, err := config.Load()
 	if err != nil {
@@ -60,9 +66,9 @@ func loadRememberedInstallAgents() []string {
 	return cfg.InstallAgents
 }
 
-// persistRememberedInstallAgents writes the chosen agent IDs to the global
-// config so a future bare `sir install` reuses them. Best-effort: a write
-// failure prints a warning but does not abort the install in progress.
+// persistRememberedInstallAgents writes the chosen installable agent IDs to the
+// global config so a future bare `sir install` reuses them. Best-effort: a
+// write failure prints a warning but does not abort the install in progress.
 func persistRememberedInstallAgents(agents []agent.Agent) {
 	cfg, _, err := config.Load()
 	if err != nil {
@@ -82,7 +88,8 @@ func persistRememberedInstallAgents(agents []agent.Agent) {
 }
 
 // forgetRememberedInstallAgents clears the persisted InstallAgents preference
-// so a future bare `sir install` re-prompts (TTY) or auto-detects all again.
+// so a future bare `sir install` re-prompts (TTY) or falls back to the default
+// Claude-only install.
 func forgetRememberedInstallAgents() {
 	cfg, _, err := config.Load()
 	if err != nil {
@@ -100,16 +107,45 @@ func forgetRememberedInstallAgents() {
 	fmt.Printf("Cleared remembered agent preference (was %v).\n", prev)
 }
 
-// runAgentChecklist drives the interactive checklist over the detected agents
-// and maps the result back to the resolver's selector contract. The last row
-// is a synthetic "Remember this choice" toggle, not an agent.
+func printDisabledInstallTargets(detected, enabled []agent.Agent) {
+	names := disabledInstallTargetNames(detected, enabled)
+	if len(names) == 0 {
+		return
+	}
+	fmt.Printf("Detected but disabled for hook install in this build: %s\n\n", strings.Join(names, ", "))
+}
+
+func disabledInstallTargetNames(detected, enabled []agent.Agent) []string {
+	enabledIDs := make(map[agent.AgentID]struct{}, len(enabled))
+	for _, ag := range enabled {
+		if ag == nil {
+			continue
+		}
+		enabledIDs[ag.ID()] = struct{}{}
+	}
+	var names []string
+	for _, ag := range detected {
+		if ag == nil {
+			continue
+		}
+		if _, ok := enabledIDs[ag.ID()]; ok {
+			continue
+		}
+		names = append(names, ag.Name())
+	}
+	return names
+}
+
+// runAgentChecklist drives the interactive checklist over the installable
+// detected agents and maps the result back to the resolver's selector contract.
+// The last row is a synthetic "Remember this choice" toggle, not an agent.
 func runAgentChecklist(detected []agent.Agent) (chosen []agent.Agent, remember bool, confirmed bool) {
 	items := make([]checklistItem, 0, len(detected)+1)
 	for _, ag := range detected {
 		items = append(items, checklistItem{
 			Label:   ag.Name(),
 			Detail:  ag.ConfigPath(),
-			Checked: true, // default to all detected, matching prior behavior
+			Checked: ag.ID() == agent.Claude,
 		})
 	}
 	rememberIdx := len(items)

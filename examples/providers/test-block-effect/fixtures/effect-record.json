@@ -1,0 +1,11 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_testblock_record_001",
+  "type": "record",
+  "required": true,
+  "fail_closed": false,
+  "target": {
+    "kind": "process",
+    "pid": 1234
+  }
+}

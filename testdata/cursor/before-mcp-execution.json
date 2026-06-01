@@ -1,0 +1,11 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "hook_event_name": "beforeMCPExecution",
+  "server_name": "github",
+  "tool_name": "search_issues",
+  "args": {
+    "query": "is:open label:bug"
+  },
+  "tool_use_id": "cursor_mcp_1",
+  "cwd": "/Users/dev/myproject"
+}

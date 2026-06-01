@@ -18,7 +18,7 @@ import (
 
 func cmdPolicy(projectRoot string, args []string) {
 	if len(args) == 0 {
-		fatal("usage: sir policy [show|diff|init|suggest|protect-path|unprotect-path] ...")
+		fatal("usage: sir policy [show|diff|init|suggest|protect-path|unprotect-path|test|explain] ...")
 	}
 	subcmd := args[0]
 	args = args[1:]
@@ -35,8 +35,12 @@ func cmdPolicy(projectRoot string, args []string) {
 		cmdProtectPath(projectRoot, args)
 	case "unprotect-path":
 		cmdUnprotectPath(projectRoot, args)
+	case "test":
+		cmdPolicyProviderTest(args)
+	case "explain":
+		cmdPolicyExplain(args)
 	default:
-		fatal("usage: sir policy [show|diff|init|suggest|protect-path|unprotect-path] ...")
+		fatal("usage: sir policy [show|diff|init|suggest|protect-path|unprotect-path|test|explain] ...")
 	}
 }
 

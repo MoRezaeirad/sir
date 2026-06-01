@@ -1,0 +1,15 @@
+schema_version: sir.provider.v0
+name: noop-effect-provider
+kind: effect_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  effects: [record, nudge]
+  contain: false
+  block: false
+# Honesty signal: capability plumbing only; declares no containment and applies none.
+enforcement: simulated
+fixtures:
+  - fixtures/effect-contain.json

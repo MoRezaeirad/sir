@@ -1,0 +1,16 @@
+schema_version: sir.provider.v0
+name: sandbox-provider-stub
+kind: effect_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [linux, macos]
+capabilities:
+  effects: [contain, block, record]
+  contain: true
+  block: true
+  note: Stub for OpenShell/OpenSandbox/Sandlock/Seatbelt-style integration experiments.
+# Honesty signal: this is capability plumbing, not real OS-level enforcement (stub apply).
+enforcement: simulated
+fixtures:
+  - fixtures/effect-contain.json

@@ -1,0 +1,8 @@
+{
+  "signal_id": "toy-fixture-001",
+  "signal_time": "2026-05-30T00:00:00Z",
+  "action_claim": {
+    "type": "shell_exec",
+    "target": {"display": "echo hello", "sensitivity": "low"}
+  }
+}

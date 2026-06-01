@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.effect_request.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "effect_id",
+    "type",
+    "required",
+    "fail_closed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sir.effect_request.v0"
+    },
+    "effect_id": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "record",
+        "nudge",
+        "redact",
+        "prompt",
+        "block",
+        "contain",
+        "export",
+        "kill_process",
+        "request_exception"
+      ]
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "fail_closed": {
+      "type": "boolean"
+    },
+    "target": {
+      "type": "object"
+    }
+  }
+}

@@ -5,7 +5,8 @@
 
 Use this path when you are new to the repo and want the shortest safe route to a useful change.
 
-> **Note:** sir is a "sandbox in reverse" — it constrains AI coding agents from above at the hook layer rather than from below at the syscall layer, with a pure Rust policy oracle (`mister-core`) as the upper bound on what is ever allowed, and a Go layer that may only be stricter. sir is experimental. Your first change should fit that boundary: small, test-backed, and never widening what Rust denies.
+> [!NOTE]
+> sir is a "sandbox in reverse" — it constrains AI coding agents from above at the hook layer rather than from below at the syscall layer, with a pure Rust policy oracle (`mister-core`) as the upper bound on what is ever allowed, and a Go layer that may only be stricter. sir is experimental. Your first change should fit that boundary: small, test-backed, and never widening what Rust denies.
 
 ## 1. Start from clean main
 

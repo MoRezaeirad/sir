@@ -1,0 +1,6 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "hook_event_name": "subagentStart",
+  "subagent_name": "reviewer",
+  "cwd": "/Users/dev/myproject"
+}

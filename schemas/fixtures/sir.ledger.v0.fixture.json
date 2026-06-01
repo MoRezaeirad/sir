@@ -1,0 +1,22 @@
+{
+  "entry_id": "ent-abc12345",
+  "decision": {
+    "decision_id": "dec-abcdef012345",
+    "timestamp": "2026-05-31T12:00:00Z",
+    "mode": "hook_gate",
+    "verdict": "deny",
+    "decision_class": "deny_now",
+    "policy_rules": ["deny-agent-credential-read"],
+    "effects": [
+      {"type": "block", "required": true, "fail_closed": true},
+      {"type": "record", "required": true, "fail_closed": false}
+    ],
+    "enforceability": "enforces",
+    "attribution": "medium",
+    "action_type": "file_read",
+    "sensitivity": "credential",
+    "explanation": "SIR DENIED this because:\n  Policy rule 'deny-agent-credential-read' matched.\n  Target: .env (sensitivity: credential)\n  Enforceability: enforces (cooperative hooks only)"
+  },
+  "prev_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "hash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+}

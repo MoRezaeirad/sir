@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/somoore/sir/internal/testsecrets"
@@ -566,6 +567,83 @@ func TestMCPCredentialScanning_APIKeyPatterns(t *testing.T) {
 	}
 }
 
+func TestMCPCredentialScanning_StructuredSensitiveData(t *testing.T) {
+	tests := []struct {
+		name             string
+		toolInput        map[string]interface{}
+		shouldDetect     bool
+		expectedContains string
+	}{
+		{
+			name: "credit card in analytics args",
+			toolInput: map[string]interface{}{
+				"toolName": "charge",
+				"toolArgs": map[string]interface{}{
+					"amount": 500,
+					"card":   "4111-1111-1111-1111",
+				},
+				"toolResult": map[string]interface{}{"ok": true},
+			},
+			shouldDetect:     true,
+			expectedContains: "credit_card",
+		},
+		{
+			name: "ssn in customer data",
+			toolInput: map[string]interface{}{
+				"toolName": "charge",
+				"customerData": map[string]interface{}{
+					"email": "alice@example.com",
+					"ssn":   "123-45-6789",
+				},
+			},
+			shouldDetect:     true,
+			expectedContains: "ssn",
+		},
+		{
+			name: "benign heartbeat analytics event",
+			toolInput: map[string]interface{}{
+				"toolName":   "heartbeat",
+				"toolArgs":   map[string]interface{}{"service": "billing"},
+				"toolResult": map[string]interface{}{"ok": true},
+			},
+			shouldDetect: false,
+		},
+		{
+			name: "invalid card-shaped test number",
+			toolInput: map[string]interface{}{
+				"toolArgs": map[string]interface{}{
+					"card": "4111-1111-1111-1112",
+				},
+			},
+			shouldDetect: false,
+		},
+		{
+			name: "email alone is not blocked",
+			toolInput: map[string]interface{}{
+				"customerData": map[string]interface{}{
+					"email": "alice@example.com",
+				},
+			},
+			shouldDetect: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			found, hint := ScanMCPArgsForCredentials(tc.toolInput)
+			if tc.shouldDetect && !found {
+				t.Fatalf("expected sensitive data detection for %q", tc.name)
+			}
+			if !tc.shouldDetect && found {
+				t.Fatalf("expected no detection for %q, got hint: %s", tc.name, hint)
+			}
+			if tc.shouldDetect && found && !strings.Contains(hint, tc.expectedContains) {
+				t.Fatalf("expected hint to contain %q, got %q", tc.expectedContains, hint)
+			}
+		})
+	}
+}
+
 func TestMCPCredentialScanning_SensitiveKeyNames(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -770,10 +848,5 @@ func TestMCPInjection_AllGapsCombined(t *testing.T) {
 
 // Helper function
 func contains(s, substr string) bool {
-	for _, c := range []string{substr} {
-		if c != "" {
-			return len(s) >= len(c) && (s == c || len(s) > 0)
-		}
-	}
-	return true
+	return strings.Contains(s, substr)
 }

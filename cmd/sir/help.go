@@ -16,9 +16,9 @@ var passthroughCommands = map[string]bool{
 // commandHelp is concise per-command help shown for `sir <cmd> --help`. Keeping
 // it here means `--help` never executes a (possibly destructive) command.
 var commandHelp = map[string]string{
-	"install":      "sir install [--agent claude|codex|gemini] [--observe] [--no-rebaseline] [--global] [--forget]\n  Set up sir hooks for installed agents.\n  With no --agent on a terminal, prompts an interactive multi-select (Space to\n  toggle, last row remembers the choice). Non-interactive falls back to all\n  detected agents. --agent always overrides the remembered choice.\n  --observe records would_allow/ask/deny without blocking (observe-only rollout).\n  --global runs the step-by-step wizard (same as `sir wizard`).\n  --forget clears the remembered agent choice.",
-	"wizard":       "sir wizard [--observe]\n  Step-by-step setup: choose which agents to protect and how widely (this repo,\n  a directory of repos, or everywhere), then install. sir's hooks are global, so\n  once installed they cover every repo including future clones.",
-	"uninstall":    "sir uninstall [--agent claude|codex|gemini]\n  Remove sir hooks from one or all agents. State under ~/.sir is preserved for\n  forensic review. To also remove binaries and all state, run uninstall.sh.",
+	"install":      "sir install [--agent claude] [--observe] [--no-rebaseline] [--global] [--forget]\n  Set up sir hooks for a selected enabled agent. This build detects multiple\n  agents, but hook protection is currently enabled for Claude Code. With no\n  --agent on a terminal, prompts an interactive selection and can remember that\n  choice. Non-interactive installs Claude Code hooks when Claude Code is detected.\n  --agent always overrides the remembered choice and only accepts enabled IDs.\n  --observe records would_allow/ask/deny without blocking (observe-only rollout).\n  --global runs the step-by-step wizard (same as `sir wizard`).\n  --forget clears the remembered agent choice.",
+	"wizard":       "sir wizard [--observe]\n  Step-by-step setup: choose an enabled protection target and how widely to seed\n  leases (this repo, a directory of repos, or everywhere), then install. sir's\n  hooks are global, so once installed they cover every repo including future clones.",
+	"uninstall":    "sir uninstall [--agent claude|codex|gemini|cursor]\n  Remove sir hooks from one or all agents. State under ~/.sir is preserved for\n  forensic review. To also remove binaries and all state, run uninstall.sh.",
 	"setup":        "sir setup [--personal|--team|--strict|--managed] [--yes]\n  Guided first-run: choose a policy profile, then install hooks.",
 	"status":       "sir status [--json] [--agents]\n  Show whether sir is active and what it currently sees.",
 	"doctor":       "sir doctor [--json]\n  Diagnose sir's health and auto-repair (clears deny-all, restores baselines).",
@@ -34,7 +34,8 @@ var commandHelp = map[string]string{
 	"trust":        "sir trust <mcp-server> [--remove] [--yes]\n  Trust (or revoke) an MCP server for credential-bearing args. Rare.",
 	"secret":       "sir secret view <path> [--json]\n  Show a sensitive file's keys with values redacted.",
 	"policy":       "sir policy [show|diff|init|suggest|protect-path|unprotect-path]\n  Inspect and configure this project's policy lease.",
-	"config":       "sir config [--json]\n  Show this project's policy/lease and how to change it (alias for `sir policy show`).",
+	"config":       "sir config\n  Guided setup: discover AI coding agents, choose an enabled protection target,\n  install hooks, and show a receipt. Alias: sir configure. In this build, only\n  Claude Code is enabled for hook protection.\n  (With subcommand args, forwards to `sir policy show <args>` for backward compat.)",
+	"configure":    "sir configure\n  Alias for `sir config` — guided agent discovery and enabled hook install.",
 	"mcp":          "sir mcp [status|wrap|approve|revoke|list|scope]\n  Inspect and manage discovered MCP servers.",
 	"friction":     "sir friction [--json]\n  Summarize prompts, blocks, service levels, and scoped-lease suggestions.",
 	"audit":        "sir audit\n  One-screen security summary of this session.",

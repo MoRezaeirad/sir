@@ -82,7 +82,8 @@ The only supported update path is `install.sh` from a vetted tree.
 
 The target end state is Astral-style separation of duties: required reviewers on the `release` environment, self-review disabled, and a human approval click before publication.
 
-> **Warning:** That last control depends on having at least two trusted maintainers. On a single-maintainer repository, `required_reviewers + prevent_self_review=true` deadlocks releases. Until a second trusted reviewer exists, keep the environment locked down with no admin bypass and restricted deployment refs, and flip self-review prevention on as soon as a second reviewer is available.
+> [!WARNING]
+> That last control depends on having at least two trusted maintainers. On a single-maintainer repository, `required_reviewers + prevent_self_review=true` deadlocks releases. Until a second trusted reviewer exists, keep the environment locked down with no admin bypass and restricted deployment refs, and flip self-review prevention on as soon as a second reviewer is available.
 
 ## OpenSSF Scorecard: accepted exceptions
 

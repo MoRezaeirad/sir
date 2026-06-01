@@ -17,8 +17,8 @@
 #   3. Act as a secondary/alternative packaging path if the primary
 #      release.yml needs to be rolled back or restructured.
 #
-# Keep this config minimal: enough to produce linux/macos archives for
-# the same targets release.yml ships, but without re-implementing the
+# Keep this config minimal: enough to produce Linux, macOS, and Windows
+# archives for the same targets release.yml ships, without re-implementing the
 # signing or SBOM layers that release.yml owns.
 
 version: 2
@@ -42,19 +42,19 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
-    # darwin/amd64 intentionally skipped — release.yml only ships
-    # darwin_arm64 binaries (and that stays the source of truth).
-    ignore:
-      - goos: darwin
-        goarch: amd64
 
 archives:
   - id: default
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     formats:
       - tar.gz
     files:

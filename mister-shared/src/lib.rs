@@ -11,7 +11,7 @@ mod sha256;
 mod time;
 mod verb;
 
-pub use eval::{EvalRequest, EvalResponse, EvalSessionContext, LeaseResource, Sink};
+pub use eval::{EvalRequest, EvalResponse, EvalSessionContext, LeaseResource, PolicyVerdict, Sink};
 pub use json::{parse_json, JsonValue};
 pub use labels::{Label, Provenance, RiskTier, Sensitivity, TrustLevel, Verdict};
 pub use policy_surface::{ApprovalScope, PostureState, SESSION_SCHEMA_VERSION};

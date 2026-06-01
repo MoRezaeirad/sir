@@ -236,6 +236,24 @@ func cmdAllowRemoteArgs(projectRoot string, args []string) {
 		Reason:   fmt.Sprintf("added remote: %s", remote),
 	})
 
+	// Also mark the remote as session-approved so ORIGIN-1 fires immediately
+	// on the next push attempt without re-prompting. This is the session-level
+	// counterpart to the lease write above: the lease controls classification
+	// (push_remote vs push_origin), the session controls the approve-once reuse.
+	// Best-effort — a missing or unreadable session is not fatal here.
+	_ = session.WithSessionLock(projectRoot, func() error {
+		state, err := session.Load(projectRoot)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return nil
+		}
+		state.MarkPendingPushRemote(remote)
+		state.PromotePendingPushRemote(remote)
+		return state.Save()
+	})
+
 	fmt.Printf("Added %q to approved_remotes. sir-protected agents can now push to this remote.\n", remote)
 }
 

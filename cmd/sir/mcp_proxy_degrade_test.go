@@ -13,11 +13,18 @@ import (
 
 // TestRunMCPProxyDarwin_AutoDegradesMacAppHelper checks that a command
 // matching the Mac-app-helper heuristic skips sandbox-exec entirely and
-// falls through to monitored mode. The helper classifier now requires the
-// target path to exist (so we can resolve symlinks before classification);
-// synthetic paths no longer match. Use a real /Applications helper if one
-// is present on this machine; otherwise skip — the CI matrix covers the
-// classifier's unit tests directly.
+// degrades to monitored mode, with the correct notice. The helper classifier
+// requires the target path to exist (so we can resolve symlinks before
+// classification); synthetic paths no longer match, so we use a real
+// /Applications helper if one is present, else skip — the classifier's unit
+// tests cover the heuristic directly.
+//
+// This asserts the degrade DECISION via darwinProxyDegrade rather than running
+// the full runMCPProxyDarwin: a real .app helper is a long-running GUI binary
+// that would never exit under runProxyChild's Wait(), hanging the test. The pure
+// decision function gives us the notice without launching the helper. The full
+// degrade→monitored→runProxyChild execution path is covered separately by
+// TestRunMCPProxyDarwin_NoSandboxFlagDegrades with a fast-exit command.
 func TestRunMCPProxyDarwin_AutoDegradesMacAppHelper(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin-only code path")
@@ -26,20 +33,16 @@ func TestRunMCPProxyDarwin_AutoDegradesMacAppHelper(t *testing.T) {
 	if realHelper == "" {
 		t.Skip("no /Applications/*.app/Contents/MacOS/* helper available on this host")
 	}
-	opts := mcpProxyOpts{command: realHelper}
 
-	stderr := &bytes.Buffer{}
-	restore := redirectStderr(t, stderr)
-	defer restore()
-
-	_ = runMCPProxyDarwin(opts)
-
-	restore()
-	if !strings.Contains(stderr.String(), "monitored mode") {
-		t.Errorf("expected auto-degrade notice in stderr; got:\n%s", stderr.String())
+	reason, _, notice := darwinProxyDegrade(mcpProxyOpts{command: realHelper})
+	if reason != "mac_app_helper" {
+		t.Fatalf("expected mac_app_helper degrade for %s, got reason=%q", realHelper, reason)
 	}
-	if !strings.Contains(stderr.String(), "macOS .app helper") {
-		t.Errorf("expected Mac-app-helper reason in notice; got:\n%s", stderr.String())
+	if !strings.Contains(notice, "monitored mode") {
+		t.Errorf("expected auto-degrade notice; got:\n%s", notice)
+	}
+	if !strings.Contains(notice, "macOS .app helper") {
+		t.Errorf("expected Mac-app-helper reason in notice; got:\n%s", notice)
 	}
 }
 

@@ -1,0 +1,35 @@
+schema_version: sir.policy.v0
+id: developer-friendly
+rules:
+  - id: deny-agent-credential-read
+    description: AI agents cannot read credential files directly.
+    when:
+      actor.kind: ai_coding_agent
+      action.type: file_read
+      action.target.sensitivity: credential
+    then:
+      decision: deny
+      effects:
+        - type: block
+          required: true
+          fail_closed: true
+        - type: record
+          required: true
+          fail_closed: false
+      reason_tags: [credential_access, ai_agent_actor]
+
+  - id: ask-new-external-egress
+    description: Ask before new external network egress.
+    when:
+      action.type: network_connect
+      action.target.sensitivity: external_network
+    then:
+      decision: ask
+      effects:
+        - type: prompt
+          required: false
+          fail_closed: false
+        - type: record
+          required: true
+          fail_closed: false
+      reason_tags: [external_egress]

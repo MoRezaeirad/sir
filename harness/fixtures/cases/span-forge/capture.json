@@ -1,0 +1,45 @@
+{
+  "_capture_evidence": {
+    "child_saw_span": "forged-27000",
+    "injected_span": "forged-27000",
+    "matched_active": false,
+    "reproduction": "SIR_SPAN_ID=\u003cfake\u003e sh -c 'echo $SIR_SPAN_ID'",
+    "span_forged": true
+  },
+  "_capture_note": "Generated from a REAL run: a span_id was injected into the child env and observed; it matches no active session, so it is unverifiable (span_forged derived). In hook_gate with no OS fallback → blind; spoofing risk high because the identity is forged.",
+  "case_id": "span-forge",
+  "mode": "hook_gate",
+  "sensitive_source": true,
+  "signals": [
+    {
+      "action_claim": {
+        "target": {
+          "display": "SIR_SPAN_ID=\u003cfake\u003e \u003ccmd\u003e",
+          "sensitivity": "credential"
+        },
+        "type": "shell_exec"
+      },
+      "actor_claim": {
+        "kind": "ai_coding_agent",
+        "name": "claude-code"
+      },
+      "schema_version": "sir.signal.v0",
+      "session": {
+        "session_id": "ses_cap_span_forge",
+        "span_id": "forged-27000",
+        "trace_id": "trace_cap_span_forge",
+        "turn_id": "turn_cap_1"
+      },
+      "signal_id": "cap-shell_exec",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "claude_hook",
+        "provider": "claude_hook",
+        "provider_version": "0.1.0",
+        "reliability": "declared_intent",
+        "timing": "pre_exec"
+      }
+    }
+  ],
+  "span_forged": true
+}

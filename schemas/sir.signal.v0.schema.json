@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.signal.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "signal_id",
+    "signal_time",
+    "source",
+    "action_claim"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sir.signal.v0"
+    },
+    "signal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signal_time": {
+      "type": "string",
+      "description": "ISO 8601 timestamp"
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind", "reliability", "timing"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reliability": {
+          "enum": [
+            "declared_intent",
+            "mediated_action",
+            "observed_runtime",
+            "enforced_boundary",
+            "advisory_signal",
+            "user_decision",
+            "admin_policy"
+          ]
+        },
+        "timing": {
+          "enum": ["pre_exec", "during_exec", "post_exec", "unknown"]
+        },
+        "provider": {"type": "string"},
+        "provider_version": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "session": {
+      "type": "object",
+      "properties": {
+        "session_id": {"type": "string"},
+        "trace_id":   {"type": "string"},
+        "turn_id":    {"type": "string"},
+        "span_id":    {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "actor_claim": {
+      "type": "object",
+      "properties": {
+        "kind":         {"type": "string"},
+        "name":         {"type": "string"},
+        "pid":          {"type": "integer"},
+        "process_tree": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "action_claim": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required by sir-core; invalid signals without action_claim.type fail conformance"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "display":     {"type": "string"},
+            "sensitivity": {
+              "type": "string",
+              "enum": ["credential", "external_network", "high", "medium", "low"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

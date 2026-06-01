@@ -1,0 +1,14 @@
+schema_version: sir.provider.v0
+name: cedar-bridge
+kind: policy_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true
+  policy_engine: cedar
+  policy_dir: ./policies
+fixtures:
+  - fixtures/agent-cred-read.json

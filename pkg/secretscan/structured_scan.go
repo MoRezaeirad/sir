@@ -63,6 +63,52 @@ var highEntropyContextHints = []string{
 	"cookie",
 }
 
+// ScanOutputForStructuredCredentials scans for structured credential patterns only
+// (AKIA, ghp_, PEM headers, JWTs, URIs with credentials, etc.). It deliberately
+// skips the high-entropy heuristic, which is calibrated for arbitrary output but
+// produces false positives on test runner output that contains synthetic high-entropy
+// test data near context words like "token" or "credential".
+//
+// Use this for Bash output from known test runner commands. All other output paths
+// use the full ScanOutputForCredentials.
+func ScanOutputForStructuredCredentials(output string) []CredentialMatch {
+	if output == "" {
+		return nil
+	}
+	var scanText string
+	if len(output) > largeOutputThreshold {
+		scanText = output[:scanWindowBytes] + "\n" + output[len(output)-scanWindowBytes:]
+	} else {
+		scanText = output
+	}
+	seen := make(map[string]struct{})
+	var matches []CredentialMatch
+	for _, p := range outputPatterns {
+		if _, dup := seen[p.Name]; dup {
+			continue
+		}
+		found := p.RE.FindAllString(scanText, -1)
+		if len(found) == 0 {
+			continue
+		}
+		if p.Validator != nil {
+			validated := false
+			for _, m := range found {
+				if p.Validator(m) {
+					validated = true
+					break
+				}
+			}
+			if !validated {
+				continue
+			}
+		}
+		seen[p.Name] = struct{}{}
+		matches = append(matches, CredentialMatch{PatternName: p.Name, Confidence: p.Confidence})
+	}
+	return matches
+}
+
 // ScanOutputForCredentials scans tool output text for structured secret patterns.
 // Returns a deduplicated list of matches (one per pattern name). Never stores or
 // logs actual credential values.
@@ -199,6 +245,9 @@ func IsHighEntropyString(s string) bool {
 	if looksLikePathishToken(s) {
 		return false
 	}
+	if looksLikePinnedGitHubActionRef(s) {
+		return false
+	}
 	return shannonEntropy(s) > 4.5
 }
 
@@ -241,6 +290,54 @@ func looksLikePathishToken(s string) bool {
 	}
 
 	return false
+}
+
+func looksLikePinnedGitHubActionRef(s string) bool {
+	at := strings.LastIndexByte(s, '@')
+	if at <= 0 || at == len(s)-1 {
+		return false
+	}
+	ref := s[at+1:]
+	if len(ref) != 40 || !isHexString(ref) {
+		return false
+	}
+	name := s[:at]
+	if !strings.Contains(name, "/") || strings.Contains(name, "//") {
+		return false
+	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "" || !isGitHubActionRefSegment(segment) {
+			return false
+		}
+	}
+	return true
+}
+
+func isGitHubActionRefSegment(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isHexString(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateLuhn(s string) bool {

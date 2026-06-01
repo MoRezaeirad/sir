@@ -1,0 +1,14 @@
+schema_version: sir.provider.v0
+name: sir-jsonl-exporter
+kind: export_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  export: true
+  format: jsonl
+  redacted_by_default: true
+  otlp: false
+fixtures:
+  - fixtures/effect-export.json

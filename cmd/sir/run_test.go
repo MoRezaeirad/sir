@@ -188,6 +188,9 @@ func TestSelectRunLauncher(t *testing.T) {
 	if runtime.GOOS == "linux" && launcher.mode != runContainmentModeLinuxNamespace {
 		t.Fatalf("linux launcher mode = %q, want %q", launcher.mode, runContainmentModeLinuxNamespace)
 	}
+	if runtime.GOOS == "windows" && launcher.mode != runContainmentModeWindowsHookGate {
+		t.Fatalf("windows launcher mode = %q, want %q", launcher.mode, runContainmentModeWindowsHookGate)
+	}
 }
 
 func TestClassifyWrappedAgentExitReturnsExitCode(t *testing.T) {

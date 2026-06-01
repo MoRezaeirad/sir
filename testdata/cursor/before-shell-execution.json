@@ -1,0 +1,10 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "generation_id": "gen_cursor_456",
+  "hook_event_name": "beforeShellExecution",
+  "command": "go test ./pkg/agent",
+  "tool_use_id": "cursor_shell_1",
+  "cwd": "/Users/dev/myproject",
+  "cursor_version": "3.6.21",
+  "transcript_path": "/Users/dev/.cursor/transcripts/conv_cursor_123.jsonl"
+}

@@ -7,12 +7,13 @@ sir ("Sandbox in Reverse") is an experimental security runtime for AI coding age
 
 This approach exists because AI coding agents are not a single sandboxable process. They orchestrate tools, spawn subprocesses, and call MCP servers. The dangerous surface is not syscalls — it is *intents* like "read `.env`, then `curl` an external host." sir uses **information flow control (IFC)** to track data sensitivity across operations: if the agent reads a secret file, that taint propagates to any file it writes, any commit, and any push attempt in the same session.
 
-> **Warning:** sir is experimental and v1 has known limitations. It is not a complete containment boundary, the hook layer is advisory policy enforcement rather than OS-level prevention (unless `sir run` is used), and several detections are heuristic.
+> [!WARNING]
+> sir is experimental and v1 has known limitations. It is not a complete containment boundary, the hook layer is advisory policy enforcement rather than OS-level prevention (unless `sir run` is used), and several detections are heuristic.
 
 This document lays out the shipped threat model, the trust assumptions behind it, and the residual risk that remains so external researchers can evaluate it honestly.
 
 <!-- BEGIN GENERATED SUPPORT SCOPE -->
-**Scope note.** The threat model is written primarily against Claude Code because Claude Code is the **reference-support** target: it has the richest hook surface (11 events), native interactive approval, and the most complete sir coverage. Gemini CLI has **near-parity support** — full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning — but some Claude-specific mitigations are not available: PermissionRequest approval brokering, SubagentStart delegation gating, ConfigChange tamper detection at the moment of change, InstructionsLoaded pre-read scanning, and Elicitation interception. Codex has **limited support** with partial tool-path coverage: Bash, native-write, MCP, and permission-request hooks are registered where Codex emits them, but missing lifecycle hooks and upstream delivery gaps mean sir still relies on sentinel hashing plus a final `Stop` sweep as the posture backstop. Wherever a mitigation below depends on one of the missing hooks, the threat is correspondingly wider on the affected agent. See [../user/codex-support.md](../user/codex-support.md) and [../user/gemini-support.md](../user/gemini-support.md) for the per-agent coverage matrices.
+**Scope note.** The threat model is written primarily against Claude Code because Claude Code is the **reference-support** target: it has the richest hook surface (11 events), native interactive approval, and the most complete sir coverage. Gemini CLI and Cursor have **near-parity support**: Gemini CLI has full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning, while Cursor has hook-scoped coverage for shell, read, MCP, prompt, delegation, and final-sweep paths plus after-action file-edit backstops. Some Claude-specific mitigations are not available: PermissionRequest approval brokering, SubagentStart delegation gating, ConfigChange tamper detection at the moment of change, InstructionsLoaded pre-read scanning, and Elicitation interception on Gemini CLI, and PermissionRequest approval brokering, ConfigChange tamper detection at the moment of change, InstructionsLoaded pre-read scanning, and Elicitation interception on Cursor. Codex has **limited support** with partial tool-path coverage: Bash, native-write, MCP, and permission-request hooks are registered where Codex emits them, but missing lifecycle hooks and upstream delivery gaps mean sir still relies on sentinel hashing plus a final `Stop` sweep as the posture backstop. Wherever a mitigation below depends on one of the missing hooks, the threat is correspondingly wider on the affected agent. See [../user/codex-support.md](../user/codex-support.md), [../user/gemini-support.md](../user/gemini-support.md), and [../user/cursor-support.md](../user/cursor-support.md) for the per-agent coverage matrices.
 <!-- END GENERATED SUPPORT SCOPE -->
 
 ## Assets and trust boundaries
@@ -181,7 +182,8 @@ Being explicit about what sir does not cover matters more than claiming broad pr
 - **Turn-boundary precision** — sir advances turns instantly on each user message and falls back to a 30-second gap heuristic, which can be wrong under unusual pacing. The monotonic secret high-water mark bounds the blast radius of an imprecise boundary: a stale or premature turn advance downgrades the deny floor to an approval prompt, never to a silent allow.
 - **The default lease**, which is deliberately permissive to reduce developer friction and is not a hardened profile.
 
-> **Note:** If you find a way to violate one of the in-scope guarantees above, that is a security bug and we want to hear about it. See the verification path below.
+> [!NOTE]
+> If you find a way to violate one of the in-scope guarantees above, that is a security bug and we want to hear about it. See the verification path below.
 
 ## Standards mapping
 

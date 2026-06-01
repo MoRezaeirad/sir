@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.policy_request.v0",
+  "description": "The input sent to a policy_provider on stdin. All fields are populated by the Go orchestrator before evaluation. Policy providers (OPA, Cedar, custom packs) receive this and return sir.policy_verdict.v0.",
+  "type": "object",
+  "required": [
+    "op",
+    "schema_version",
+    "action"
+  ],
+  "properties": {
+    "op": {
+      "const": "evaluate",
+      "description": "Always 'evaluate' for policy requests. 'capabilities' is handled separately."
+    },
+    "schema_version": {
+      "const": "sir.policy_request.v0"
+    },
+    "action": {
+      "type": "string",
+      "description": "The verb being evaluated.",
+      "examples": [
+        "push_origin", "push_remote", "net_external", "read_ref",
+        "stage_write", "commit", "run_tests", "mcp_unapproved",
+        "run_ephemeral", "dns_lookup", "env_read", "persistence", "sudo"
+      ]
+    },
+    "target": {
+      "type": "string",
+      "description": "The target of the action: file path, remote name, URL, command, etc.",
+      "examples": ["origin", "~/.aws/credentials", "https://api.example.com", "npm install"]
+    },
+    "resolved_actor": {
+      "type": "string",
+      "description": "Attribution of who initiated this action.",
+      "enum": ["ai_coding_agent", "human_developer", "unknown"]
+    },
+    "attribution_confidence": {
+      "type": "string",
+      "description": "Confidence in the resolved_actor attribution, derived from signal reliability.",
+      "enum": ["high", "medium", "low", "unknown"]
+    },
+    "taint": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Prior-session taint labels. Present when the session has seen sensitive data.",
+      "examples": [
+        ["credential_access"],
+        ["credential_access", "untrusted_content"],
+        ["mcp_injection"]
+      ]
+    },
+    "enforceability": {
+      "type": "string",
+      "description": "What SIR can actually do with the verdict given available signals and providers.",
+      "enum": ["enforces", "detects", "blind"]
+    },
+    "mode": {
+      "type": "string",
+      "description": "The active operating mode for this session.",
+      "enum": ["guard", "observe", "hook_gate", "mediated", "contained", "managed", "advise"]
+    }
+  }
+}

@@ -37,6 +37,26 @@ func TestResolvePath_GlobalAgentSentinelsUseHomeDir(t *testing.T) {
 			want: filepath.Join(tmpHome, ".codex", "hooks.json"),
 		},
 		{
+			name: ".cursor/hooks.json",
+			rel:  ".cursor/hooks.json",
+			want: filepath.Join(tmpHome, ".cursor", "hooks.json"),
+		},
+		{
+			name: ".cursor/mcp.json",
+			rel:  ".cursor/mcp.json",
+			want: filepath.Join(tmpHome, ".cursor", "mcp.json"),
+		},
+		{
+			name: "cursor project hooks stay project-local",
+			rel:  "./.cursor/hooks.json",
+			want: filepath.Join(projectRoot, ".cursor", "hooks.json"),
+		},
+		{
+			name: "absolute posture path stays absolute",
+			rel:  filepath.Join(tmpHome, ".sir", "config.json"),
+			want: filepath.Join(tmpHome, ".sir", "config.json"),
+		},
+		{
 			name: "project file stays project-local",
 			rel:  "CLAUDE.md",
 			want: filepath.Join(projectRoot, "CLAUDE.md"),
@@ -165,5 +185,42 @@ func TestHashSentinelFiles_NonAgentFilesHashWholeFile(t *testing.T) {
 	after := HashSentinelFiles(projectRoot, files)
 	if after["CLAUDE.md"] == before["CLAUDE.md"] {
 		t.Fatal("non-agent posture file change should change whole-file hash")
+	}
+}
+
+// TestGitHookPostureNotHashed locks the deliberate design that the ".git/hooks/*"
+// posture entry is a glob and therefore never produces a sentinel hash — so it
+// can never trip the post-hoc tamper→deny-all path. If this regresses (e.g. by
+// glob-expanding the entry), every husky/pre-commit reinstall would deny-all the
+// session, re-breaking the exact workflow SIR exists to protect.
+func TestGitHookPostureNotHashed(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	projectRoot := t.TempDir()
+
+	// Create a real hook file so the only reason it is not hashed is the glob,
+	// not the file being absent.
+	hooksDir := filepath.Join(projectRoot, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-commit"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{".git/hooks/*"}
+	before := HashSentinelFiles(projectRoot, files)
+	if before[".git/hooks/*"] != "" {
+		t.Fatalf("glob posture entry must not produce a hash, got %q", before[".git/hooks/*"])
+	}
+
+	// Modify the hook; the glob entry must STILL hash to empty and CompareSentinelHashes
+	// must report no change (no deny-all trigger).
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-commit"), []byte("#!/bin/sh\necho tampered\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	after := HashSentinelFiles(projectRoot, files)
+	if changed := CompareSentinelHashes(before, after); len(changed) != 0 {
+		t.Fatalf("git-hook change must not register as posture tamper, got changed=%v", changed)
 	}
 }

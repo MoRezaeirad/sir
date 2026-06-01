@@ -40,7 +40,7 @@ That gives sir native interactive approval, full tool-path mediation, lifecycle-
 
 Claude hooks are configured in `~/.claude/settings.json`. `sir install` merges sir-managed hook entries into that file and uses the absolute path to the `sir` binary so PATH hijacking cannot replace the hook command.
 
-If Claude, Gemini, and Codex coexist on the same machine, plain `sir install` auto-detects all supported agent surfaces that are already present. Use `sir install --agent claude` when you want to pin the install to Claude only.
+`sir install` detects installed AI coding agents and lets the user choose an enabled protection target. For this testing build, Claude Code is the enabled target. If Gemini, Codex, or Cursor coexist on the same machine, they may still appear in discovery/support/status surfaces, but hook installation for those targets is disabled. Use `sir install --agent claude` or `sir config` for the currently enabled hook setup.
 
 The two primary enforcement hooks are:
 
@@ -158,7 +158,8 @@ Example `~/.claude/settings.json` with sir and a custom hook:
 }
 ```
 
-> **Warning:** If another hook modifies `~/.claude/settings.json`, sir's `PostToolUse` handler will detect the hash mismatch and may trigger deny-all. Coordinate with other tools that modify hook configuration to avoid false positives. The safest approach is to install sir last, after all other hooks are configured.
+> [!WARNING]
+> If another hook modifies `~/.claude/settings.json`, sir's `PostToolUse` handler will detect the hash mismatch and may trigger deny-all. Coordinate with other tools that modify hook configuration to avoid false positives. The safest approach is to install sir last, after all other hooks are configured.
 
 ## How sir returns verdicts to Claude Code
 

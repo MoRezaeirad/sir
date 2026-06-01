@@ -1,7 +1,7 @@
 // Package agent — shared implementation functions driven by AgentSpec.
 //
-// base.go is the heart of the agent adapter framework: all three adapters
-// (Claude Code, Codex, Gemini CLI) delegate into these functions. An
+// base.go is the heart of the agent adapter framework: all adapters
+// (Claude Code, Cursor, Codex, Gemini CLI) delegate into these functions. An
 // adapter file is now little more than a package-level var claudeSpec =
 // AgentSpec{...} plus a thin struct whose methods forward into here.
 //
@@ -140,6 +140,8 @@ func baseFormatPreToolUseResponse(spec *AgentSpec, decision, reason string) ([]b
 	switch spec.ResponseFormat {
 	case ResponseFormatClaude:
 		return formatClaudePreToolUse(decision, reason)
+	case ResponseFormatCursor:
+		return formatCursorPreToolUse(decision, reason)
 	default:
 		return formatLegacyPreToolUse(decision, reason, spec.LegacyDenyLiteral, spec.HasAskVerdict)
 	}
@@ -154,6 +156,8 @@ func baseFormatPostToolUseResponse(spec *AgentSpec, decision, reason string) ([]
 		// (it's after-the-fact), so sir writes non-allow reasons to
 		// stderr instead. Returning nil here triggers that fallback.
 		return nil, nil
+	case ResponseFormatCursor:
+		return formatCursorPostToolUse(decision, reason)
 	default:
 		return formatLegacyPostToolUse(decision, reason, spec.LegacyDenyLiteral, spec.HasAskVerdict, spec.EmitLegacyPostEnvelope)
 	}
@@ -217,7 +221,7 @@ func baseDetectInstallation(spec *AgentSpec) bool {
 func baseGenerateHooksConfigMap(spec *AgentSpec, sirBinaryPath, mode string) (map[string]interface{}, error) {
 	_ = mode // accepted for forward compatibility
 	layout := spec.ConfigStrategy.EffectiveLayout()
-	if layout != ConfigLayoutMatcherGroups {
+	if layout != ConfigLayoutMatcherGroups && layout != ConfigLayoutFlatCommands {
 		return nil, fmt.Errorf("unsupported config layout: %s", layout)
 	}
 
@@ -237,6 +241,23 @@ func baseGenerateHooksConfigMap(spec *AgentSpec, sirBinaryPath, mode string) (ma
 		if spec.CommandFlag != "" {
 			command = command + " " + spec.CommandFlag
 		}
+		wireName := reg.WireEvent
+		if wireName == "" {
+			wireName = wireNameFor(reg.Event)
+		}
+		if layout == ConfigLayoutFlatCommands {
+			entry := map[string]interface{}{
+				"command": command,
+			}
+			if reg.Timeout > 0 {
+				entry["timeout"] = reg.Timeout
+			}
+			if reg.FailClosed {
+				entry["failClosed"] = true
+			}
+			hooks[wireName] = appendFlatHookEntry(hooks[wireName], entry)
+			continue
+		}
 		group := map[string]interface{}{
 			"hooks": []interface{}{
 				map[string]interface{}{
@@ -250,7 +271,6 @@ func baseGenerateHooksConfigMap(spec *AgentSpec, sirBinaryPath, mode string) (ma
 			group["matcher"] = reg.Matcher
 		}
 		entry := interface{}(group)
-		wireName := wireNameFor(reg.Event)
 		hooks[wireName] = []interface{}{entry}
 	}
 
@@ -258,7 +278,16 @@ func baseGenerateHooksConfigMap(spec *AgentSpec, sirBinaryPath, mode string) (ma
 	if wrapperKey == "" {
 		return hooks, nil
 	}
-	return map[string]interface{}{wrapperKey: hooks}, nil
+	out := map[string]interface{}{wrapperKey: hooks}
+	if layout == ConfigLayoutFlatCommands {
+		out["version"] = 1
+	}
+	return out, nil
+}
+
+func appendFlatHookEntry(existing interface{}, entry map[string]interface{}) []interface{} {
+	arr, _ := existing.([]interface{})
+	return append(arr, entry)
 }
 
 // baseGenerateHooksConfig is the []byte form of baseGenerateHooksConfigMap.

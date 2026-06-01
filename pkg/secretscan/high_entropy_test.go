@@ -84,6 +84,11 @@ func TestIsHighEntropyString_FalsePositives(t *testing.T) {
 			"curl_command",
 			"curl-fsSL-https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh",
 		},
+		// GitHub Actions full-SHA pins are integrity metadata, not secrets.
+		{
+			"github_action_full_sha_pin",
+			"actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+		},
 		// Query string URLs
 		{
 			"query_string_url",
@@ -190,6 +195,18 @@ func TestScanOutputForCredentials_NoFalsePositiveOnTechnicalVerificationExcerpt(
 		if m.PatternName == "high_entropy_token" {
 			t.Fatalf("technical verification excerpt triggered high_entropy_token false positive — this should not taint the session")
 		}
+	}
+}
+
+func TestScanOutputForCredentials_NoFalsePositiveOnPinnedGitHubActionNearTokenContext(t *testing.T) {
+	output := `    # Sigstore OIDC token for cosign keyless signing
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          pattern: release-*`
+	matches := ScanOutputForCredentials(output)
+	if hasPattern(matches, "high_entropy_token") {
+		t.Fatalf("GitHub Action full-SHA pin near token context should not taint the session: %+v", matches)
 	}
 }
 

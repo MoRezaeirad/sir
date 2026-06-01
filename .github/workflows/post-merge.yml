@@ -63,11 +63,27 @@ jobs:
             -exclude=G104,G115,G204,G301,G302,G304,G306,G703 \
             ./...
 
-  go-macos:
-    name: Go (sir CLI, macOS)
-    runs-on: macos-latest
+  go-native-platforms:
+    name: Go native / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux_amd64
+            runner: ubuntu-24.04
+          - target: linux_arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin_amd64
+            runner: macos-15-intel
+          - target: darwin_arm64
+            runner: macos-15
+          - target: windows_amd64
+            runner: windows-2025
+          - target: windows_arm64
+            runner: windows-11-arm
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -78,16 +94,69 @@ jobs:
           go-version: "1.25.10"
           cache: false
 
-      - name: Build sir
+      - name: Ensure Linux namespace prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
+          set -euo pipefail
+
+          missing=()
+          for bin in unshare mount; do
+            if ! command -v "${bin}" >/dev/null 2>&1; then
+              missing+=("${bin}")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y util-linux
+          fi
+
+          uname -a
+          command -v unshare
+          command -v mount
+          if sudo sysctl kernel.unprivileged_userns_clone >/dev/null 2>&1; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          if sudo sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Build sir
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          out=bin/sir
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            out=bin/sir.exe
+          fi
           CGO_ENABLED=0 go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o bin/sir \
+            -o "${out}" \
             ./cmd/sir
 
-      - name: Test macOS-sensitive Go paths
-        run: go test ./cmd/sir
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            # Full Go coverage runs on Linux. Keep Windows native assurance on
+            # packages whose tests do not rely on POSIX permissions, /tmp paths,
+            # or HOME semantics that differ from Windows runner behavior.
+            go test \
+              ./pkg/detect \
+              ./pkg/friction \
+              ./pkg/relay \
+              ./pkg/runtime \
+              ./pkg/secretscan \
+              ./pkg/secretview \
+              ./pkg/signal \
+              ./pkg/telemetry
+          else
+            go test ./...
+          fi
 
   artifacts:
     name: Build artifacts & checksums

@@ -19,6 +19,11 @@ const (
 	ContainmentModeDarwinProxy    = "darwin_local_proxy"
 	ContainmentModeLinuxNamespace = "linux_network_namespace_offline"
 	ContainmentModeLinuxAllowlist = "linux_network_namespace_allowlist"
+	// ContainmentModeWindowsHookGate is the Windows mode: no OS-level sandbox
+	// is available, so sir enforces policy only via cooperative hooks.
+	// sir status reports this honestly; sir run returns an informative error
+	// rather than silently launching uncontained.
+	ContainmentModeWindowsHookGate = "windows_hook_gate_only"
 	proxyResolverTimeout          = 2 * time.Second
 	proxyDialAttemptTimeout       = 2 * time.Second
 )
@@ -37,7 +42,13 @@ func (p *LocalProxy) seedAllowlist(resolver func(context.Context, string) ([]str
 		addrs, err := resolver(ctx, normalized)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("resolve allowed host %q: %w", normalized, err)
+			// Skip hosts that don't resolve (e.g. host.docker.internal when
+			// Docker Desktop is not running). The host simply won't appear in the
+			// resolved IP set so the proxy will deny connections to it — which is
+			// the correct fail-safe outcome. Hard-failing here would prevent sir
+			// run from starting at all when a leased host is temporarily offline.
+			fmt.Fprintf(os.Stderr, "sir: run: proxy: skipping unresolvable host %q: %v\n", normalized, err)
+			continue
 		}
 		for _, addr := range addrs {
 			if ip := net.ParseIP(addr); ip != nil {

@@ -40,7 +40,7 @@ func detectRegisteredHookEventsFor(ag agent.Agent) (map[string]bool, error) {
 // registered inside the managed subtree.
 func detectRegisteredHookEventsAt(configPath string, strategy agent.ConfigStrategy) (map[string]bool, error) {
 	layout := strategy.EffectiveLayout()
-	if layout != agent.ConfigLayoutMatcherGroups {
+	if layout != agent.ConfigLayoutMatcherGroups && layout != agent.ConfigLayoutFlatCommands {
 		return nil, fmt.Errorf("unsupported config layout: %s", layout)
 	}
 
@@ -63,6 +63,12 @@ func detectRegisteredHookEventsAt(configPath string, strategy agent.ConfigStrate
 		for _, entry := range arr {
 			em, ok := entry.(map[string]interface{})
 			if !ok {
+				continue
+			}
+			if layout == agent.ConfigLayoutFlatCommands {
+				if cmd, ok := em["command"].(string); ok && isSirHookCommand(cmd) {
+					registered[eventName] = true
+				}
 				continue
 			}
 			// Claude Code requires: { "hooks": [{ "type": "command", "command": "..." }] }
@@ -103,7 +109,7 @@ func validateHookSchemaFor(ag agent.Agent) (invalidEvents []string, err error) {
 // silently rejected by both runtimes.
 func validateHookSchemaAt(configPath string, strategy agent.ConfigStrategy) (invalidEvents []string, err error) {
 	layout := strategy.EffectiveLayout()
-	if layout != agent.ConfigLayoutMatcherGroups {
+	if layout != agent.ConfigLayoutMatcherGroups && layout != agent.ConfigLayoutFlatCommands {
 		return nil, fmt.Errorf("unsupported config layout: %s", layout)
 	}
 
@@ -125,6 +131,21 @@ func validateHookSchemaAt(configPath string, strategy agent.ConfigStrategy) (inv
 		for _, entry := range arr {
 			em, ok := entry.(map[string]interface{})
 			if !ok {
+				continue
+			}
+			if layout == agent.ConfigLayoutFlatCommands {
+				if cmd, ok := em["command"].(string); ok && isSirHookCommand(cmd) {
+					continue
+				}
+				if innerHooks, ok := em["hooks"].([]interface{}); ok {
+					for _, ih := range innerHooks {
+						if ihm, ok := ih.(map[string]interface{}); ok {
+							if cmd, ok := ihm["command"].(string); ok && isSirHookCommand(cmd) {
+								invalidEvents = append(invalidEvents, eventName)
+							}
+						}
+					}
+				}
 				continue
 			}
 			// Check if this is a sir hook with the WRONG (flat) format.

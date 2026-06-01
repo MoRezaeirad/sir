@@ -220,6 +220,27 @@ func DefaultLease() *Lease {
 			"AGENTS.md",
 			".codex/config.toml",
 			".codex/hooks.json",
+			".cursor/hooks.json",
+			".cursor/mcp.json",
+			"./.cursor/hooks.json",
+			"./.cursor/mcp.json",
+			// Git hooks are an execution-on-commit vector: a prompt-injected
+			// agent can plant .git/hooks/pre-commit to run on the next commit.
+			// Writing one is treated as a posture edit — ASK (not deny), so a
+			// human or a legitimate hook framework (husky, pre-commit, lefthook)
+			// can approve once and proceed; non-negotiable #9 (posture writes
+			// always ask) and the closest existing floor (SIR-config tamper is
+			// also ask + restore, not pure deny) both point to ask here.
+			//
+			// Deliberately a glob, NOT literal hook names: HashSentinelFiles
+			// reads each PostureFiles entry as a literal path, so a "*" entry
+			// never produces a sentinel hash and therefore never trips the
+			// post-hoc tamper→deny-all path. That is intentional — hashing
+			// individual hook files would deny-all on every husky reinstall and
+			// re-break the exact workflow SIR exists to protect. Trade-off: git
+			// hooks get the pre-exec write ASK but no post-hoc hash coverage.
+			// Locked by TestGitHookPostureNotHashed.
+			".git/hooks/*",
 		},
 
 		SentinelFilesForInstall: []string{
@@ -230,6 +251,10 @@ func DefaultLease() *Lease {
 			"AGENTS.md",
 			".codex/config.toml",
 			".codex/hooks.json",
+			".cursor/hooks.json",
+			".cursor/mcp.json",
+			"./.cursor/hooks.json",
+			"./.cursor/mcp.json",
 		},
 
 		AllowedVerbs: []policy.Verb{

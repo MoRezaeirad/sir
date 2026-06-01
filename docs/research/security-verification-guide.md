@@ -7,7 +7,8 @@ sir is an experimental security runtime for AI coding agents. Its core thesis is
 
 Use this guide when you need to verify a release artifact, validate a fresh install, or rerun the highest-signal rollout checks against those claims. The checks here exercise the **real** evaluation path — the same hook handlers, the same `mister-core` verdicts, and the same ledger that run in production.
 
-> **Tip:** Need the short evidence view first? Start with the [Validation Summary](validation-summary.md). If you are a researcher evaluating the threat model before running anything, start with the [sir Threat Model](sir-threat-model.md).
+> [!TIP]
+> Need the short evidence view first? Start with the [Validation Summary](validation-summary.md). If you are a researcher evaluating the threat model before running anything, start with the [sir Threat Model](sir-threat-model.md).
 
 ## 1. Verify a release artifact
 
@@ -44,14 +45,14 @@ The wrapper script is the source of truth for the exact commands and expected in
 
 ```bash
 cd /path/to/project
-sir install            # auto-detect supported agents already on this machine
-# or: sir install --agent codex
+sir config             # discover agents and choose an enabled protection target
+# or: sir install --agent claude
 ```
 
 Expected result:
 
 - sir previews the files it will create or modify.
-- The auto-detected or explicitly selected agent configs gain sir hook entries.
+- The selected enabled agent config gains sir hook entries.
 - State is created under `~/.sir/projects/<hash>/`.
 
 ### Verify operational surfaces
@@ -157,7 +158,8 @@ Expected result:
 - The next external egress attempt is denied.
 - The next agent delegation attempt is denied.
 
-> **Note:** If you can construct a sequence where credential material flows out without triggering either the literal scanner or the downstream IFC gate, that is a security bug and we want to see it.
+> [!NOTE]
+> If you can construct a sequence where credential material flows out without triggering either the literal scanner or the downstream IFC gate, that is a security bug and we want to see it.
 
 ### MCP proxy caveats
 

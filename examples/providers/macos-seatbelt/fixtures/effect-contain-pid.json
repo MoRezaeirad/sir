@@ -1,0 +1,11 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_seatbelt_pid_001",
+  "type": "contain",
+  "required": true,
+  "fail_closed": true,
+  "target": {
+    "kind": "process",
+    "pid": 1234
+  }
+}

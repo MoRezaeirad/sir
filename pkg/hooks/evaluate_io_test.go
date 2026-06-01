@@ -130,6 +130,73 @@ func TestLoadLease_AutoApprovesDiscoveredClaudeLegacyMCPServers(t *testing.T) {
 	}
 }
 
+func TestLoadLease_DoesNotAutoApproveClaudeProjectLocalMCPServers(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	projectRoot := t.TempDir()
+	realRoot, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		t.Fatalf("realpath project root: %v", err)
+	}
+	claudeConfig := map[string]interface{}{
+		"projects": map[string]interface{}{
+			realRoot: map[string]interface{}{
+				"mcpServers": map[string]interface{}{
+					"LocalMCPServer": map[string]interface{}{
+						"command": "node",
+						"args":    []string{"local.js"},
+					},
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(claudeConfig)
+	if err != nil {
+		t.Fatalf("marshal claude config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpHome, ".claude.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stateDir := session.StateDir(projectRoot)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.DefaultLease().Save(filepath.Join(stateDir, "lease.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := loadLease(projectRoot)
+	if err != nil {
+		t.Fatalf("loadLease: %v", err)
+	}
+	if containsStringValue(loaded.ApprovedMCPServers, "LocalMCPServer") {
+		t.Fatalf("Claude project-local MCP server should require explicit approval, got %v", loaded.ApprovedMCPServers)
+	}
+
+	reloaded, err := lease.Load(filepath.Join(stateDir, "lease.json"))
+	if err != nil {
+		t.Fatalf("reload persisted lease: %v", err)
+	}
+	if containsStringValue(reloaded.ApprovedMCPServers, "LocalMCPServer") {
+		t.Fatalf("Claude project-local MCP server should not be persisted as auto-approved, got %v", reloaded.ApprovedMCPServers)
+	}
+
+	state := newTestSession(t, projectRoot)
+	resp, err := evaluatePayload(&HookPayload{
+		ToolName:  "mcp__LocalMCPServer__write_html",
+		ToolInput: map[string]interface{}{"html": "<div>hello</div>"},
+		CWD:       projectRoot,
+	}, loaded, state, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload: %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Fatalf("expected project-local Claude MCP call to remain gated, got %q (reason=%s)", resp.Decision, resp.Reason)
+	}
+}
+
 func TestLoadOrCreateSession_AdoptsSirRefreshedLeaseHash(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)

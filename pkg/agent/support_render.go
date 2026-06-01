@@ -55,6 +55,20 @@ var supportRenderProfiles = map[AgentID]supportRenderProfile{
 			SurfaceSessionSweep: "The final posture sweep runs on Stop because Codex exposes no SessionEnd hook.",
 		},
 	},
+	Cursor: {
+		docPath:               "docs/user/cursor-support.md",
+		threatModelDocPath:    "../user/cursor-support.md",
+		runtimeName:           "cursor-agent",
+		statusHeadingTemplate: "## Status: near-parity support on Cursor %s+",
+		surfaceNotes: map[SupportSurfaceKey]string{
+			SurfaceInteractiveApproval: "Cursor hook ask behavior is not treated as a reliable security boundary; sir folds ask into deny with remediation text.",
+			SurfaceFileReadIFC:         "beforeReadFile and preToolUse label sensitive reads before execution where Cursor emits those hooks.",
+			SurfaceFileWriteIFC:        "Cursor's dedicated file-edit hook is after-action; sir relies on post-hook checks and posture sentinels unless Cursor also emits a generic preToolUse for that edit path.",
+			SurfaceMCPToolHooks:        "beforeMCPExecution/afterMCPExecution expose MCP arguments and responses when Cursor emits those hooks.",
+			SurfaceSubagentStart:       "Delegation policy is enforced at Cursor's subagentStart hook.",
+			SurfaceSessionSweep:        "sessionEnd and stop provide final posture sweep coverage where Cursor emits them.",
+		},
+	},
 }
 
 func supportDocPath(m SupportManifest) string {
@@ -303,6 +317,14 @@ func (m SupportManifest) supportOverviewLine() string {
 		return fmt.Sprintf("- **%s** — **Reference support.** Full %d-hook lifecycle with native interactive approval and complete tool-path coverage.",
 			m.Name, m.HookEventCount)
 	case SupportTierNearParity:
+		if m.ID == Cursor {
+			if docLink := supportDocLink(m); docLink != "" {
+				return fmt.Sprintf("- **%s** — **Near-parity support.** %d Cursor hook events are registered on `%s` %s+, covering shell, read, MCP, prompt, delegation, and final-sweep paths with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not a reliable security boundary. Missing lifecycle hooks: %s. See %s.",
+					m.Name, m.HookEventCount, supportRuntimeName(m), m.MinimumVersion, missingLifecycleHooks(m), docLink)
+			}
+			return fmt.Sprintf("- **%s** — **Near-parity support.** %d Cursor hook events are registered on `%s` %s+, covering shell, read, MCP, prompt, delegation, and final-sweep paths with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not a reliable security boundary. Missing lifecycle hooks: %s.",
+				m.Name, m.HookEventCount, supportRuntimeName(m), m.MinimumVersion, missingLifecycleHooks(m))
+		}
 		if docLink := supportDocLink(m); docLink != "" {
 			return fmt.Sprintf("- **%s** — **Near-parity support.** %d hook events fire on %s %s+, with full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning. Missing lifecycle hooks: %s. See %s.",
 				m.Name, m.HookEventCount, m.Name, m.MinimumVersion, missingLifecycleHooks(m), docLink)
@@ -350,6 +372,12 @@ func (m SupportManifest) faqLine() string {
 		}
 		return fmt.Sprintf("- **%s:** %d hook events — reference support with %s.", m.Name, m.HookEventCount, formatJoinedItems(parts))
 	case SupportTierNearParity:
+		if m.ID == Cursor {
+			if docLink := supportDocLinkForFAQ(m); docLink != "" {
+				return fmt.Sprintf("- **%s %s+:** %d hook events — near-parity support for shell, read, MCP, prompt, delegation, and final-sweep paths, with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not treated as a security boundary. Missing lifecycle hooks: %s. See %s.", m.Name, m.MinimumVersion, m.HookEventCount, missingLifecycleHooks(m), docLink)
+			}
+			return fmt.Sprintf("- **%s %s+:** %d hook events — near-parity support for shell, read, MCP, prompt, delegation, and final-sweep paths, with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not treated as a security boundary. Missing lifecycle hooks: %s.", m.Name, m.MinimumVersion, m.HookEventCount, missingLifecycleHooks(m))
+		}
 		if docLink := supportDocLinkForFAQ(m); docLink != "" {
 			return fmt.Sprintf("- **%s %s+:** %d hook events — near-parity support for file IFC labeling, shell classification, MCP scanning, and credential output scanning. Missing lifecycle hooks: %s. See %s.", m.Name, m.MinimumVersion, m.HookEventCount, missingLifecycleHooks(m), docLink)
 		}
@@ -388,6 +416,10 @@ func renderSupportMatrixTable(m SupportManifest, includeFeatureFlag bool) string
 	case ToolCoverageBashOnly:
 		b.WriteString("| Tool-path coverage | ⚠ Bash-only | Shell classification is enforced, but non-Bash tools bypass sir entirely. |\n")
 	case ToolCoveragePartial:
+		if m.ID == Cursor {
+			b.WriteString("| Tool-path coverage | ⚠ Hook-scoped | Shell, read, MCP, prompt, delegation, and final-sweep hooks are registered; file edits rely on preToolUse when Cursor emits it plus afterFileEdit/posture backstops. |\n")
+			break
+		}
 		b.WriteString("| Tool-path coverage | ⚠ Partial | Bash, native write, MCP, and permission-request hooks are registered where the host agent emits them; missing lifecycle hooks remain documented below. |\n")
 	default:
 		b.WriteString("| Tool-path coverage | ✅ Full | File IFC labeling, shell classification, MCP scanning, and credential output scanning all run on the hooked tool path. |\n")
@@ -447,7 +479,7 @@ func renderFAQLine(m SupportManifest) string {
 func RenderFAQSupportBlock() string {
 	manifests := orderedPublicSupportManifests()
 	lines := []string{
-		"Claude Code has **reference support**, Gemini CLI has **near-parity support**, and Codex has **limited support** today. `sir install` auto-detects the supported agents already present on this machine, or you can pin one with `sir install --agent <id>`:",
+		"Claude Code has **reference support** and is the enabled hook-install target for this testing build. Gemini CLI and Cursor retain **near-parity support** for their adapter/runtime surfaces, and Codex retains **limited support**, but non-Claude hook installation is currently disabled:",
 		"",
 	}
 	for _, manifest := range manifests {
@@ -462,16 +494,25 @@ func RenderThreatModelScopeBlock() string {
 	claude, _ := SupportManifestForID(Claude)
 	gemini, _ := SupportManifestForID(Gemini)
 	codex, _ := SupportManifestForID(Codex)
-	return fmt.Sprintf("**Scope note.** The threat model is written primarily against %s because %s is the **reference-support** target: it has the richest hook surface (%d events), native interactive approval, and the most complete sir coverage. %s has **near-parity support** — full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning — but some Claude-specific mitigations are not available: %s. %s has **limited support** with partial tool-path coverage: Bash, native-write, MCP, and permission-request hooks are registered where Codex emits them, but missing lifecycle hooks and upstream delivery gaps mean sir still relies on sentinel hashing plus a final `Stop` sweep as the posture backstop. Wherever a mitigation below depends on one of the missing hooks, the threat is correspondingly wider on the affected agent. See [%s](%s) and [%s](%s) for the per-agent coverage matrices.",
+	cursor, _ := SupportManifestForID(Cursor)
+	return fmt.Sprintf("**Scope note.** The threat model is written primarily against %s because %s is the **reference-support** target: it has the richest hook surface (%d events), native interactive approval, and the most complete sir coverage. %s and %s have **near-parity support**: %s has full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning, while %s has hook-scoped coverage for shell, read, MCP, prompt, delegation, and final-sweep paths plus after-action file-edit backstops. Some Claude-specific mitigations are not available: %s on %s, and %s on %s. %s has **limited support** with partial tool-path coverage: Bash, native-write, MCP, and permission-request hooks are registered where Codex emits them, but missing lifecycle hooks and upstream delivery gaps mean sir still relies on sentinel hashing plus a final `Stop` sweep as the posture backstop. Wherever a mitigation below depends on one of the missing hooks, the threat is correspondingly wider on the affected agent. See [%s](%s), [%s](%s), and [%s](%s) for the per-agent coverage matrices.",
 		claude.Name,
 		claude.Name,
 		claude.HookEventCount,
 		gemini.Name,
+		cursor.Name,
+		gemini.Name,
+		cursor.Name,
 		missingLifecycleMitigations(gemini),
+		gemini.Name,
+		missingLifecycleMitigations(cursor),
+		cursor.Name,
 		codex.Name,
 		supportThreatModelDocPath(codex),
 		supportThreatModelDocPath(codex),
 		supportThreatModelDocPath(gemini),
 		supportThreatModelDocPath(gemini),
+		supportThreatModelDocPath(cursor),
+		supportThreatModelDocPath(cursor),
 	)
 }

@@ -1,0 +1,7 @@
+{
+  "conversation_id": "conv_cursor_123",
+  "hook_event_name": "beforeReadFile",
+  "path": "README.md",
+  "tool_use_id": "cursor_read_1",
+  "cwd": "/Users/dev/myproject"
+}

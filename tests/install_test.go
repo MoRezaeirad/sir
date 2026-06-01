@@ -14,12 +14,12 @@ func TestInstallWritesValidHooks(t *testing.T) {
 	// Use a temp HOME so we don't clobber real settings
 	tmpHome := t.TempDir()
 	projectRoot := t.TempDir()
-	geminiPath := filepath.Join(tmpHome, ".gemini", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
-		t.Fatalf("mkdir .gemini: %v", err)
+	claudePath := filepath.Join(tmpHome, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(claudePath), 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
 	}
-	if err := os.WriteFile(geminiPath, []byte(`{}`), 0o644); err != nil {
-		t.Fatalf("seed Gemini settings.json: %v", err)
+	if err := os.WriteFile(claudePath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("seed Claude settings.json: %v", err)
 	}
 
 	// Build sir binary
@@ -38,10 +38,9 @@ func TestInstallWritesValidHooks(t *testing.T) {
 		t.Fatalf("sir install: %v\n%s", err, out)
 	}
 
-	// Read the generated Gemini config. Default install should auto-detect the
-	// supported agents already present instead of manufacturing a Claude-only
-	// config on a machine that only has Gemini signals.
-	data, err := os.ReadFile(geminiPath)
+	// Read the generated Claude config. Default install protects Claude Code;
+	// other detected adapters require `sir config` or an explicit --agent.
+	data, err := os.ReadFile(claudePath)
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -56,22 +55,22 @@ func TestInstallWritesValidHooks(t *testing.T) {
 		t.Fatalf("hooks is not a map: %T", config["hooks"])
 	}
 
-	// Verify BeforeTool is non-null array
-	pre, ok := hooks["BeforeTool"].([]interface{})
+	// Verify PreToolUse is non-null array
+	pre, ok := hooks["PreToolUse"].([]interface{})
 	if !ok || pre == nil {
-		t.Fatalf("BeforeTool is null or not an array: %v", hooks["BeforeTool"])
+		t.Fatalf("PreToolUse is null or not an array: %v", hooks["PreToolUse"])
 	}
 	if len(pre) == 0 {
-		t.Fatal("BeforeTool is empty")
+		t.Fatal("PreToolUse is empty")
 	}
 
-	// Verify AfterTool is non-null array
-	post, ok := hooks["AfterTool"].([]interface{})
+	// Verify PostToolUse is non-null array
+	post, ok := hooks["PostToolUse"].([]interface{})
 	if !ok || post == nil {
-		t.Fatalf("AfterTool is null or not an array: %v", hooks["AfterTool"])
+		t.Fatalf("PostToolUse is null or not an array: %v", hooks["PostToolUse"])
 	}
 	if len(post) == 0 {
-		t.Fatal("AfterTool is empty")
+		t.Fatal("PostToolUse is empty")
 	}
 
 	// Verify sir guard commands are present

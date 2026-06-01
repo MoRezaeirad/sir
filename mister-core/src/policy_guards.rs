@@ -246,30 +246,19 @@ pub(super) fn evaluate_secret_session_guards(
         };
     }
 
-    // High-water mark (monotonic secret taint). The turn-scoped `session_secret`
-    // deny floor clears on a turn boundary (instantly on the next user message),
-    // but a session that *ever* held secret data must not silently revert to the
-    // clean-session baseline — a secret laundered through model context can be
-    // re-emitted as agent-authored bytes a turn later. So a push from a
-    // was-secret session re-prompts (ask) instead of being silently allowed.
+    // session_was_secret push re-prompt moved to the policy provider layer.
     //
-    // This only ever TIGHTENS (allow -> ask); it never widens a deny:
-    //   - net_external / dns_lookup are already forced to >= ask earlier by
-    //     evaluate_network_guardrails (and to deny under a forbidding lease),
-    //     so they never reach this branch — no need to re-handle them here.
-    //   - a lease that forbids push is decided by the forbidden-verb check that
-    //     runs before this guard, so the deny stands.
-    // The explicit, logged way to clear the high-water mark is `sir unlock`.
-    if req.session_was_secret {
-        return match verb {
-            Verb::PushOrigin | Verb::PushRemote => Some(policy_result(
-                Verdict::Ask,
-                "session previously held secret data this session; re-approve this push (taint persists across turns)",
-                RiskTier::R3,
-            )),
-            _ => None,
-        };
-    }
+    // The was-secret re-prompt (ask on push when session ever held credentials)
+    // is now advisory: the native policy pack emits a verdict of "ask" which
+    // compose_policy_verdicts() escalates from allow → ask. This lets developers
+    // configure the was-secret rule per-project via `sir provider configure
+    // sir-policy-pack --set was-secret-push=warn` without weakening the live-
+    // credential floor above.
+    //
+    // The live-credential floors (session_secret=true) remain hardcoded above as
+    // safety floors because they cannot be advisory: a session actively holding
+    // credentials must not push externally without explicit human approval, and
+    // that invariant must not be configurable away.
 
     None
 }

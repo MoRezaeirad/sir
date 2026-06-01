@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.provider.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "kind",
+    "version",
+    "protocol",
+    "entrypoint",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sir.provider.v0"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "signal_provider",
+        "effect_provider",
+        "policy_provider",
+        "advisory_provider",
+        "export_provider"
+      ]
+    },
+    "version": {
+      "type": "string"
+    },
+    "protocol": {
+      "enum": [
+        "stdio-json"
+      ]
+    },
+    "entrypoint": {
+      "type": "string"
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "capabilities": {
+      "type": "object"
+    },
+    "enforcement": {
+      "description": "Honesty signal for effect providers. Providers declaring contain/block capability SHOULD set enforcement:real ONLY when they actually apply OS-level containment. Stubs, plumbing, and capability-only providers declare enforcement:simulated. Absent is conceptually equivalent to \"simulated\".",
+      "enum": [
+        "simulated",
+        "real"
+      ]
+    },
+    "enforced_actions": {
+      "description": "Action-scoped capability (item 8): the action types this provider's real enforcement actually covers (e.g. [\"network_connect\",\"network_fetch\",\"dns_lookup\"] for a network-only sandbox). Optional and ONLY meaningful with enforcement:real. Empty or absent means the provider enforces every action it is asked about (the backward-compatible default, e.g. a full-containment devcontainer). When set, the kernel classifies enforceability=enforces only for a covered action and degrades to detects for any other — a partial enforcer cannot over-claim. Forward-looking: declared by providers; no shipping provider partially-enforces yet.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

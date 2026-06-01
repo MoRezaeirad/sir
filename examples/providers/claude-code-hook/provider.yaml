@@ -1,0 +1,14 @@
+schema_version: sir.provider.v0
+name: sir-claude-code-hook
+kind: signal_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  signal_reliability: [declared_intent]
+  timing: [pre_exec]
+  supported_hook_events: [PreToolUse]
+fixtures:
+  - fixtures/pretooluse-bash-curl.json
+  - fixtures/pretooluse-read-env.json

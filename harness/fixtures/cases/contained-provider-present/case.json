@@ -1,0 +1,32 @@
+{
+  "case_id": "contained-provider-present",
+  "title": "Contained Mode with Capable Provider (real enforcement)",
+  "description": "Mode is contained, provider declares 'contain', AND its enforcement is demonstrated (provider_enforcement=real). Mode + demonstrably-capable provider = enforces. This proves mode alone does not imply enforcement -- the provider must back it up AND prove it.",
+  "mode": "contained",
+  "provider_capabilities": ["contain", "record"],
+  "provider_enforcement": "real",
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "contained-present-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {
+        "kind": "sir-devcontainer",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-devcontainer",
+        "provider_version": "0.1.0"
+      },
+      "session": {"session_id": "sess_contained_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {
+        "type": "network_connect",
+        "target": {"display": "https://unknown.example", "sensitivity": "external_network"}
+      }
+    }
+  ],
+  "expected": {
+    "enforceability": "enforces",
+    "verdict": "ask"
+  }
+}

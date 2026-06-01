@@ -1,0 +1,15 @@
+schema_version: sir.provider.v0
+name: opa-bridge
+kind: policy_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true
+  policy_engine: opa
+  policy_file: ./policy.rego
+fixtures:
+  - fixtures/was-secret-push.json
+  - fixtures/agent-cred-read.json

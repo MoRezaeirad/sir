@@ -113,6 +113,20 @@ the hook — the high-water-mark *ask* is deliberately not mirrored. See
 [docs/research/runtime-taint-containment.md](docs/research/runtime-taint-containment.md)
 for the design and the path to a taint-driven default.
 
+#### Platform containment matrix
+
+| Platform | Mode constant | OS mechanism | `sir run` |
+|----------|---------------|--------------|-----------|
+| macOS (arm64 / amd64) | `darwin_local_proxy` | `sandbox-exec` + local proxy | ✓ |
+| Linux (amd64 / arm64) | `linux_network_namespace_offline` | User namespaces + iptables | ✓ |
+| Windows (amd64 / arm64) | `windows_hook_gate_only` | None available | returns informative error |
+
+Windows ships as a first-class platform for hook mediation, IFC taint tracking,
+and policy enforcement. OS-level containment is unavailable on Windows because
+no user-mode equivalent of `sandbox-exec` or Linux network namespaces exists.
+`sir run` returns a clear error on Windows rather than launching uncontained.
+`sir status` reports the `windows_hook_gate_only` mode honestly.
+
 ## 4. State objects that matter
 
 - **Lease** — the authority contract.
@@ -147,7 +161,7 @@ These may narrow a decision further. They must never widen a Rust `deny` into `a
 
 sir is experimental, and its v1 tradeoffs are documented so contributors and users do not mistake heuristic detection for hard guarantees:
 
-- The hook layer is advisory policy enforcement, not OS-level prevention. `sir run` adds below-hook containment on Linux and macOS, but is optional. The macOS `sir run` proxy is taint-aware (denies external egress under the hook's hard-deny floors even if the hook is bypassed); the equivalent Linux iptables enforcement and a taint-driven *default* are still on the roadmap ([runtime-taint-containment.md](docs/research/runtime-taint-containment.md)).
+- The hook layer is advisory policy enforcement, not OS-level prevention. `sir run` adds below-hook containment on Linux and macOS, but is optional and not available on Windows (see the platform containment matrix in §3). The macOS `sir run` proxy is taint-aware (denies external egress under the hook's hard-deny floors even if the hook is bypassed); the equivalent Linux iptables enforcement and a taint-driven *default* are still on the roadmap ([runtime-taint-containment.md](docs/research/runtime-taint-containment.md)).
 - MCP injection detection is heuristic (around 50 regex patterns across authority framing, exfil, credential harvest, and hidden-marker categories). The scanner normalizes responses first — zero-width/bidi (`unicode.Cf`) stripped and base64/hex/percent blobs decoded — so common encoding evasion is covered; semantic paraphrase and homoglyph substitution remain the residual, mitigated by server tainting and the integrity-flow egress wall rather than guaranteed blocking.
 - Turn boundaries use a 30-second gap heuristic (backstop only; `UserPromptSubmit` advances turns instantly).
 - Shell classification is lexical and prefix-based. It decomposes compound commands, command substitution (`$(…)` / backticks), process substitution, and `eval`, fails closed (ask) on opaque execution like `… | sh`, and flags interpreter one-liners that name a sensitive file by a literal path (`python -c "open('.env')"`, including `/usr/bin/python3` and `env python3` forms); the honest residual is dynamically-constructed or obfuscated paths and novel wrappers, which the downstream IFC floors still gate.
@@ -156,7 +170,17 @@ sir is experimental, and its v1 tradeoffs are documented so contributors and use
 
 These are tradeoffs, not bugs. v2 plans are tracked in project memory.
 
-## 8. Proof surface
+## 8. v2 decision kernel (in development)
+
+The v2 kernel (`pkg/kernel/`, `sir-core`) introduces a provider-based pipeline alongside the v1 hook path. Key differences:
+
+**Taint and labels replace the v1 IFC lattice.** Rather than a formal trust/sensitivity lattice, v2 derives *action labels* from each signal (`credential_access`, `external_egress`, `shell_execution`, `file_mutation`, etc.) and propagates *taint* across turns via `prior_taint`/`new_taint` fields. A credential read in turn N emits `credential_access` taint; an egress attempt in turn N+1 sees that taint in `prior_taint` and triggers `deny-secret-to-egress`. The guarantee is the same as v1 IFC — secret reads gate downstream sinks — but the mechanism is label-matching rather than a lattice flow check.
+
+**Provider capabilities gate enforceability.** `sir status` and `sir kernel replay --use-providers` derive `provider_capabilities` from live effect providers. `contained` mode only claims `enforces` when a capable provider (one that declares `contain: true`) is present; without one it honestly reports `detects`. This is the detect-vs-enforce boundary v1 did not expose.
+
+**Parity:** `sir harness run --engine both` verifies Go and Rust agree on verdict, enforceability, attribution, policy rules, effects, and new_taint for every fixture.
+
+## 9. Proof surface
 
 The architecture is only real if the repo keeps proving it:
 

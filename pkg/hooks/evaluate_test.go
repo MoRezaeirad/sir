@@ -7,6 +7,7 @@ import (
 
 	"github.com/somoore/sir/pkg/core"
 	"github.com/somoore/sir/pkg/lease"
+	"github.com/somoore/sir/pkg/posture"
 	"github.com/somoore/sir/pkg/session"
 )
 
@@ -395,6 +396,12 @@ func newTestSession(t *testing.T, projectRoot string) *session.State {
 		t.Fatalf("create state dir: %v", err)
 	}
 	state := session.NewState(projectRoot)
+	// Seed posture hashes from the current system so post-hook integrity checks
+	// don't flag existing agent configs (e.g. ~/.claude/settings.json) as
+	// unexpected tampers. Without this baseline, any real home-dir hook file
+	// appears as a new unexpected addition and triggers deny-all.
+	l := lease.DefaultLease()
+	state.PostureHashes = posture.HashSentinelFiles(projectRoot, l.PostureFiles)
 	if err := state.Save(); err != nil {
 		t.Fatalf("save initial session: %v", err)
 	}

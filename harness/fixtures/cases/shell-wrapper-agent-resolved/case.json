@@ -1,0 +1,50 @@
+{
+  "case_id": "shell-wrapper-agent-resolved",
+  "title": "Shell Wrapper: Agent Resolved from Session Evidence",
+  "description": "Shell preexec captures 'cat ~/.aws/credentials'. The shell-wrapper provider emits actor_claim.kind='shell'. The orchestrator resolves the actor to ai_coding_agent by fusing the shell signal with active agent-session evidence (PID+start-time matches the agent session). With resolved_actor_kind=ai_coding_agent, the deny-agent-credential-read rule fires. This is the 'shell provider stays honest; kernel resolves with confidence' design.",
+  "mode": "hook_gate",
+  "resolved_actor_kind": "ai_coding_agent",
+  "expected": {
+    "verdict": "deny",
+    "enforceability": "enforces",
+    "decision_class": "deny_now",
+    "attribution": "medium",
+    "spoofing_risk": "low",
+    "policy_rules": ["deny-agent-credential-read"],
+    "effects": [
+      {"type": "block", "required": true, "fail_closed": true},
+      {"type": "record", "required": true, "fail_closed": false}
+    ]
+  },
+  "sensitive_source": true,
+  "irreversible_sink": false,
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "shell-agent-resolved-001",
+      "signal_time": "2026-05-30T00:00:00Z",
+      "source": {
+        "kind": "shell_wrapper",
+        "reliability": "declared_intent",
+        "timing": "pre_exec",
+        "provider": "sir-shell-wrapper",
+        "provider_version": "0.1.0"
+      },
+      "session": {
+        "session_id": "sess_agent_001"
+      },
+      "actor_claim": {
+        "kind": "shell",
+        "pid": 9001
+      },
+      "action_claim": {
+        "type": "shell_exec",
+        "target": {
+          "display": "cat ~/.aws/credentials",
+          "sensitivity": "credential"
+        }
+      }
+    }
+  ],
+  "note": "actor_claim.kind='shell' — the shell provider is honest; it does not self-label as ai_coding_agent. The orchestrator sets resolved_actor_kind='ai_coding_agent' after matching pid=9001 to an active agent session. The deny-agent-credential-read rule fires on the resolved identity. Attribution confidence is medium (declared_intent). The shell provider's honesty is preserved; resolution happens in the orchestrator, not the provider."
+}

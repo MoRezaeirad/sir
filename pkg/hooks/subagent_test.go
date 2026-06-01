@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/somoore/sir/pkg/agent"
 	"github.com/somoore/sir/pkg/core"
 	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/session"
@@ -178,5 +179,40 @@ func TestSubagent_CleanSessionAllowed(t *testing.T) {
 	if resp.Decision != "allow" {
 		t.Errorf("Agent delegation during clean session: expected allow, got %s (reason: %s)",
 			resp.Decision, resp.Reason)
+	}
+}
+
+func TestFilterCriticalTampered_ClaudeSession(t *testing.T) {
+	ag := agent.ForID(agent.Claude)
+	tampered := []string{".claude/settings.json", ".codex/config.toml", "GEMINI.md"}
+	got := filterCriticalTampered(tampered, ag)
+	if len(got) != 1 || got[0] != ".claude/settings.json" {
+		t.Errorf("filterCriticalTampered (Claude) = %v, want [.claude/settings.json]", got)
+	}
+}
+
+func TestFilterCriticalTampered_CriticalOnlyForActiveAgent(t *testing.T) {
+	ag := agent.ForID(agent.Claude)
+	// .codex/config.toml alone — not critical in a Claude session
+	got := filterCriticalTampered([]string{".codex/config.toml"}, ag)
+	if len(got) != 0 {
+		t.Errorf("filterCriticalTampered (Claude, codex file) = %v, want []", got)
+	}
+}
+
+func TestFilterCriticalTampered_NilAgentFailsClosed(t *testing.T) {
+	tampered := []string{".codex/config.toml", ".gemini/settings.json"}
+	got := filterCriticalTampered(tampered, nil)
+	// nil agent: all files treated as critical (fail closed)
+	if len(got) != len(tampered) {
+		t.Errorf("filterCriticalTampered (nil agent) = %v, want all %v", got, tampered)
+	}
+}
+
+func TestFilterCriticalTampered_MCPJsonCriticalForAll(t *testing.T) {
+	ag := agent.ForID(agent.Claude)
+	got := filterCriticalTampered([]string{".mcp.json"}, ag)
+	if len(got) != 1 || got[0] != ".mcp.json" {
+		t.Errorf("filterCriticalTampered .mcp.json (Claude) = %v, want [.mcp.json]", got)
 	}
 }

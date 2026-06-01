@@ -29,7 +29,13 @@ REQUEST_FIELD_EXPRESSIONS = {
     "is_sensitive_path": "req.Intent.IsSensitive",
     "is_delegation": "req.Intent.IsDelegation",
     "is_tripwire": "req.Intent.IsTripwire",
+    "policy_verdicts": "nonNilPolicyVerdicts(req.PolicyVerdicts)",
 }
+
+# Extra fields appended to wireEvalRequest that are NOT in the Rust EvalRequest
+# struct. Now empty since policy_verdicts is a real Rust field (promoted from
+# EXTRA in Phase 1). Kept as an extension point for future fields.
+EXTRA_REQUEST_FIELDS = []
 
 SESSION_FIELD_EXPRESSIONS = {
     "secret_session": "req.Session.SecretSession",
@@ -47,6 +53,7 @@ def map_type(rust_type: str) -> str:
         "bool": "bool",
         "u64": "uint64",
         "Vec<Label>": "[]Label",
+        "Vec<PolicyVerdict>": "[]policy.PolicyVerdict",
         "Verdict": "policy.Verdict",
         "RiskTier": "string",
     }
@@ -89,11 +96,13 @@ def load_protocol_constants():
     }
 
 
-def emit_struct(go_name: str, fields):
+def emit_struct(go_name: str, fields, extra_fields=None):
     lines = [f"type {go_name} struct {{"]
     for rust_name, rust_type in fields:
         go_type = map_type(rust_type)
         lines.append(f'\t{snake_to_camel(rust_name)} {go_type} `json:"{rust_name}"`')
+    for json_key, go_type, _ in (extra_fields or []):
+        lines.append(f'\t{snake_to_camel(json_key)} {go_type} `json:"{json_key},omitempty"`')
     lines.append("}")
     lines.append("")
     return "\n".join(lines)
@@ -122,6 +131,8 @@ def emit_wire_request_builder(fields):
         if expr is None:
             raise ValueError(f"missing Request mapping for EvalRequest field {rust_name!r}")
         lines.append(f"\t\t{snake_to_camel(rust_name)}: {expr},")
+    for json_key, _, builder_expr in EXTRA_REQUEST_FIELDS:
+        lines.append(f"\t\t{snake_to_camel(json_key)}: {builder_expr},")
     lines.extend(["\t}", "}", ""])
     return "\n".join(lines)
 
@@ -262,7 +273,7 @@ def main():
         ")",
         "",
         emit_protocol_constants(constants),
-        emit_struct("wireEvalRequest", structs["EvalRequest"]),
+        emit_struct("wireEvalRequest", structs["EvalRequest"], EXTRA_REQUEST_FIELDS),
         emit_struct("wireEvalResponse", structs["EvalResponse"]),
         emit_struct("wireSessionPayload", structs["EvalSessionContext"]),
         emit_request_envelope(),

@@ -1,136 +1,57 @@
-# sir — Sandbox in Reverse
+# SIR — Sandbox in Reverse
 
-> A local security layer for AI coding agents. When your agent reads your secrets and then tries to phone home, sir stops it, proves it, and tells you exactly what to do next. **Silent while you code; loud only at the exits.**
+> Keep AI coding agents productive while gating secrets, shells, networks, package scripts, CI/CD, and tool trust.
 
-A sandbox sees a process making a network call. sir sees **why**: the agent read `.env`, an MCP tool said "forward these for analytics," and now it's curling them to an unknown host. To a sandbox that's indistinguishable from `npm install`. sir adds the context that makes the block intelligent.
+**sir** is a local-first security runtime for AI coding agents. It detects installed coding agents, installs hooks for selected enabled protection targets, classifies proposed actions, tracks secret-tainted sessions, and records every `allow`, `ask`, or `deny` in a tamper-evident ledger. For the current testing build, Claude Code is the enabled hook-install target; Cursor, Gemini CLI, and Codex remain visible in discovery/support/status surfaces but are disabled for hook installation.
 
-> [!NOTE]
-> sir is experimental and not yet production-ready — test on your own machine, not shared infrastructure. `sir doctor` recovers any wedged state; `sir uninstall` removes hooks cleanly. [Report bugs](https://github.com/somoore/sir/issues).
+Quiet on normal coding. Loud on dangerous transitions.
 
 <div align="center">
 
-[![release](https://img.shields.io/github/v/release/somoore/sir?include_prereleases&label=release&style=flat-square&labelColor=141311&color=B4660A)](https://github.com/somoore/sir/releases/latest) [![supports](https://img.shields.io/badge/supports-claude_%C2%B7_gemini_%C2%B7_codex-2A2824?style=flat-square&labelColor=141311)](#agent-support) [![license](https://img.shields.io/badge/license-apache_2.0-2A2824?style=flat-square&labelColor=141311)](LICENSE) [![platform](https://img.shields.io/badge/platform-macos_%C2%B7_linux-1E6E85?style=flat-square&labelColor=141311)](#install--update--uninstall)
-
-macOS (Apple Silicon) · Linux (amd64, arm64). Intel Mac and Windows are not yet supported.
+[![release](https://img.shields.io/github/v/release/somoore/sir?include_prereleases&label=release&style=flat-square&labelColor=141311&color=B4660A)](https://github.com/somoore/sir/releases/latest)
+[![license](https://img.shields.io/badge/license-apache_2.0-2A2824?style=flat-square&labelColor=141311)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macos_%C2%B7_linux_%C2%B7_windows-1E6E85?style=flat-square&labelColor=141311)](docs/getting-started.md)
 
 </div>
 
+## Why use sir?
+
+AI agents can read files, run shells, call MCP tools, install packages, and push code. sir puts a policy boundary at the moment model-controlled work crosses into secrets, external network, CI/CD, package scripts, or tool trust.
+
+- Blocks raw credential reads while returning redacted views.
+- Carries taint across turns, so secret-to-egress transitions are denied.
+- Stays local, auditable, and open: policy is readable and evidence stays on your machine unless you export it.
+
 ## Quick start
 
+macOS / Linux:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash
-cd /path/to/project
-sir install            # auto-detect supported agents already on this machine
-sir demo               # see all three detections run, end to end
+sir config             # discover agents and choose an enabled protection target
+sir on
+sir status
 ```
 
-Then use your agent as normal. sir stays quiet until something crosses a line — and when it does, the message is the fix:
-
-```text
-Claude tried to reach evil.example.com — × deny.
-
-  reason: You read a credentials file at 14:39, so sir is holding external
-          network until this turn ends. No data left your machine.
-
-  fix:    sir allow-host evil.example.com   (YOUR terminal, only if you trust this host)
-          sir unlock                        (clear the secret lock now)
-          or wait — the lock clears on its own when the agent's turn ends.
-
-  details: sir why
+Windows PowerShell:
+```powershell
+irm https://raw.githubusercontent.com/somoore/sir/main/scripts/download.ps1 | iex
+sir config
+sir status
 ```
-
-*(Recording: [`assets/demo.cast`](assets/demo.cast) — `asciinema play assets/demo.cast`.)*
 
 ## How it decides
 
-```mermaid
-flowchart LR
-    A([AI agent]) -->|tool call| H{{sir hook}}
-    H --> O[policy oracle]
-    O -->|allow| Y([tool runs])
-    O -->|ask| P([you decide])
-    O -->|deny| N([blocked + explained])
-    H -. every verdict .-> L[(hash-chained ledger)]
-
-    classDef ok fill:#1E6E85,stroke:#0c3a47,color:#fff
-    classDef stop fill:#B4660A,stroke:#5c340a,color:#fff
-    class Y ok
-    class N stop
-```
-
-The decision is **stateful**, not a static rule list. A raw read of `.env` is denied by default and returns a redacted key view, so the value never enters context; but once a secret *does* enter the session — an approved raw read, an env-var read, MCP content — the session is labeled `SECRET` and the very next external call in that turn is denied. Same tool, different verdict, because the session changed between them. That is [information flow control](mister-core/src/ifc.rs).
-
-sir is built to **block as little as possible**. Routine work — reads, edits, tests, commits, loopback requests, pushing to your `origin` — runs untouched. Genuinely-risky-but-clean actions (a first `curl` to a new host, a `dig`, a push to a new remote, an `npx <pkg>`, a drifted MCP binary after a routine update) *prompt once* instead of blocking, and an approval sticks for the rest of the session so the same action never asks twice. Only the transitions that actually leak or tamper — egress while a secret is in context, a credential heading to an untrusted MCP server, posture-file changes, a wedged control plane — are denied outright. A `personal → team → strict → managed` profile gradient (`sir policy init --profile <p>`) tunes exactly where that line sits: `personal` is the lowest-friction default, `strict`/`managed` keep the hard egress wall.
+Hooks and MCP proxy signals are normalized into intent, target, sensitivity, attribution, and session taint. Rust `sir-core` is the pure decision kernel; Go manages host-agent facts, session state, preflight gates, providers, and the ledger. Go may tighten a verdict from facts Rust cannot see; it must not make a deny safe.
 
 ## What it catches
 
-- **Secret → exit.** A secret read taints every later write, commit, or push attempt in the turn — tool-agnostic.
-- **Untrusted content → exit.** Once the session ingests untrusted content (a detected injection, or a web/MCP read this turn), external egress and DNS escalate from a prompt to a hard deny — the exfiltration leg of the lethal trifecta, even when no secret is in play.
-- **MCP prompt injection & rug pulls.** Scans MCP arguments for credentials and responses for injection patterns (~50 regex patterns), taints the server, and forces re-approval. `sir mcp scan` pins each server's full tool schema and revokes approval on drift, catching tool-poisoning / rug-pull mutations after you trusted it.
-- **Obfuscated & opaque shell.** Hidden egress behind `$(…)`, backticks, or `eval` is decomposed and gated, not silently allowed; piping into a shell (`… | sh`) fails closed to a prompt; DNS-tunnel-shaped destinations (long high-entropy labels) are blocked.
-- **Posture tampering.** Edits to hook config, `CLAUDE.md`, or `.mcp.json` are detected and auto-restored.
-- **A local audit trail.** Every verdict is appended to a tamper-evident, hash-chained ledger — verify it with `sir log verify`.
-
-Normal reads, edits, tests, commits, grep, and loopback requests are silently allowed.
-
-## Install / update / uninstall
+In a protected agent session, ask the agent to read `.env`: sir denies the raw read and returns a redacted key view. Then ask it to run `curl https://httpbin.org/get` while credentials are live in the session: sir blocks the secret-to-egress transition.
 
 ```bash
-# Install (or update — overwrites the binaries, preserves ~/.sir state):
-curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/scripts/download.sh | bash
-#   pin a release:  ... | bash -s -- <tag>     (tags: github.com/somoore/sir/releases)
-
-sir update            # check for a newer release and print the exact upgrade command
-sir uninstall         # remove hooks from every detected agent (state preserved at ~/.sir)
-
-# Full removal (binaries + all state), with confirmation:
-curl -fsSL https://raw.githubusercontent.com/somoore/sir/main/uninstall.sh | bash
+sir why
+sir explain
+sir log verify
 ```
-
-The installer verifies the tarball SHA-256 (and the cosign signature on `checksums.txt` when cosign is present), and writes `~/.sir/binary-manifest.json` so `sir verify` can detect later tampering. `sir update` never modifies the binary itself — a deliberate choice for a security tool.
-
-<details>
-<summary>Build from source</summary>
-
-```bash
-git clone https://github.com/somoore/sir.git && cd sir
-# Requires [Rust 1.94.0](https://rustup.rs/) (pinned in rust-toolchain.toml)
-# Requires [Go 1.22+](https://go.dev/dl/) with toolchain auto-fetch to go1.25.10
-make build && make install
-```
-</details>
-
-## Verify it
-
-```bash
-sir status       # hooks installed + current session posture
-sir doctor       # health check and auto-repair
-sir verify       # binary integrity vs the install-time manifest
-sir log verify   # walk the ledger hash chain, report the first corruption
-```
-
-Try the core protection yourself: **ask the agent to read `.env`**. On a default install sir denies the raw read and hands back a redacted key view (names only, values masked) — the secret never enters the model's context. Approve a genuine raw read with `sir approve` and the session is now tainted `SECRET`; the very next `curl https://httpbin.org/get` in that turn is denied. `sir why` gives the instant verdict, `sir explain --last` the full causal chain. (On a *clean* session with no secret in context, that same `curl` merely prompts for approval — the hard deny is reserved for when a secret is actually in play.)
-
-## Commands
-
-```text
-Get started   setup · install · uninstall · update · status [--json|--agents] · demo
-When blocked  why · approve --last [--ttl D] · approvals · unlock · declassify <path> · secret view <path>
-Grant/revoke  trust host|remote|mcp|path <x> [--ttl D] [--remove]   (--yes to skip prompt)
-Policy        config · policy show|diff|init --profile <p>|suggest
-MCP           mcp status|wrap|approve|revoke|list|scope|scan [--quiet]
-Review        audit · friction · log [--follow|verify|archive|export] · replay · trace · explain
-Maintenance   doctor [--json] · verify · version [--check] · completion bash|zsh|fish
-Advanced      run <agent> · relay · mcp-proxy <cmd>
-```
-
-Run `sir <command> --help` for details on any command, or `sir help` for the full list.
-
-## For security teams
-
-- **Observe-only rollout.** `sir install --observe` records `would_allow`/`would_ask`/`would_deny` and detection IDs without blocking anyone. After a week, `sir friction` and `sir policy suggest` recommend safer scoped defaults; flip to enforcement without losing telemetry.
-- **Normalized SIEM telemetry.** Set `SIR_OTLP_ENDPOINT` and every decision streams as redacted OTLP with stable detection IDs, severity, and decision latency. Curated, actionable Slack alerts route through one central relay (`sir relay`) — never per-workstation.
-- **Managed fleet policy.** Pin an org policy with `SIR_MANAGED_POLICY_PATH`; sir auto-restores tampered hooks and refuses local overrides.
 
 ## Agent support
 
@@ -138,26 +59,67 @@ Run `sir <command> --help` for details on any command, or `sir help` for the ful
 - **Claude Code** — **Reference support.** Full 11-hook lifecycle with native interactive approval and complete tool-path coverage.
 - **Gemini CLI** — **Near-parity support.** 6 hook events fire on Gemini CLI 0.36.0+, with full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning. Missing lifecycle hooks: PermissionRequest, SubagentStart, ConfigChange, InstructionsLoaded, and Elicitation. See [gemini-support.md](docs/user/gemini-support.md).
 - **Codex** — **Limited support.** 6 hook events fire on `codex-cli` 0.118.0+ after enabling the `codex_hooks` feature flag (`codex features enable codex_hooks`). sir registers Bash, native-write, MCP, and permission-request hooks where Codex exposes them, but lifecycle coverage remains narrower than Claude Code and the final `Stop` sweep stays the posture backstop. See [codex-support.md](docs/user/codex-support.md).
+- **Cursor** — **Near-parity support.** 15 Cursor hook events are registered on `cursor-agent` 3.6.21+, covering shell, read, MCP, prompt, delegation, and final-sweep paths with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not a reliable security boundary. Missing lifecycle hooks: PermissionRequest, ConfigChange, InstructionsLoaded, and Elicitation. See [cursor-support.md](docs/user/cursor-support.md).
 <!-- END GENERATED SUPPORT SUMMARY -->
+
+Run `sir support --json` for the machine-readable support contract.
+
+Current testing target: Claude Code is enabled for hook installation. Non-Claude adapter coverage is documented so status, parsing, discovery, and compatibility work remain honest, but non-Claude install targets are disabled in this build.
+
+## Install / update / uninstall
+
+```bash
+sir install --agent claude
+sir config             # discover agents and choose an enabled target
+sir update
+sir uninstall
+```
+
+## Verify it
+
+```bash
+sir status
+sir doctor
+sir support
+sir log verify
+```
+
+## Commands
+
+```bash
+sir on | sir off
+sir why | sir explain
+sir log tail | sir log verify
+sir support --json | sir doctor --json
+```
 
 ## Honest limits
 
-sir is a hook- and tool-boundary layer, not a host firewall, and under the default `sir install` its enforcement is **advisory**: if a tool executor ignores a deny, sir cannot *prevent* that one call. It *detects* the violation (a PostToolUse for a call sir denied means it ran anyway) and locks the session to deny-all, but OS-level *prevention* exists only under `sir run`, which adds optional containment (network namespace on Linux, `sandbox-exec` on macOS) and is experimental.
+Default `hook_gate` mode enforces through cooperative agent hooks. It is not a VM, kernel sandbox, or endpoint agent, and it can miss detached children, script-file exfil such as `python myscript.py`, and actions the agent never emits as hooks.
 
-Content-based detection is **heuristic**, so some residuals remain by construction:
+`sir run` is experimental macOS/Linux containment. Windows is hook mediation only. Managed mode shifts the trust anchor to a signed policy path through `SIR_MANAGED_POLICY_PATH`. `sir status` reports what the active mode can actually enforce.
 
-- **Semantic evasion.** The scanners defeat literal, common-encoded, and single-step *mechanical* evasion: MCP-injection patterns run over decoded/zero-width-stripped text, and the secret fingerprint inverts reverse/base64/hex/URL-encoding/whitespace-chunking on the outbound side before matching. What still slips is *semantic* transformation — a paraphrased injection, or a secret the model encrypts or re-keys — which leans on the integrity-flow egress wall (external egress denied after *any* untrusted ingestion) and the monotonic secret high-water mark (egress re-prompts, never silently allows) as backstops, not a proof.
-- **Shell parsing.** Classification is prefix-aware, not a full POSIX parser. It decomposes command substitution, backticks, and `eval`, fails closed on `… | sh`, and flags interpreter one-liners that name a sensitive file literally — but dynamically-constructed or obfuscated paths remain a residual.
-- **Model-internal reasoning.** What the model does with data already in its context is out of scope for a tool-boundary layer.
+## Extend sir
 
-Two behaviors are **deliberate, not gaps**: the default lease allows push-to-origin, commit, loopback, and delegation (tighten with `sir trust` or a managed policy), and a missing `mister-core` makes Go fall back to a *more restrictive* parity-tested subset (a tampered or crashed oracle is a hard deny on all tool calls, never a silent pass).
+sir is open, flexible, and pluggable. Bring your own sandbox or effect provider, policy engine such as OPA or Cedar, signal source such as Falco/eBPF/MCP telemetry, and observability export for JSONL, OTLP, SIEM, S3, or webhooks.
+
+The API and SDKs make provider work small: providers speak stdio JSON, can be written in any language, and can raise risk or apply effects without overriding sir's native safety floors. Start with [providers](docs/providers.md), [API](docs/api.md), and [SDK](docs/sdk.md).
+
+## Contribute
+
+Good contribution areas: agent adapters, Cursor and MCP conformance fixtures, stronger effect providers, evasion harness cases, provider examples, and docs that make guarantees reproducible.
+
+```bash
+# Requires [Rust 1.94.0](https://rustup.rs/) (pinned in rust-toolchain.toml)
+# Requires [Go 1.22+](https://go.dev/dl/) with toolchain auto-fetch to go1.25.10
+make contributor-check
+```
 
 ## Documentation
 
-**Users** — [Runtime behavior](docs/user/runtime-security-overview.md) · [FAQ](docs/user/faq.md) · [SIEM integration](docs/user/siem-integration.md) · Agent setup: [Claude](docs/user/claude-code-hooks-integration.md) · [Gemini](docs/user/gemini-support.md) · [Codex](docs/user/codex-support.md)
+[Getting Started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Competitive Analysis](docs/competitive-analysis.md) · [API](docs/api.md) · [SDK](docs/sdk.md) · [Providers](docs/providers.md) · [Policy](docs/policy.md) · [Observability](docs/observability.md) · [Security](docs/security.md)
 
-**Contributors** — [CONTRIBUTING.md](CONTRIBUTING.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/README.md](docs/README.md)
+> [!WARNING]
+> SIR is experimental and in active development on the `sir-v2` branch. Test on your own machine, not shared infrastructure. Run `sir doctor` if anything breaks. [Report issues](https://github.com/somoore/sir/issues).
 
-**Researchers** — [Threat model](docs/research/sir-threat-model.md) · [Verification guide](docs/research/security-verification-guide.md) · [Observability design](docs/research/observability-design.md) · [AgentDojo benchmark harness](eval/agentdojo/README.md)
-
-Report vulnerabilities privately via [SECURITY.md](SECURITY.md). Licensed under [Apache 2.0](LICENSE).
+Apache 2.0 - see [LICENSE](LICENSE).

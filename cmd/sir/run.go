@@ -21,6 +21,7 @@ type runLauncher struct {
 const (
 	runContainmentModeDarwinProxy    = runtimepkg.ContainmentModeDarwinProxy
 	runContainmentModeLinuxNamespace = runtimepkg.ContainmentModeLinuxNamespace
+	runContainmentModeWindowsHookGate = runtimepkg.ContainmentModeWindowsHookGate
 )
 
 func toRuntimeOptions(opts runOptions) runtimepkg.Options {

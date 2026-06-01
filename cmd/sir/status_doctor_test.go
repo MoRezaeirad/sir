@@ -208,6 +208,7 @@ func TestCmdStatus_SupportManifestSuffixes(t *testing.T) {
 	writeAgentConfig(agent.NewClaudeAgent(), filepath.Join(".claude", "settings.json"))
 	writeAgentConfig(agent.NewGeminiAgent(), filepath.Join(".gemini", "settings.json"))
 	writeAgentConfig(agent.NewCodexAgent(), filepath.Join(".codex", "hooks.json"))
+	writeAgentConfig(agent.NewCursorAgent(), filepath.Join(".cursor", "hooks.json"))
 
 	out := captureStdout(t, func() {
 		cmdStatus(env.projectRoot)
@@ -228,6 +229,9 @@ func TestCmdStatus_SupportManifestSuffixes(t *testing.T) {
 	}{
 		{
 			want: agent.SupportManifestForAgent(agent.NewGeminiAgent()).StatusWarningLine(agent.NewGeminiAgent().Name()),
+		},
+		{
+			want: agent.SupportManifestForAgent(agent.NewCursorAgent()).StatusWarningLine(agent.NewCursorAgent().Name()),
 		},
 		{
 			want: agent.SupportManifestForAgent(agent.NewCodexAgent()).StatusWarningLine(agent.NewCodexAgent().Name()),
@@ -347,7 +351,7 @@ func TestCmdSupportJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal support JSON: %v\n%s", err, out)
 	}
-	wantIDs := []agent.AgentID{agent.Claude, agent.Gemini, agent.Codex}
+	wantIDs := []agent.AgentID{agent.Claude, agent.Gemini, agent.Codex, agent.Cursor}
 	want := make([]agent.SupportManifest, 0, len(wantIDs))
 	for _, id := range wantIDs {
 		manifest, ok := agent.SupportManifestForID(id)
@@ -570,6 +574,12 @@ func TestSupportManifestSupportWarningLines(t *testing.T) {
 		{
 			name:          "gemini",
 			agent:         agent.NewGeminiAgent(),
+			wantStatusFmt: "             Note: %s is near-parity support; lifecycle coverage remains narrower than Claude Code.\n",
+			wantDoctorFmt: "  NOTE: %s is near-parity support — file IFC, shell classification, MCP scanning, and credential output scanning are covered, but some lifecycle hooks remain unavailable.\n",
+		},
+		{
+			name:          "cursor",
+			agent:         agent.NewCursorAgent(),
 			wantStatusFmt: "             Note: %s is near-parity support; lifecycle coverage remains narrower than Claude Code.\n",
 			wantDoctorFmt: "  NOTE: %s is near-parity support — file IFC, shell classification, MCP scanning, and credential output scanning are covered, but some lifecycle hooks remain unavailable.\n",
 		},

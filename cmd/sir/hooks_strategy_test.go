@@ -71,6 +71,68 @@ func TestValidateHookSchemaAt_CustomManagedKey(t *testing.T) {
 	}
 }
 
+func TestDetectRegisteredHookEventsAt_FlatCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "hooks.json")
+	raw := `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "` + sirBinaryPath + ` guard evaluate --agent cursor",
+        "failClosed": true
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	registered, err := detectRegisteredHookEventsAt(configPath, agent.ConfigStrategy{
+		ManagedSubtreeKey: "hooks",
+		Layout:            agent.ConfigLayoutFlatCommands,
+	})
+	if err != nil {
+		t.Fatalf("detectRegisteredHookEventsAt: %v", err)
+	}
+	if !registered["beforeShellExecution"] {
+		t.Fatalf("beforeShellExecution was not detected: %+v", registered)
+	}
+}
+
+func TestValidateHookSchemaAt_FlatCommandsRejectsNestedSirHook(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "hooks.json")
+	raw := `{
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "hooks": [
+          {
+            "command": "` + sirBinaryPath + ` guard evaluate --agent cursor"
+          }
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	invalid, err := validateHookSchemaAt(configPath, agent.ConfigStrategy{
+		ManagedSubtreeKey: "hooks",
+		Layout:            agent.ConfigLayoutFlatCommands,
+	})
+	if err != nil {
+		t.Fatalf("validateHookSchemaAt: %v", err)
+	}
+	if len(invalid) != 1 || invalid[0] != "beforeShellExecution" {
+		t.Fatalf("expected beforeShellExecution schema failure, got %+v", invalid)
+	}
+}
+
 func TestDetectRegisteredHookEventsAt_InvalidLayoutReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "settings.json")

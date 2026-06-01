@@ -1,0 +1,32 @@
+# Simple YAML policy rules for SIR — edit freely.
+#
+# Each rule is a list item. The first matching `deny` wins; otherwise the
+# first matching `ask` wins; otherwise the request is allowed.
+#
+# Keys:
+#   id       rule identifier (shown in `sir log` / `sir why`)
+#   action   match request.action exactly (omit to match any action)
+#   taint    require this label in request.taint (omit to skip taint check)
+#   verdict  allow | ask | deny
+#   reason   human-readable explanation
+
+# A session that previously touched credentials should re-confirm a push to
+# origin — the taint persists across turns.
+- id: was-secret-push-origin
+  action: push_origin
+  taint: credential_access
+  verdict: ask
+  reason: session previously held credentials; re-approve push to origin
+
+# Ask before any new external network egress.
+- id: ask-external-egress
+  action: net_external
+  verdict: ask
+  reason: ask before new external network egress
+
+# An AI agent reading raw credential files is denied outright.
+- id: deny-agent-credential-read
+  action: read_ref
+  taint: credential_access
+  verdict: deny
+  reason: AI agents cannot read raw credential files directly

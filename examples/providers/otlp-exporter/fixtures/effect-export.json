@@ -1,0 +1,18 @@
+{
+  "schema_version": "sir.effect_request.v0",
+  "effect_id": "eff_otlp_001",
+  "type": "export",
+  "required": false,
+  "fail_closed": false,
+  "target": {
+    "payload": {
+      "decision_id": "dec-test001",
+      "verdict": "deny",
+      "mode": "hook_gate",
+      "enforceability": "enforces",
+      "attribution": "medium",
+      "action_type": "file_read",
+      "sensitivity": "credential"
+    }
+  }
+}

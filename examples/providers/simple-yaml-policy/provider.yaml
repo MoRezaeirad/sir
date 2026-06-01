@@ -1,0 +1,15 @@
+schema_version: sir.provider.v0
+name: simple-yaml-policy
+kind: policy_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux, windows]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true
+  policy_engine: simple-yaml
+  policy_file: ./rules.yaml
+fixtures:
+  - fixtures/was-secret-push.json
+  - fixtures/external-egress.json

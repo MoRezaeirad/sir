@@ -151,19 +151,37 @@ type mcpProxyOpts struct {
 // printed; a ledger entry is written best-effort when the current working
 // directory hashes to a known sir project (it usually does — MCP clients
 // launch helpers from the project directory the developer is working in).
-func runMCPProxyDarwin(opts mcpProxyOpts) int {
+// darwinProxyDegrade returns the degrade reason, the path the decision keys on,
+// and the exact stderr notice for a darwin mcp-proxy invocation — or empty
+// strings when no degrade applies and the sandbox path should run.
+//
+// It is PURE: it makes the monitored-mode decision and produces the notice
+// without spawning the wrapped command. This lets tests assert the auto-degrade
+// decision (e.g. for a real /Applications .app helper) without launching a
+// possibly long-running GUI helper and waiting for it to exit.
+func darwinProxyDegrade(opts mcpProxyOpts) (reason, path, notice string) {
 	if opts.noSandbox {
-		fmt.Fprintf(os.Stderr,
+		return "no_sandbox_flag", opts.command, fmt.Sprintf(
 			"sir: mcp-proxy: --no-sandbox requested for %s — running in monitored mode (no network/filesystem isolation; credential scanning and signal forwarding still active)\n",
 			opts.command)
-		recordMCPProxyDegradation("no_sandbox_flag", opts.command, "--no-sandbox flag supplied")
-		return runMCPProxyMonitored(opts)
 	}
-	if hit, path := mcppkg.IsMacAppHelperCommand(opts.command, opts.args); hit {
-		fmt.Fprintf(os.Stderr,
+	if hit, p := mcppkg.IsMacAppHelperCommand(opts.command, opts.args); hit {
+		return "mac_app_helper", p, fmt.Sprintf(
 			"sir: mcp-proxy: %s is a macOS .app helper binary — sandbox-exec breaks its XPC handshake to the parent app on this OS. Running in monitored mode (no network/filesystem isolation; credential scanning and signal forwarding still active). Pass --no-sandbox explicitly to silence this notice for other servers.\n",
-			path)
-		recordMCPProxyDegradation("mac_app_helper", path, "XPC to parent .app blocked under sandbox-exec")
+			p)
+	}
+	return "", "", ""
+}
+
+func runMCPProxyDarwin(opts mcpProxyOpts) int {
+	if reason, path, notice := darwinProxyDegrade(opts); reason != "" {
+		fmt.Fprint(os.Stderr, notice)
+		switch reason {
+		case "no_sandbox_flag":
+			recordMCPProxyDegradation(reason, path, "--no-sandbox flag supplied")
+		case "mac_app_helper":
+			recordMCPProxyDegradation(reason, path, "XPC to parent .app blocked under sandbox-exec")
+		}
 		return runMCPProxyMonitored(opts)
 	}
 
@@ -245,11 +263,9 @@ func runProxyChild(cmd *exec.Cmd, assessmentSummary string) int {
 	// terminal goes to every process in the foreground group — sir AND the
 	// grandchild get the signal, and the grandchild may die mid-response.
 	// With Setpgid, only sir receives the signal, and we forward it down
-	// deliberately via signalChildOnce below.
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Setpgid = true
+	// deliberately via signalChildOnce below. On Windows, process groups are
+	// not supported; setMCPProxyProcessGroup is a no-op there.
+	setMCPProxyProcessGroup(cmd)
 
 	stderrPipe, stderrWriter, err := os.Pipe()
 	if err != nil {
@@ -299,10 +315,10 @@ func runProxyChild(cmd *exec.Cmd, assessmentSummary string) int {
 	// even when the wrapped MCP server traps or ignores signals. Without
 	// this escalation a misbehaving server wedges sir indefinitely.
 	sigCh := make(chan os.Signal, 4)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	signal.Notify(sigCh, mcpProxyTermSignals()...)
 	done := make(chan struct{})
 	forwarderDone := make(chan struct{})
-	go escalatingSignalForwarder(sigCh, done, forwarderDone, pgid, syscall.Kill, os.Exit)
+	go escalatingSignalForwarder(sigCh, done, forwarderDone, pgid, killProcessGroup, os.Exit)
 
 	waitErr := cmd.Wait()
 	// Stop delivery BEFORE telling the goroutine to exit so no further
@@ -317,8 +333,9 @@ func runProxyChild(cmd *exec.Cmd, assessmentSummary string) int {
 	wg.Wait()
 
 	// Best-effort cleanup of any orphaned grandchildren left in the group.
-	// syscall.Kill returns ESRCH if the group is already empty — that's fine.
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	// On Unix, Kill(-pgid) returns ESRCH if the group is already empty — fine.
+	// On Windows, cleanupMCPProxyGroup is a no-op (no process groups).
+	cleanupMCPProxyGroup(pgid)
 
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {

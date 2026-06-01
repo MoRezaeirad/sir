@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.policy_verdict.v0",
+  "description": "A policy provider verdict — advisory only, never a final decision.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider",
+    "verdict",
+    "is_advisory"
+  ],
+  "properties": {
+    "schema_version": { "const": "sir.policy_verdict.v0" },
+    "provider": { "type": "string" },
+    "verdict": { "enum": ["allow", "ask", "deny"] },
+    "rules_matched": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable explanation of why this verdict was produced."
+    },
+    "is_advisory": {
+      "const": true,
+      "description": "Policy verdicts are always advisory. The decision composer owns final decisions."
+    }
+  }
+}

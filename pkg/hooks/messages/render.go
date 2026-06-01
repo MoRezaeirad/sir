@@ -248,7 +248,7 @@ func FormatHookTamper(file string) string {
 		"",
 		"fix:    Open a NEW terminal outside the agent",
 		"        Run: sir doctor",
-		"        Then: sir install --force",
+		"        Then: sir install --agent claude",
 	})
 }
 
@@ -269,7 +269,7 @@ func FormatLeaseIntegrityFatal() string {
 	return FormatFatal(
 		"Security policy integrity check failed",
 		"the lease hash changed outside sir or the policy file is corrupted",
-		"run `sir doctor`, then `sir install --force` if you trust the new baseline",
+		"run `sir doctor`, then `sir install --agent claude` if you trust the new baseline",
 	)
 }
 

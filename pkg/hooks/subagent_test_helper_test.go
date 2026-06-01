@@ -18,6 +18,11 @@ func runSubagentStartForTest(t *testing.T, projectRoot string, payload SubagentP
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
+	return runSubagentStartRawForTest(t, projectRoot, &agent.ClaudeAgent{}, payloadJSON)
+}
+
+func runSubagentStartRawForTest(t *testing.T, projectRoot string, ag agent.Agent, payloadJSON []byte) ([]byte, error) {
+	t.Helper()
 
 	origStdin, origStdout := os.Stdin, os.Stdout
 	defer func() {
@@ -54,7 +59,7 @@ func runSubagentStartForTest(t *testing.T, projectRoot string, payload SubagentP
 
 	evalDone := make(chan error, 1)
 	go func() {
-		evalDone <- EvaluateSubagentStart(projectRoot, &agent.ClaudeAgent{})
+		evalDone <- EvaluateSubagentStart(projectRoot, ag)
 		outW.Close()
 	}()
 

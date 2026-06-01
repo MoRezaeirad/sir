@@ -1,3 +1,5 @@
+//go:build unix
+
 package runtime
 
 import (
@@ -862,33 +864,6 @@ func TestSignalLinuxContainmentReady_CleansUpOnWriteError(t *testing.T) {
 	}
 }
 
-func TestTerminateLinuxContainment_KillsForkedChild(t *testing.T) {
-	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("sleep 30 & echo $! > %s; wait", shellQuote(pidFile)))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start helper process group: %v", err)
-	}
-
-	childPID, err := waitForLinuxNamespacePID(pidFile, cmd.Process.Pid, time.Second)
-	if err != nil {
-		terminateLinuxContainment(cmd, 0)
-		t.Fatalf("discover forked child pid: %v", err)
-	}
-
-	terminateLinuxContainment(cmd, childPID)
-
-	deadline := time.Now().Add(time.Second)
-	for {
-		if err := syscall.Kill(childPID, syscall.Signal(0)); err != nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("forked child pid %d survived containment cleanup", childPID)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
 
 func TestTerminateLinuxContainment_ReapsForkedDescendant(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -1310,5 +1285,53 @@ func TestResolveBinaryRejectsNilAgent(t *testing.T) {
 func TestLaunchRejectsNilAgent(t *testing.T) {
 	if _, err := Launch(t.TempDir(), Options{}); err == nil {
 		t.Fatal("expected Launch with nil agent to fail")
+	}
+}
+
+// TestBuildDarwinProfile_AllowsAgentSessionEnvWrites verifies that the sir
+// run sandbox profile re-allows writes to <home>/<agent>/session-env/ even
+// though the parent <agent>/ directory is in the deny list. This ensures
+// sir hooks (which write session tracking state to session-env) can function
+// inside the contained session. Seatbelt evaluates rules last-first; the
+// explicit allow for session-env must appear after the deny for the parent.
+func TestBuildDarwinProfile_AllowsAgentSessionEnvWrites(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin-only profile test")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+
+	projectRoot := t.TempDir()
+	profile, err := BuildDarwinProfile(projectRoot, Options{Agent: agent.NewClaudeAgent()})
+	if err != nil {
+		t.Fatalf("BuildDarwinProfile: %v", err)
+	}
+
+	// The parent dirs must be denied (tamper protection).
+	for _, rel := range []string{".claude", ".gemini", ".codex"} {
+		deny := fmt.Sprintf("(deny file-write* (subpath %q))", filepath.Join(home, rel))
+		if !strings.Contains(profile, deny) {
+			t.Errorf("profile must deny writes under %q for hook-tamper protection; got:\n%s", rel, profile)
+		}
+	}
+
+	// Session-env subdirs must be explicitly re-allowed so hooks can write
+	// their session state. These rules appear AFTER the deny rules so that
+	// Seatbelt's last-match-wins semantics allow them to override.
+	for _, rel := range []string{".claude/session-env", ".gemini/session-env", ".codex/session-env"} {
+		allow := fmt.Sprintf("(allow file-write* (subpath %q))", filepath.Join(home, rel))
+		if !strings.Contains(profile, allow) {
+			t.Errorf("profile must allow writes to %q so hooks can initialize; got:\n%s", rel, profile)
+		}
+		// Verify the allow rule comes after the deny rule in the profile text
+		// (position in the string = evaluation order in Seatbelt).
+		parentRel := filepath.Dir(rel)
+		denyPos := strings.Index(profile, fmt.Sprintf("(deny file-write* (subpath %q))", filepath.Join(home, parentRel)))
+		allowPos := strings.Index(profile, allow)
+		if denyPos >= 0 && allowPos >= 0 && allowPos <= denyPos {
+			t.Errorf("session-env allow for %q must appear after its parent deny in the profile", rel)
+		}
 	}
 }

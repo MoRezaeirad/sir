@@ -1,0 +1,23 @@
+{
+  "case_id": "human-modify-git-hooks",
+  "title": "Human writing a git hook also asks (posture writes always ask)",
+  "description": "A human developer writes .git/hooks/pre-commit. Git-hook tamper is posture, and non-negotiable #9 says posture writes always ask — regardless of actor. So a human (or a hook framework like husky/pre-commit) gets one approval prompt and proceeds; the floor is ask, not an agent-only deny. Final: ask. Proves the floor is not bypassable by claiming human actor, while staying a single non-blocking approval for legitimate hook installation.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "expected": {
+    "verdict": "ask",
+    "decision_class": "block_and_wait",
+    "policy_rules": ["ask-git-hook-tamper"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "git-hook-human-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_git_hook_human_001"},
+      "actor_claim": {"kind": "human_developer", "name": "alice"},
+      "action_claim": {"type": "file_write", "target": {"display": ".git/hooks/pre-commit", "sensitivity": "low"}}
+    }
+  ]
+}

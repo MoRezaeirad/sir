@@ -11,6 +11,9 @@ import (
 // Most files are relative to the project root, but certain agent posture files
 // are machine-wide (global) rather than per-project.
 func ResolvePath(root, relPath string) string {
+	if filepath.IsAbs(relPath) {
+		return relPath
+	}
 	switch relPath {
 	case ".claude/settings.json":
 		if home, err := os.UserHomeDir(); err == nil {
@@ -27,6 +30,14 @@ func ResolvePath(root, relPath string) string {
 	case ".codex/hooks.json":
 		if home, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(home, ".codex", "hooks.json")
+		}
+	case ".cursor/hooks.json":
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ".cursor", "hooks.json")
+		}
+	case ".cursor/mcp.json":
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ".cursor", "mcp.json")
 		}
 	}
 	return filepath.Join(root, relPath)

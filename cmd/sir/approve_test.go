@@ -83,3 +83,39 @@ func TestApproveForcesGrant(t *testing.T) {
 		t.Error("--ttl alone should not force grant")
 	}
 }
+
+func TestIsThinkingDegradedDeny(t *testing.T) {
+	cases := []struct {
+		name string
+		e    ledger.Entry
+		want bool
+	}{
+		{
+			"thinking-degraded deny is approvable",
+			ledger.Entry{Decision: "deny", Reason: "interactive approval suppressed (Claude thinking-safe): ask degraded to deny"},
+			true,
+		},
+		{
+			"genuine deny is not approvable",
+			ledger.Entry{Decision: "deny", Reason: "secret session active"},
+			false,
+		},
+		{
+			"ask verdict is not a thinking-degraded deny",
+			ledger.Entry{Decision: "ask", Reason: "interactive approval suppressed (Claude thinking-safe): ask degraded to deny"},
+			false,
+		},
+		{
+			"allow verdict is not approvable",
+			ledger.Entry{Decision: "allow", Reason: ""},
+			false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isThinkingDegradedDeny(c.e); got != c.want {
+				t.Errorf("isThinkingDegradedDeny = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

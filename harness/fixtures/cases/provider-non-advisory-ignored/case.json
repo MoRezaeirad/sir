@@ -1,0 +1,32 @@
+{
+  "case_id": "provider-non-advisory-ignored",
+  "title": "Non-advisory provider verdicts are ignored",
+  "description": "External providers are advisory-only. A verdict with is_advisory=false is ignored and the clean push remains allow.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "deny",
+      "rules_matched": ["non-advisory-deny"],
+      "is_advisory": false
+    }
+  ],
+  "expected": {
+    "verdict": "allow",
+    "decision_class": "proceed_and_reconcile",
+    "policy_rules": []
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "provider-non-advisory-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_provider_non_advisory_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "vcs_push", "target": {"display": "git push origin main", "sensitivity": "low"}}
+    }
+  ]
+}

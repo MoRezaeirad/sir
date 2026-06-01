@@ -1,6 +1,10 @@
 # Dependabot — GitHub Actions only.
 # sir has zero external Go/Rust dependencies (by design).
-# This config only monitors Action version pins for security updates.
+# This config monitors Action SHA pins for security and version updates.
+#
+# NOTE: hand-pinned tool installs (syft, slsa-verifier, zizmor, actionlint,
+# cargo-deny, govulncheck, gosec) are NOT tracked here — they live in workflow
+# env vars, not package ecosystems. Bump them manually; see CLAUDE.md rule 13.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -9,3 +13,12 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      # Batch all non-security GHA updates into one PR per week.
+      # Security updates always get their own PR (Dependabot behaviour).
+      github-actions-all:
+        patterns:
+          - "*"

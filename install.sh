@@ -7,7 +7,8 @@ echo ""
 
 # Idempotent update path — if sir is already installed, this script will
 # rebuild the binaries and replace them, preserving lease and session state
-# at ~/.sir/. Supported agent hook configs are re-registered when they exist.
+# at ~/.sir/. Hooks are re-registered for any enabled protection target selected
+# by the user. This testing build enables Claude Code.
 #
 # There is no auto-updater, no background checker, and no `sir update`
 # subcommand. To update sir, the developer re-runs this install script
@@ -33,8 +34,12 @@ error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
 INSTALL_ARGS=("$@")
 EXPLICIT_AGENT=""
+ASSUME_YES=0
 for ((i=0; i<${#INSTALL_ARGS[@]}; i++)); do
     case "${INSTALL_ARGS[$i]}" in
+        --yes)
+            ASSUME_YES=1
+            ;;
         --agent)
             if (( i + 1 < ${#INSTALL_ARGS[@]} )); then
                 EXPLICIT_AGENT="${INSTALL_ARGS[$((i + 1))]}"
@@ -51,6 +56,7 @@ agent_name() {
         claude) echo "Claude Code" ;;
         gemini) echo "Gemini CLI" ;;
         codex) echo "Codex" ;;
+        cursor) echo "Cursor" ;;
         *) echo "$1" ;;
     esac
 }
@@ -60,6 +66,7 @@ agent_launch_command() {
         claude) echo "claude" ;;
         gemini) echo "gemini" ;;
         codex) echo "codex" ;;
+        cursor) echo "cursor-agent" ;;
         *) echo "$1" ;;
     esac
 }
@@ -75,15 +82,69 @@ detect_agent() {
         codex)
             command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ]
             ;;
+        cursor)
+            command -v cursor-agent >/dev/null 2>&1 || command -v cursor >/dev/null 2>&1 || [ -d "$HOME/.cursor" ]
+            ;;
         *)
             return 1
             ;;
     esac
 }
 
+print_detected_agents() {
+    echo "Detected AI coding agents:"
+    if [ ${#DETECTED_AGENTS[@]} -eq 0 ] && [ ${#DETECTED_NON_INSTALL_AGENTS[@]} -eq 0 ]; then
+        echo "    none"
+        return
+    fi
+    for agent_id in "${DETECTED_AGENTS[@]}"; do
+        echo "    [enabled]  $(agent_name "$agent_id")"
+    done
+    for agent_id in "${DETECTED_NON_INSTALL_AGENTS[@]}"; do
+        echo "    [disabled] $(agent_name "$agent_id") — protection not enabled in this build"
+    done
+}
+
+choose_hook_agent() {
+    print_detected_agents
+    if [ ${#DETECTED_AGENTS[@]} -eq 0 ]; then
+        warn "No detected agent is enabled for hook protection in this build."
+        return 1
+    fi
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        return 0
+    fi
+    if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+        warn "An enabled agent was detected, but no interactive terminal is available to select hook setup."
+        warn "sir binaries will be installed; run 'sir config' or 'sir install --agent claude' when ready."
+        return 1
+    fi
+
+    printf "    Select agent to protect now [1=Claude Code, Enter=1, s=skip]: " > /dev/tty
+    local reply
+    if ! read -r reply < /dev/tty; then
+        warn "No confirmation received. Skipping hook setup."
+        return 1
+    fi
+    case "$reply" in
+        ""|1|claude|Claude|CLAUDE)
+            return 0
+            ;;
+        s|S|skip|SKIP|n|N|no|NO|No)
+            return 1
+            ;;
+        *)
+            warn "Only Claude Code is enabled for hook protection in this build. Skipping hook setup."
+            return 1
+            ;;
+    esac
+}
+
 declare -a DETECTED_AGENTS=()
+declare -a DETECTED_NON_INSTALL_AGENTS=()
 declare -a INSTALLED_AGENTS=()
-RUN_SIR_INSTALL=1
+declare -a SIR_INSTALL_ARGS=()
+RUN_SIR_INSTALL=0
 
 # --- Downgrade guard ---
 # Refuse to install a version older than the one currently on disk.
@@ -281,31 +342,42 @@ fi
 
 if [ -n "$EXPLICIT_AGENT" ]; then
     case "$EXPLICIT_AGENT" in
-        claude|gemini|codex) ;;
+        claude) ;;
         *)
-            error "Unknown --agent value: $EXPLICIT_AGENT
+            error "Unsupported --agent value: $EXPLICIT_AGENT
 
-    Supported agents: claude, gemini, codex"
+    This build detects multiple AI coding agents, but hook protection is
+    currently enabled for Claude Code only.
+    Enabled install agent: claude"
             ;;
     esac
     if detect_agent "$EXPLICIT_AGENT"; then
         info "$(agent_name "$EXPLICIT_AGENT") detected for explicit install."
         DETECTED_AGENTS+=("$EXPLICIT_AGENT")
+        SIR_INSTALL_ARGS=(--yes "${INSTALL_ARGS[@]}")
+        RUN_SIR_INSTALL=1
     else
         error "--agent $EXPLICIT_AGENT requested but $(agent_name "$EXPLICIT_AGENT") was not detected on this machine.
 
     Install $(agent_name "$EXPLICIT_AGENT") first, then re-run this script."
     fi
 else
-    for agent_id in claude gemini codex; do
+    if detect_agent claude; then
+        DETECTED_AGENTS+=("claude")
+    fi
+    for agent_id in gemini codex cursor; do
         if detect_agent "$agent_id"; then
-            DETECTED_AGENTS+=("$agent_id")
-            info "$(agent_name "$agent_id") detected."
+            DETECTED_NON_INSTALL_AGENTS+=("$agent_id")
         fi
     done
-    if [ ${#DETECTED_AGENTS[@]} -eq 0 ]; then
-        warn "No supported agents detected. sir binaries will be installed, but hook setup is skipped for now."
-        RUN_SIR_INSTALL=0
+    if choose_hook_agent; then
+        if [ ${#DETECTED_AGENTS[@]} -gt 0 ]; then
+            info "$(agent_name "${DETECTED_AGENTS[0]}") hook setup selected."
+            SIR_INSTALL_ARGS=(--yes "${INSTALL_ARGS[@]}")
+            RUN_SIR_INSTALL=1
+        fi
+    else
+        warn "Skipping automatic hook setup."
     fi
 fi
 
@@ -444,29 +516,18 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 if [ "$RUN_SIR_INSTALL" -eq 1 ]; then
-    info "Setting up sir hooks for detected agent surfaces..."
-    "$INSTALL_DIR/sir" install --yes ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}
+    info "Setting up sir hooks for the selected enabled agent..."
+    "$INSTALL_DIR/sir" install "${SIR_INSTALL_ARGS[@]}"
 
     if [ -f "$HOME/.claude/settings.json" ] && grep -q "sir.*guard" "$HOME/.claude/settings.json" 2>/dev/null; then
         INSTALLED_AGENTS+=("claude")
         info "Claude Code hooks installed in $HOME/.claude/settings.json"
     fi
-    if [ -f "$HOME/.gemini/settings.json" ] && grep -q "sir.*guard" "$HOME/.gemini/settings.json" 2>/dev/null; then
-        INSTALLED_AGENTS+=("gemini")
-        info "Gemini CLI hooks installed in $HOME/.gemini/settings.json"
-    fi
-    if [ -f "$HOME/.codex/hooks.json" ] && grep -q "sir.*guard" "$HOME/.codex/hooks.json" 2>/dev/null; then
-        INSTALLED_AGENTS+=("codex")
-        info "Codex hooks installed in $HOME/.codex/hooks.json"
-    fi
-    if [ -f "$HOME/.codex/config.toml" ] && grep -Eq '^\s*codex_hooks\s*=\s*true\b' "$HOME/.codex/config.toml" 2>/dev/null; then
-        info "Codex feature flag enabled in $HOME/.codex/config.toml"
-    fi
 
     info "Verifying installation..."
     "$INSTALL_DIR/sir" doctor 2>/dev/null || true
 else
-    warn "Skipping 'sir install --yes' because no supported agent is present yet."
+    warn "Skipping automatic hook setup. Run 'sir config' to select an enabled agent later."
 fi
 
 echo ""
@@ -483,16 +544,16 @@ if [ ${#INSTALLED_AGENTS[@]} -gt 0 ]; then
     if [ ${#INSTALLED_AGENTS[@]} -eq 1 ]; then
         printf "    │  Just type '%-6s' — sir is now watching.        │\n" "$(agent_launch_command "${INSTALLED_AGENTS[0]}")"
     else
-        echo "    │  Launch Claude, Gemini, or Codex — sir watches.  │"
+        echo "    │  Launch a protected agent — sir watches.         │"
     fi
     echo "    │                                                     │"
-    echo "    │  For other projects, run 'sir install' there to    │"
-    echo "    │  activate the detected agent hooks in that repo.   │"
+    echo "    │  For other projects, run 'sir config' there to     │"
+    echo "    │  detect agents and activate protection.            │"
 else
     echo "    │  sir binaries are installed.                        │"
     echo "    │                                                     │"
-    echo "    │  Install Claude Code, Gemini CLI, or Codex, then    │"
-    echo "    │  run 'sir install' in your project directory.       │"
+    echo "    │  Run 'sir config' later to detect agents and        │"
+    echo "    │  select an enabled protection target.              │"
 fi
 echo "    └─────────────────────────────────────────────────────┘"
 echo ""

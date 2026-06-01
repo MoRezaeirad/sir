@@ -16,19 +16,34 @@ import (
 // starting a new Claude session.
 func cmdClearSession(projectRoot string) {
 	existing, err := session.Load(projectRoot)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		fatal("no active session found: %v", err)
 	}
-	if !existing.HasTransientRestrictions() {
-		fmt.Println("Session does not carry transient runtime restrictions. Nothing to clear.")
-		return
+
+	cleared := false
+	if existing != nil && existing.HasTransientRestrictions() {
+		if err := session.Update(projectRoot, func(state *session.State) error {
+			state.ClearTransientRestrictions()
+			return nil
+		}); err != nil {
+			fatal("clear session: %v", err)
+		}
+		cleared = true
 	}
 
-	if err := session.Update(projectRoot, func(state *session.State) error {
-		state.ClearTransientRestrictions()
-		return nil
-	}); err != nil {
-		fatal("clear session: %v", err)
+	shadowCleared, shadowErr := clearRuntimeShadowTransientRestrictions(projectRoot)
+	if shadowErr != nil {
+		if cleared {
+			fmt.Fprintf(os.Stderr, "warning: could not clear active sir run shadow state: %v\n", shadowErr)
+		} else {
+			fatal("clear runtime shadow session: %v", shadowErr)
+		}
+	}
+	cleared = cleared || shadowCleared
+
+	if !cleared {
+		fmt.Println("Session does not carry transient runtime restrictions. Nothing to clear.")
+		return
 	}
 
 	entry := &ledger.Entry{
@@ -43,6 +58,37 @@ func cmdClearSession(projectRoot string) {
 	}
 
 	fmt.Println(hooks.FormatSessionCleared())
+}
+
+func clearRuntimeShadowTransientRestrictions(projectRoot string) (bool, error) {
+	inspection, err := inspectRuntimeContainment(projectRoot)
+	if err != nil || inspection == nil || inspection.Info == nil || inspection.Info.ShadowStateHome == "" {
+		return false, err
+	}
+	switch inspection.Health {
+	case session.RuntimeContainmentActive, session.RuntimeContainmentDegraded, session.RuntimeContainmentLegacy:
+	default:
+		return false, nil
+	}
+
+	shadowState, err := session.LoadFromHome(inspection.Info.ShadowStateHome, projectRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !shadowState.HasTransientRestrictions() {
+		return false, nil
+	}
+
+	if err := session.UpdateFromHome(inspection.Info.ShadowStateHome, projectRoot, func(state *session.State) error {
+		state.ClearTransientRestrictions()
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func cmdUninstall(projectRoot string) {

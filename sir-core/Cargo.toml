@@ -1,0 +1,15 @@
+[package]
+name = "sir-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "SIR v2 pure decision kernel — Rust decides, Go orchestrates"
+
+# Zero external dependencies. Zero unsafe code.
+# JSON parsing reuses mister-shared's hand-rolled parser.
+[dependencies]
+mister-shared = { path = "../mister-shared" }
+
+[[bin]]
+name = "sir-core-eval"
+path = "src/bin/sir_core_eval.rs"

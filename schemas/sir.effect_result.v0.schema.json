@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sir.effect_result.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "effect_id",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sir.effect_result.v0"
+    },
+    "effect_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "applied",
+        "unavailable",
+        "failed",
+        "not_supported"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

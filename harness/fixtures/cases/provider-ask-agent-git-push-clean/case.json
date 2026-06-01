@@ -1,0 +1,32 @@
+{
+  "case_id": "provider-ask-agent-git-push-clean",
+  "title": "Provider ask on a clean agent push asks",
+  "description": "A policy provider recommends ask for a clean agent push. Push is intentionally outside the developer-workflow floor, so the final decision is ask.",
+  "mode": "hook_gate",
+  "prior_taint": [],
+  "policy_verdicts": [
+    {
+      "schema_version": "sir.policy_verdict.v0",
+      "provider": "opa-bridge",
+      "verdict": "ask",
+      "rules_matched": ["agent-push-review"],
+      "is_advisory": true
+    }
+  ],
+  "expected": {
+    "verdict": "ask",
+    "decision_class": "block_and_wait",
+    "policy_rules": ["policy:opa-bridge:agent-push-review"]
+  },
+  "signals": [
+    {
+      "schema_version": "sir.signal.v0",
+      "signal_id": "provider-ask-agent-push-clean-001",
+      "signal_time": "2026-05-31T00:00:00Z",
+      "source": {"kind": "claude_hook", "reliability": "declared_intent", "timing": "pre_exec", "provider": "sir-claude-code-hook", "provider_version": "0.1.0"},
+      "session": {"session_id": "sess_provider_ask_agent_push_clean_001"},
+      "actor_claim": {"kind": "ai_coding_agent", "name": "claude-code"},
+      "action_claim": {"type": "vcs_push", "target": {"display": "git push origin main", "sensitivity": "low"}}
+    }
+  ]
+}

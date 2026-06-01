@@ -31,6 +31,7 @@ type wireEvalRequest struct {
 	IsSensitivePath bool `json:"is_sensitive_path"`
 	IsDelegation bool `json:"is_delegation"`
 	IsTripwire bool `json:"is_tripwire"`
+	PolicyVerdicts []policy.PolicyVerdict `json:"policy_verdicts"`
 }
 
 type wireEvalResponse struct {
@@ -71,6 +72,7 @@ func buildWireEvalRequest(req *Request) wireEvalRequest {
 		IsSensitivePath: req.Intent.IsSensitive,
 		IsDelegation: req.Intent.IsDelegation,
 		IsTripwire: req.Intent.IsTripwire,
+		PolicyVerdicts: nonNilPolicyVerdicts(req.PolicyVerdicts),
 	}
 }
 
