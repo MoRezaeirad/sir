@@ -463,9 +463,17 @@ func RenderClaudeSupportMatrixBlock() string {
 }
 
 // RenderReadmeSupportBlock renders the generated support bullets for README.
+//
+// During the gradual rollout, the root README advertises only Claude Code
+// (reference support). Codex, Gemini, and Cursor remain installable and keep
+// their docs/user/ support pages, but are surfaced as (pre-alpha) in
+// `sir configure` rather than advertised as supported in the README.
 func RenderReadmeSupportBlock() string {
-	lines := make([]string, 0, len(orderedPublicSupportManifests()))
+	lines := make([]string, 0, 1)
 	for _, manifest := range orderedPublicSupportManifests() {
+		if manifest.ID != Claude {
+			continue
+		}
 		lines = append(lines, manifest.supportOverviewLine())
 	}
 	return strings.Join(lines, "\n")

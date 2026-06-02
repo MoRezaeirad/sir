@@ -95,7 +95,7 @@ Claude Code has **reference support** and is the enabled hook-install target for
 
 - **Claude Code:** 11 hook events — reference support with native interactive approval, MCP scanning, delegation gating, config change detection, and elicitation coverage.
 - **Gemini CLI 0.36.0+:** 6 hook events — near-parity support for file IFC labeling, shell classification, MCP scanning, and credential output scanning. Missing lifecycle hooks: PermissionRequest, SubagentStart, ConfigChange, InstructionsLoaded, and Elicitation. See [gemini-support.md](gemini-support.md).
-- **Codex 0.118.0+:** 6 hook events — limited support with partial tool-path coverage for Bash, native writes, MCP tools, and permission requests where Codex emits hooks. Requires enabling `codex_hooks` (`codex features enable codex_hooks`). Missing lifecycle hooks: SubagentStart, ConfigChange, InstructionsLoaded, SessionEnd, and Elicitation. See [codex-support.md](codex-support.md).
+- **Codex 0.118.0+:** 6 hook events — limited support with partial tool-path coverage for Bash, native writes, MCP tools, and permission requests where Codex emits hooks. Requires enabling `hooks` (`codex features enable hooks`). Missing lifecycle hooks: SubagentStart, ConfigChange, InstructionsLoaded, SessionEnd, and Elicitation. See [codex-support.md](codex-support.md).
 - **Cursor 3.6.21+:** 15 hook events — near-parity support for shell, read, MCP, prompt, delegation, and final-sweep paths, with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not treated as a security boundary. Missing lifecycle hooks: PermissionRequest, ConfigChange, InstructionsLoaded, and Elicitation. See [cursor-support.md](cursor-support.md).
 <!-- END GENERATED SUPPORT FAQ -->
 

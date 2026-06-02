@@ -11,12 +11,19 @@ func TestSupportNarrativeBlocksUseManifestData(t *testing.T) {
 	faq := RenderFAQSupportBlock()
 	scope := RenderThreatModelScopeBlock()
 
+	// During the gradual rollout the README advertises only Claude Code; the
+	// FAQ and threat-model blocks still cover every agent.
+	claudeName := "Claude Code"
+	if !strings.Contains(readme, claudeName) {
+		t.Fatalf("README support block missing %q", claudeName)
+	}
 	for _, manifest := range orderedPublicSupportManifests() {
-		if !strings.Contains(readme, manifest.Name) {
-			t.Fatalf("README support block missing manifest name %q", manifest.Name)
-		}
-		if manifest.MinimumVersion != "" && !strings.Contains(readme, manifest.MinimumVersion) {
-			t.Fatalf("README support block missing minimum version %q", manifest.MinimumVersion)
+		if manifest.Name == claudeName {
+			if manifest.MinimumVersion != "" && !strings.Contains(readme, manifest.MinimumVersion) {
+				t.Fatalf("README support block missing Claude minimum version %q", manifest.MinimumVersion)
+			}
+		} else if strings.Contains(readme, manifest.Name) {
+			t.Fatalf("README support block should NOT advertise %q during gradual rollout", manifest.Name)
 		}
 		if !strings.Contains(faq, manifest.Name) {
 			t.Fatalf("FAQ support block missing manifest name %q", manifest.Name)

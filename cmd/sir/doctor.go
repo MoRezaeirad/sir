@@ -8,10 +8,31 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/somoore/sir/pkg/hooks"
 	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/session"
 )
+
+// runDoctorSweepAll clears deny-all and refreshes posture baselines across
+// every sir project, mirroring what `sir install` does post-install. This is
+// the cwd-independent recovery path for `sir doctor --all`.
+func runDoctorSweepAll() {
+	fmt.Println(ac(auditBold, "sir doctor --all"))
+	fmt.Println()
+	summary, err := hooks.RebaselineAllProjects()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: cross-project sweep failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "  Run `sir doctor` inside the agent's working directory to recover manually.")
+		fmt.Println()
+		return
+	}
+	printRebaselineSummary(os.Stdout, os.Stderr, summary)
+	if summary.DenyAllCleared == 0 && summary.Refreshed == 0 {
+		fmt.Println("  No wedged sessions found across projects.")
+	}
+	fmt.Println()
+}
 
 // doctorHealthV2 holds v2-specific status fields for the JSON probe.
 type doctorHealthV2 struct {
@@ -65,18 +86,45 @@ func doctorHealthJSON(projectRoot string) {
 }
 
 func cmdDoctor(projectRoot string, args ...string) {
+	sweepAll := false
 	for _, a := range args {
 		switch a {
 		case "--json":
 			doctorHealthJSON(projectRoot)
 			return
+		case "--all":
+			sweepAll = true
 		default:
-			fatal("usage: sir doctor [--json]")
+			fatal("usage: sir doctor [--json] [--all]")
 		}
 	}
 	policy, err := loadManagedPolicyForCLI()
 	if err != nil {
 		fatal("load managed policy: %v", err)
+	}
+
+	// --all clears deny-all AND refreshes posture baselines across EVERY sir
+	// project (RebaselineAllProjects), not just the current directory. This is
+	// the reliable recovery path for a wedged agent session for two reasons:
+	//   1. A wedge tripped by posture/global-hook drift re-trips on every hook
+	//      call until the baseline is refreshed — plain `sir doctor` clears the
+	//      deny-all flag but does not rehash, so the next call re-wedges.
+	//   2. Sessions are keyed by sha256(cwd); a user recovering from a terminal
+	//      cwd'd outside the agent's project would otherwise touch the wrong
+	//      session.json.
+	// `--all` sidesteps both. Managed mode disables baseline refresh, so the
+	// sweep is skipped there.
+	if sweepAll {
+		if policy != nil {
+			fmt.Println(ac(auditBold, "sir doctor --all"))
+			fmt.Println()
+			fmt.Printf("  %s\n", managedPolicyNotice(policy))
+			fmt.Println("  Cross-project baseline refresh is disabled under managed mode.")
+			return
+		}
+		runDoctorSweepAll()
+		// Fall through to also run the normal per-project doctor for the
+		// current directory so the user still gets full local diagnostics.
 	}
 	l, err := loadLeaseForDoctor(projectRoot)
 	if err != nil {

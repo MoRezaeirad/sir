@@ -96,8 +96,10 @@ func TestFormatDenyAll_WhatWhyHow(t *testing.T) {
 	assertContains(t, "FormatDenyAll", msg, "EMERGENCY", "All tool calls blocked")
 	// WHY (reason)
 	assertContains(t, "FormatDenyAll", msg, "posture file tampered")
-	// HOW
-	assertContains(t, "FormatDenyAll", msg, "sir doctor", "new terminal")
+	// HOW — points at `sir doctor --all` as the recovery path, and leads with
+	// the human-in-the-loop prompt ("did NOT change") so a genuine tamper gets
+	// investigated before the block is cleared.
+	assertContains(t, "FormatDenyAll", msg, "sir doctor --all", "new terminal", "did NOT change")
 }
 
 func TestFormatDenyAll_TruncatesLongReason(t *testing.T) {
@@ -117,7 +119,7 @@ func TestFormatHookTamper_WhatWhyHow(t *testing.T) {
 	// WHY
 	assertContains(t, "FormatHookTamper", msg, "settings.json", "changed without approval")
 	// HOW
-	assertContains(t, "FormatHookTamper", msg, "NEW terminal", "sir doctor", "sir install --agent claude")
+	assertContains(t, "FormatHookTamper", msg, "NEW terminal", "sir doctor", "sir configure")
 }
 
 func TestFormatHookTamper_TruncatesLongPath(t *testing.T) {
@@ -350,7 +352,7 @@ func TestFormatLeaseIntegrityFatal_WhatWhyHow(t *testing.T) {
 	msg := FormatLeaseIntegrityFatal()
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "\u00d7 deny", "Security policy")
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "reason:", "hash", "changed")
-	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir doctor", "sir install --agent claude")
+	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir doctor", "sir configure")
 	assertContains(t, "FormatLeaseIntegrityFatal", msg, "sir why")
 }
 

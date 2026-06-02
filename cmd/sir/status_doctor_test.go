@@ -548,10 +548,10 @@ func TestCmdDoctor_CodexFeatureFlagWarningUsesManifest(t *testing.T) {
 		cmdDoctor(env.projectRoot)
 	})
 
-	if !strings.Contains(out, "codex_hooks=true is NOT set under [features]") {
+	if !strings.Contains(out, "hooks=true is NOT set under [features]") {
 		t.Fatalf("doctor output missing codex feature-flag warning:\n%s", out)
 	}
-	if !strings.Contains(out, "Fix: codex features enable codex_hooks") {
+	if !strings.Contains(out, "Fix: codex features enable hooks") {
 		t.Fatalf("doctor output missing codex feature-flag remediation:\n%s", out)
 	}
 	want := agent.SupportManifestForAgent(agent.NewCodexAgent()).DoctorWarningLine(agent.NewCodexAgent().Name())

@@ -1,12 +1,64 @@
 // Package agent — Codex adapter.
 //
-// Codex uses the legacy { decision:"block", reason } response shape and
-// fires hooks for a partial tool surface on codex-cli 0.118. The adapter is
-// a thin wrapper over the shared base functions driven by codexSpec.
+// Codex uses the legacy { decision:"block", reason } response shape for
+// PreToolUse/PostToolUse (still accepted on 0.135/0.136), but PermissionRequest
+// requires a distinct nested envelope (hookSpecificOutput.decision.behavior),
+// handled by codexLifecycleResponse. The adapter is otherwise a thin wrapper
+// over the shared base functions driven by codexSpec.
 //
 // PostInstallFunc (ensureCodexFeatureFlag) is wired at init time from
 // cmd/sir/install.go to avoid a pkg/agent → cmd/sir circular import.
 package agent
+
+import "encoding/json"
+
+// codexPermissionDecision is the nested decision object Codex 0.135/0.136
+// expects inside a PermissionRequest hook's hookSpecificOutput. Only "allow"
+// and "deny" are valid behaviors; a deny carries an optional message.
+type codexPermissionDecision struct {
+	Behavior string `json:"behavior"`
+	Message  string `json:"message,omitempty"`
+}
+
+type codexPermissionHookSpecificOutput struct {
+	HookEventName string                  `json:"hookEventName"`
+	Decision      codexPermissionDecision `json:"decision"`
+}
+
+type codexPermissionResponse struct {
+	HookSpecificOutput codexPermissionHookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+// codexLifecycleResponse produces Codex's per-event response shape.
+//
+// PermissionRequest uses the nested hookSpecificOutput.decision.behavior form
+// required by codex-cli 0.135/0.136 (verified against the live binary schema
+// and the published hooks docs). sir's internal verdicts map as:
+//
+//	allow            → { behavior: "allow" }
+//	deny/block/ask   → { behavior: "deny", message: reason }
+//
+// Codex has no "ask" behavior for PermissionRequest, so an ask verdict
+// fail-closes to deny with the reason carried in the message. All other events
+// fall through to the shared legacy formatter (their {decision:"block",reason}
+// / {} shapes are unchanged and still honored).
+func codexLifecycleResponse(eventName, decision, reason, context string) ([]byte, error) {
+	if eventName != "PermissionRequest" {
+		return formatLegacyLifecycle(&codexSpec, eventName, decision, reason, context, true)
+	}
+	behavior := "deny"
+	message := reason
+	if decision == "allow" {
+		behavior = "allow"
+		message = ""
+	}
+	return json.Marshal(codexPermissionResponse{
+		HookSpecificOutput: codexPermissionHookSpecificOutput{
+			HookEventName: "PermissionRequest",
+			Decision:      codexPermissionDecision{Behavior: behavior, Message: message},
+		},
+	})
+}
 
 // codexSpec is the pure data declaration for the Codex adapter.
 var codexSpec = AgentSpec{
@@ -52,11 +104,16 @@ var codexSpec = AgentSpec{
 	ConfigDirs:               []string{".codex"},
 	BinaryNames:              []string{"codex"},
 	RuntimeProxyHosts:        []string{"api.openai.com"},
-	RequiredFeatureFlag:      "codex_hooks",
-	FeatureFlagEnableCommand: "codex features enable codex_hooks",
+	RequiredFeatureFlag:      "hooks",
+	FeatureFlagEnableCommand: "codex features enable hooks",
 
 	ToolNames: map[string]string{
 		"apply_patch": "Edit",
+		// NOTE: codex-cli's model-facing shell tool is "exec_command"
+		// (unified-exec) on 0.135/0.136, but the PreToolUse *hook payload*
+		// normalizes it to tool_name:"Bash" with tool_input.command — verified
+		// against a live 0.136 interactive hook (2026-06-01). So no exec_command
+		// mapping is needed here; the hook contract is already "Bash".
 	},
 	EventNames: nil,
 
@@ -74,6 +131,9 @@ var codexSpec = AgentSpec{
 	CommandFlag: "--agent codex",
 
 	HookRegistrations: []HookRegistration{
+		// The unified-exec shell tool arrives in the PreToolUse hook payload as
+		// tool_name:"Bash" (verified against a live 0.136 hook), so the existing
+		// Bash matcher covers it — no exec_command alternative is needed.
 		{Event: "PreToolUse", Matcher: "Bash|apply_patch|Edit|Write|mcp__.*", Command: "guard evaluate", Timeout: 10},
 		{Event: "PermissionRequest", Matcher: ".*", Command: "guard permission-request", Timeout: 10},
 		{Event: "PostToolUse", Matcher: "Bash|apply_patch|Edit|Write|mcp__.*", Command: "guard post-evaluate", Timeout: 10},
@@ -82,8 +142,18 @@ var codexSpec = AgentSpec{
 		{Event: "Stop", Command: "guard session-summary", Timeout: 5},
 	},
 
+	// FormatLifecycleFunc is wired in init() (below) to codexLifecycleResponse;
+	// setting it inline would create an init cycle since the formatter falls
+	// back to formatLegacyLifecycle(&codexSpec, ...).
+
 	// PostInstallFunc is wired from cmd/sir/install.go at init time.
 	PostInstallFunc: nil,
+}
+
+func init() {
+	// Wire the lifecycle formatter here to avoid a codexSpec ⇄
+	// codexLifecycleResponse initialization cycle.
+	codexSpec.FormatLifecycleFunc = codexLifecycleResponse
 }
 
 // CodexAgent is the OpenAI Codex CLI adapter.

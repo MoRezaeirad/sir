@@ -230,8 +230,12 @@ func FormatDenyAll(reason string) string {
 		"",
 		"reason: " + truncated,
 		"",
-		"fix:    Run `sir doctor` in a new terminal",
-		"        outside the current agent session",
+		"This block means sir caught an unexpected change.",
+		"If you did NOT change this file, investigate first.",
+		"",
+		"If the change was yours, recover in a new terminal:",
+		"  sir doctor --all   (re-trusts current hook/posture",
+		"  state across all projects, then clears the block)",
 	})
 }
 
@@ -248,7 +252,7 @@ func FormatHookTamper(file string) string {
 		"",
 		"fix:    Open a NEW terminal outside the agent",
 		"        Run: sir doctor",
-		"        Then: sir install --agent claude",
+		"        Then: sir configure",
 	})
 }
 
@@ -269,7 +273,7 @@ func FormatLeaseIntegrityFatal() string {
 	return FormatFatal(
 		"Security policy integrity check failed",
 		"the lease hash changed outside sir or the policy file is corrupted",
-		"run `sir doctor`, then `sir install --agent claude` if you trust the new baseline",
+		"run `sir doctor`, then `sir configure` if you trust the new baseline",
 	)
 }
 

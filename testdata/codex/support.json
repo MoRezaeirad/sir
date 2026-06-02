@@ -28,8 +28,8 @@
     "SessionStart",
     "Stop"
   ],
-  "required_feature_flag": "codex_hooks",
-  "feature_flag_enable_command": "codex features enable codex_hooks",
+  "required_feature_flag": "hooks",
+  "feature_flag_enable_command": "codex features enable hooks",
   "surfaces": [
     {
       "key": "interactive_approval",

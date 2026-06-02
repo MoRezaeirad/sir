@@ -15,7 +15,7 @@ sir — Sandbox in Reverse — is an experimental security runtime for AI coding
 |---|---|---|
 | Hook events wired | ✅ 6 events | PreToolUse, PermissionRequest, PostToolUse, UserPromptSubmit, SessionStart, Stop |
 | Tool-path coverage | ⚠ Partial | Bash, native write, MCP, and permission-request hooks are registered where the host agent emits them; missing lifecycle hooks remain documented below. |
-| Feature flag | ⚠ Required | Enable `codex_hooks` before any registered hooks can fire. |
+| Feature flag | ⚠ Required | Enable `hooks` before any registered hooks can fire. |
 | Interactive approvals | ❌ No | Codex folds sir's internal ask verdict into block with remediation text. |
 | Permission-request broker | ✅ Yes | sir can broker agent-native permission request events through the same policy path. |
 | File-read IFC labeling | ✅ Yes | Bash-mediated sensitive reads (cat/sed/head/tail/grep/etc.) are promoted to read_ref before execution. |
@@ -56,6 +56,22 @@ Codex is useful with sir when the workflow stays on covered tool paths:
 If your Codex session is mostly shell, patching, build, test, git, and approved MCP calls, you still get meaningful enforcement.
 
 ## The important limitation
+
+> [!WARNING]
+> **`codex exec` (non-interactive) does not fire sir's hooks — verified on
+> codex-cli 0.135 and 0.136.** A `codex exec` run executes the tool and completes
+> a full session, but neither `~/.codex/hooks.json` nor an inline `[hooks]` table
+> in `config.toml` is invoked — even with `--dangerously-bypass-hook-trust`. sir
+> installs the config correctly; the hooks simply never run in the `exec` path.
+> **Do not assume `codex exec` is protected by sir.**
+>
+> **Interactive `codex` (TUI) *does* fire sir's hooks — verified on 0.136.** On
+> first launch Codex shows a one-time "Hooks need review" prompt; choose **Trust
+> all and continue**. After trusting, SessionStart, UserPromptSubmit, PreToolUse,
+> PostToolUse, and Stop all fire and sir gates the shell tool (it arrives in the
+> hook payload as `tool_name: "Bash"`). The difference is the trust gate: it is
+> interactive-only, and `exec` has no way to present or satisfy it, so use
+> **interactive Codex** when you need sir's protection.
 
 Codex does not currently expose the full lifecycle hook surface Claude Code exposes. sir registers the tool hooks Codex makes available, but upstream hook delivery remains the boundary.
 

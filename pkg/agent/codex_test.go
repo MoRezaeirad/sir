@@ -390,3 +390,56 @@ func TestAll_IncludesCodex(t *testing.T) {
 		t.Errorf("All()[1] = %T, want *CodexAgent", all[1])
 	}
 }
+
+// TestCodexPermissionRequestFormat verifies the Codex PermissionRequest
+// response uses the nested hookSpecificOutput.decision.behavior shape required
+// by codex-cli 0.135/0.136 (NOT the legacy {decision:"block",reason} shape,
+// which Codex does not honor for PermissionRequest).
+func TestCodexPermissionRequestFormat(t *testing.T) {
+	c := NewCodexAgent()
+
+	type wire struct {
+		HookSpecificOutput struct {
+			HookEventName string `json:"hookEventName"`
+			Decision      struct {
+				Behavior string `json:"behavior"`
+				Message  string `json:"message"`
+			} `json:"decision"`
+		} `json:"hookSpecificOutput"`
+	}
+
+	cases := []struct {
+		decision     string
+		reason       string
+		wantBehavior string
+		wantMessage  string
+	}{
+		{"deny", "egress blocked", "deny", "egress blocked"},
+		{"block", "posture mutation", "deny", "posture mutation"},
+		{"ask", "needs review", "deny", "needs review"}, // no ask behavior → fail closed
+		{"allow", "", "allow", ""},
+	}
+	for _, tc := range cases {
+		out, err := c.FormatLifecycleResponse("PermissionRequest", tc.decision, tc.reason, "")
+		if err != nil {
+			t.Fatalf("decision=%s: %v", tc.decision, err)
+		}
+		var w wire
+		if err := json.Unmarshal(out, &w); err != nil {
+			t.Fatalf("decision=%s: not valid JSON in expected shape: %s", tc.decision, out)
+		}
+		if w.HookSpecificOutput.HookEventName != "PermissionRequest" {
+			t.Errorf("decision=%s: hookEventName=%q want PermissionRequest (%s)", tc.decision, w.HookSpecificOutput.HookEventName, out)
+		}
+		if w.HookSpecificOutput.Decision.Behavior != tc.wantBehavior {
+			t.Errorf("decision=%s: behavior=%q want %q (%s)", tc.decision, w.HookSpecificOutput.Decision.Behavior, tc.wantBehavior, out)
+		}
+		if w.HookSpecificOutput.Decision.Message != tc.wantMessage {
+			t.Errorf("decision=%s: message=%q want %q (%s)", tc.decision, w.HookSpecificOutput.Decision.Message, tc.wantMessage, out)
+		}
+		// Must NOT use the legacy top-level decision key.
+		if strings.Contains(string(out), `"decision":"block"`) || strings.Contains(string(out), `"decision":"deny"`) {
+			t.Errorf("decision=%s: leaked legacy top-level decision key: %s", tc.decision, out)
+		}
+	}
+}

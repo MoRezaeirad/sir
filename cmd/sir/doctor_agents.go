@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/somoore/sir/pkg/agent"
 )
@@ -72,6 +74,13 @@ func printDoctorAgentChecks(statuses []agentStatus) (bool, bool) {
 			case codexFlagUnreadable:
 				fmt.Printf("  [!!] WARNING: %s: could not read %s - unable to verify %s flag\n", status.Agent.Name(), configPath, spec.RequiredFeatureFlag)
 			}
+
+			// Hook-trust diagnostic (Codex 0.135/0.136): even with the feature
+			// flag on, hooks only fire interactively after the user trusts them
+			// at the "Hooks need review" prompt. exec never fires them.
+			if status.Agent.ID() == agent.Codex && featureStatus != codexFlagMissingFile {
+				printCodexHookTrust(status.Agent, configPath)
+			}
 		}
 	}
 
@@ -80,4 +89,53 @@ func printDoctorAgentChecks(statuses []agentStatus) (bool, bool) {
 	}
 	printDoctorSupportWarnings(statuses)
 	return sawAnyInstalled, schemaFixed
+}
+
+// printCodexHookTrust reports whether Codex has recorded trust for sir's
+// hooks. On 0.135/0.136 hooks only fire interactively after the user accepts
+// the "Hooks need review" prompt, and never under `codex exec`. This surfaces
+// the trust state so a user whose hooks are silently untrusted gets a clear
+// signal instead of assuming sir is active.
+func printCodexHookTrust(ag agent.Agent, configPath string) {
+	homeDir, _ := os.UserHomeDir()
+	spec := ag.GetSpec()
+	hooksJSONPath := filepath.Join(homeDir, spec.ConfigFile)
+
+	trust, err := readCodexHookTrust(configPath, hooksJSONPath)
+	if err != nil || !trust.configReadable {
+		fmt.Printf("  [!!] WARNING: %s: could not read hook-trust state from %s\n", ag.Name(), configPath)
+		return
+	}
+
+	// Which of sir's registered events lack a trust entry?
+	var untrusted []string
+	for _, ev := range spec.SupportedWireEvents {
+		token, ok := codexEventTrustToken[ev]
+		if !ok {
+			continue
+		}
+		if !trust.trustedEvents[token] {
+			untrusted = append(untrusted, ev)
+		}
+	}
+
+	if !trust.hasFeaturesGate {
+		fmt.Printf("  [!!] WARNING: %s: no hook-trust entries found in %s\n", ag.Name(), configPath)
+		fmt.Printf("        Codex has not trusted sir's hooks yet. They will NOT fire until you\n")
+		fmt.Printf("        start an interactive `codex` session and choose \"Trust all\" at the\n")
+		fmt.Printf("        \"Hooks need review\" prompt. NOTE: `codex exec` never fires hooks (0.135/0.136).\n")
+		return
+	}
+	if len(untrusted) > 0 {
+		fmt.Printf("  [!!] WARNING: %s: %d hook event(s) have no Codex trust entry: %v\n", ag.Name(), len(untrusted), untrusted)
+		fmt.Printf("        Trust them in an interactive `codex` session at the \"Hooks need review\"\n")
+		fmt.Printf("        prompt. (`codex exec` never fires hooks on 0.135/0.136.)\n")
+		return
+	}
+	// Every event has a trust entry with a recorded hash. sir cannot recompute
+	// Codex's hash, so it cannot confirm the entry matches the current
+	// hooks.json — Codex re-verifies at session start and re-prompts if the hook
+	// changed. Report the entry's presence, not certified trust.
+	fmt.Printf("  [ok] %s: all hook events have a Codex trust entry. Codex re-verifies the hash\n", ag.Name())
+	fmt.Printf("        at session start; if hooks.json changed it will re-prompt. (`codex exec` never fires hooks.)\n")
 }

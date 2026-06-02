@@ -57,9 +57,6 @@ sir log verify
 
 <!-- BEGIN GENERATED SUPPORT SUMMARY -->
 - **Claude Code** — **Reference support.** Full 11-hook lifecycle with native interactive approval and complete tool-path coverage.
-- **Gemini CLI** — **Near-parity support.** 6 hook events fire on Gemini CLI 0.36.0+, with full tool-path coverage for file IFC labeling, shell classification, MCP scanning, and credential output scanning. Missing lifecycle hooks: PermissionRequest, SubagentStart, ConfigChange, InstructionsLoaded, and Elicitation. See [gemini-support.md](docs/user/gemini-support.md).
-- **Codex** — **Limited support.** 6 hook events fire on `codex-cli` 0.118.0+ after enabling the `codex_hooks` feature flag (`codex features enable codex_hooks`). sir registers Bash, native-write, MCP, and permission-request hooks where Codex exposes them, but lifecycle coverage remains narrower than Claude Code and the final `Stop` sweep stays the posture backstop. See [codex-support.md](docs/user/codex-support.md).
-- **Cursor** — **Near-parity support.** 15 Cursor hook events are registered on `cursor-agent` 3.6.21+, covering shell, read, MCP, prompt, delegation, and final-sweep paths with after-action file-edit backstops. Ask is folded into deny because Cursor hook ask/allow behavior is not a reliable security boundary. Missing lifecycle hooks: PermissionRequest, ConfigChange, InstructionsLoaded, and Elicitation. See [cursor-support.md](docs/user/cursor-support.md).
 <!-- END GENERATED SUPPORT SUMMARY -->
 
 Run `sir support --json` for the machine-readable support contract.

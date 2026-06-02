@@ -106,7 +106,12 @@ func EvaluateCompactReinject(projectRoot string, ag agent.Agent) error {
 	if state != nil && state.DenyAll {
 		reminders = append(reminders, fmt.Sprintf(
 			"[sir EMERGENCY] All tool calls are currently BLOCKED. Reason: %s. "+
-				"The developer must run `sir doctor` in a new terminal to recover.",
+				"This block means sir caught an unexpected change to a security "+
+				"configuration file. If the developer did NOT make this change, they "+
+				"should investigate before recovering. If the change was intentional, "+
+				"recovery is `sir doctor --all` in a new terminal — this re-trusts the "+
+				"current hook/posture state across all projects (same trust model as "+
+				"`sir install`) and clears the block.",
 			state.DenyAllReason,
 		))
 	}

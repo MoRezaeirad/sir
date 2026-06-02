@@ -68,6 +68,16 @@ CHECKSUMS.sha512
 # Local Claude workspace state
 /.claude/*
 
+# Eval / benchmark scratch and results — kept locally, not committed.
+# The whole eval/ tree is local scratch (agentdojo harness, drafts, run results).
+# bench/budgets.json stays tracked (perf-guardrails CI reads it); only bench
+# output/results are ignored.
+eval/
+results/
+bench/results/
+bench/*.out
+bench/*.log
+
 # GTM and internal planning — kept locally, not committed
 gtm/
 docs/brand-guide.md
