@@ -40,6 +40,15 @@ func evaluatePolicy(projectRoot string, payload *HookPayload, signals []sdk.Sign
 		Enforceability:  signal.EnforceabilityForSignals(signals),
 		Mode:            leaseMode(l),
 	}
+	// v1 session/integrity signals: the explicit inputs an authoritative provider
+	// needs to re-implement the native floors it may bypass under PDP delegation
+	// (the coarse Taint list collapses these). See pdp-provider-delegation.md §2b.
+	if state != nil {
+		policyReq.SessionSecret = state.SecretSession
+		policyReq.SessionWasSecret = state.SessionEverSecret
+		policyReq.SessionUntrustedRead = state.RecentlyReadUntrusted
+		policyReq.SessionUntrustedThisTurn = state.UntrustedContentThisTurn
+	}
 
 	verdicts, failures := collectPolicyVerdicts(policyReq)
 	req.PolicyVerdicts = verdicts

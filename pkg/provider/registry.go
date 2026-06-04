@@ -52,19 +52,62 @@ func exclusiveKind(kind string) bool {
 
 // Entry is a registered provider with its runtime state.
 type Entry struct {
-	RegistryID   string         `json:"registry_id"`
-	Name         string         `json:"name"`
-	Kind         string         `json:"kind"`
-	Version      string         `json:"version"`
-	ManifestPath string         `json:"manifest_path"`
-	Entrypoint   string         `json:"entrypoint"` // absolute, resolved at install time
-	Platforms    []string       `json:"platforms,omitempty"`
-	Capabilities map[string]any `json:"capabilities,omitempty"`
-	Enabled      bool           `json:"enabled"`
-	Health       Health         `json:"health"`
-	InstalledAt  time.Time      `json:"installed_at"`
-	InstalledBy  string         `json:"installed_by"`
+	RegistryID   string            `json:"registry_id"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"`
+	Version      string            `json:"version"`
+	ManifestPath string            `json:"manifest_path"`
+	Entrypoint   string            `json:"entrypoint"` // absolute, resolved at install time
+	Platforms    []string          `json:"platforms,omitempty"`
+	Capabilities map[string]any    `json:"capabilities,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Health       Health            `json:"health"`
+	InstalledAt  time.Time         `json:"installed_at"`
+	InstalledBy  string            `json:"installed_by"`
 	Config       map[string]string `json:"config,omitempty"` // key=val provider-specific config
+
+	// Authority controls whether a policy_provider's verdict is advisory (the
+	// default and only behavior today) or authoritative (PDP delegation — its
+	// verdict replaces the native decision, see docs/research/pdp-provider-delegation.md).
+	// Empty or "advisory" => advisory (current behavior). "authoritative" is an
+	// explicit operator opt-in; a provider can NEVER self-promote via its wire
+	// response. omitempty so existing registries load unchanged as advisory.
+	// Only meaningful for policy_provider. Plumbing only in Chunk 1: the
+	// authoritative compose path is not wired until Chunk 2.
+	Authority string `json:"authority,omitempty"`
+
+	// OnFailure selects the fail-closed verdict when an AUTHORITATIVE provider
+	// cannot produce a decision (unreachable, timeout, empty, malformed): "ask"
+	// (default, personal/team) or "deny". Managed mode forces "deny" regardless.
+	// Empty => "ask". Has no effect on advisory providers. Chunk 1 plumbing only.
+	OnFailure string `json:"on_failure,omitempty"`
+}
+
+// Authority values for Entry.Authority.
+const (
+	AuthorityAdvisory      = "advisory"      // default: verdict is advisory only
+	AuthorityAuthoritative = "authoritative" // PDP: verdict replaces native decision
+)
+
+// OnFailure values for Entry.OnFailure (authoritative providers only).
+const (
+	OnFailureAsk  = "ask"  // default: hold for human approval when provider can't decide
+	OnFailureDeny = "deny" // hard-block when provider can't decide (forced in managed mode)
+)
+
+// IsAuthoritative reports whether this entry is an authoritative policy_provider.
+// Only policy_provider can be authoritative; any other kind is always advisory.
+func (e Entry) IsAuthoritative() bool {
+	return e.Kind == KindPolicy && e.Authority == AuthorityAuthoritative
+}
+
+// FailureVerdict returns the fail-closed verdict for this provider ("ask" or
+// "deny"). Defaults to "ask"; callers apply the managed-mode "deny" override.
+func (e Entry) FailureVerdict() string {
+	if e.OnFailure == OnFailureDeny {
+		return OnFailureDeny
+	}
+	return OnFailureAsk
 }
 
 // Health holds the last health check result for a provider.

@@ -11,7 +11,14 @@ import (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("SIR_PROVIDER_TEST_HELPER") == "1" {
-		_, _ = io.Copy(io.Discard, os.Stdin)
+		// Optionally capture the request payload (stdin) to a file so a test can
+		// assert exactly what the invocation layer sent on the wire.
+		if cap := os.Getenv("SIR_PROVIDER_TEST_CAPTURE"); cap != "" {
+			data, _ := io.ReadAll(os.Stdin)
+			_ = os.WriteFile(cap, data, 0o600)
+		} else {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+		}
 		if stderr := os.Getenv("SIR_PROVIDER_TEST_STDERR"); stderr != "" {
 			_, _ = os.Stderr.WriteString(stderr)
 		}

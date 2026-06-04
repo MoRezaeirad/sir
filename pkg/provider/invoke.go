@@ -68,6 +68,14 @@ type policyRequest struct {
 	Taint           []string `json:"taint,omitempty"`
 	Enforceability  string   `json:"enforceability,omitempty"`
 	Mode            string   `json:"mode,omitempty"`
+
+	// Additive session/integrity signals (schema string stays v0; see
+	// InvokePolicy and policy.PolicyRequest). omitempty → invisible to v0
+	// providers on a clean session. See pdp-provider-delegation.md §2b.
+	SessionSecret            bool `json:"session_secret,omitempty"`
+	SessionWasSecret         bool `json:"session_was_secret,omitempty"`
+	SessionUntrustedRead     bool `json:"session_untrusted_read,omitempty"`
+	SessionUntrustedThisTurn bool `json:"session_untrusted_this_turn,omitempty"`
 }
 
 // policyResponse is the wire format received from a policy_provider on stdout.
@@ -90,7 +98,15 @@ func InvokePolicy(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, er
 	defer cancel()
 
 	payload, err := json.Marshal(policyRequest{
-		Op:              "evaluate",
+		Op: "evaluate",
+		// Schema string stays v0: the new session/integrity fields below are
+		// ADDITIVE and omitempty, so a strict v0 provider (the bundled packs
+		// advertise schema_version_supported: sir.policy_request.v0) sees only
+		// extra optional keys it can ignore and keeps working unchanged. Bumping
+		// the version string would break those providers — their verdicts would
+		// vanish and advisory escalation would silently stop until every pack is
+		// upgraded. v1-aware providers detect the new fields by presence, not by
+		// the version string.
 		SchemaVersion:   "sir.policy_request.v0",
 		Action:          req.Action,
 		Target:          req.Target,
@@ -99,6 +115,11 @@ func InvokePolicy(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, er
 		Taint:           req.Taint,
 		Enforceability:  req.Enforceability,
 		Mode:            req.Mode,
+
+		SessionSecret:            req.SessionSecret,
+		SessionWasSecret:         req.SessionWasSecret,
+		SessionUntrustedRead:     req.SessionUntrustedRead,
+		SessionUntrustedThisTurn: req.SessionUntrustedThisTurn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal policy request: %w", err)
