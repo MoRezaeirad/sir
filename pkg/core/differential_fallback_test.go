@@ -19,9 +19,12 @@ package core
 //
 // This test closes that gap mechanically (CLAUDE.md non-negotiable #10: public
 // guarantees need tests or contract checks). It generates a broad corpus of
-// Requests across the full verb x session-flag x label space, runs each through
-// BOTH the real Rust binary and the Go fallback via the production core.Evaluate
-// entry point, and asserts:
+// Requests across the full verb x session-flag x label space — each labeled set
+// is exercised in BOTH placements, as an immediate Intent.Labels and as an
+// Intent.DerivedLabels (lineage-carried), since the two reach the flow check via
+// different fields and could diverge independently — runs each through BOTH the
+// real Rust binary and the Go fallback via the production core.Evaluate entry
+// point, and asserts:
 //
 //	permissiveness(go_fallback) <= permissiveness(rust)        // never widens
 //
@@ -174,6 +177,9 @@ func generateCorpus() []namedRequest {
 	// exact trap a reviewer flagged on the first revision of this test.
 	secretLabel := Label{Sensitivity: "secret", Trust: "trusted", Provenance: "user"}
 	untrustedLabel := Label{Sensitivity: "public", Trust: "untrusted", Provenance: "external_package"}
+	// restricted is the OTHER sensitivity (besides secret) that trips Rust's
+	// ifc::check_flow on an untrusted sink, so it must be exercised too.
+	restrictedLabel := Label{Sensitivity: "restricted", Trust: "verified_internal", Provenance: "agent"}
 
 	sessions := []struct {
 		name string
@@ -188,27 +194,48 @@ func generateCorpus() []namedRequest {
 		{"secret+untrusted", SessionInfo{SecretSession: true, UntrustedContentThisTurn: true}},
 	}
 
-	labelSets := []struct {
-		name   string
-		labels []Label
+	// A non-empty label set is exercised in BOTH placements: as an immediate
+	// Intent.Labels and as an Intent.DerivedLabels (lineage-carried). The two
+	// reach the fallback's flow check via different fields (local_fallback.go
+	// merges them into effectiveLabels; hasDerivedSecret keys on DerivedLabels
+	// only), and the Rust oracle distinguishes them too, so a Go vs Rust gap
+	// could exist in one placement but not the other. Empty labels need no
+	// placement. "derived" here means the label rides in Intent.DerivedLabels.
+	type labelSet struct {
+		name      string
+		labels    []Label
+		isDerived bool
+	}
+	var labelSets []labelSet
+	labelSets = append(labelSets, labelSet{name: "no-labels"})
+	for _, base := range []struct {
+		tag   string
+		label Label
 	}{
-		{"no-labels", nil},
-		{"secret-label", []Label{secretLabel}},
-		{"untrusted-label", []Label{untrustedLabel}},
+		{"secret", secretLabel},
+		{"untrusted", untrustedLabel},
+		{"restricted", restrictedLabel},
+	} {
+		labelSets = append(labelSets,
+			labelSet{name: base.tag + "-label", labels: []Label{base.label}, isDerived: false},
+			labelSet{name: base.tag + "-derived", labels: []Label{base.label}, isDerived: true},
+		)
 	}
 
 	var corpus []namedRequest
 	for _, verb := range policy.AllVerbs {
 		for _, sess := range sessions {
 			for _, ls := range labelSets {
+				intent := Intent{Verb: verb, Target: "differential-corpus-target"}
+				if ls.isDerived {
+					intent.DerivedLabels = ls.labels
+				} else {
+					intent.Labels = ls.labels
+				}
 				req := &Request{
 					ToolName: "Bash",
-					Intent: Intent{
-						Verb:   verb,
-						Target: "differential-corpus-target",
-						Labels: ls.labels,
-					},
-					Session: sess.s,
+					Intent:   intent,
+					Session:  sess.s,
 					// Supply the production default lease (empty forbidden_verbs,
 					// matching lease.DefaultLease()). This is load-bearing: with NO
 					// lease, Go's forbiddenVerbs() parses an empty set AND Rust falls
