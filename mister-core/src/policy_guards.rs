@@ -144,6 +144,28 @@ fn untrusted_egress_deny(action: &str) -> PolicyResult {
     )
 }
 
+pub(super) fn evaluate_untrusted_publish_guardrails(
+    req: &EvalRequest,
+    verb: Verb,
+) -> Option<PolicyResult> {
+    if !(req.session_untrusted_read || req.session_untrusted_this_turn) {
+        return None;
+    }
+    match verb {
+        Verb::PushRemote => Some(policy_result(
+            Verdict::Deny,
+            "Code-host publish blocked — untrusted content was ingested this session (possible prompt injection); outbound publish is held. Verify intent, then `sir unlock`.",
+            RiskTier::R4,
+        )),
+        Verb::PushOrigin => Some(policy_result(
+            Verdict::Ask,
+            "Code-host publish after untrusted content requires approval. Verify intent, then `sir unlock`.",
+            RiskTier::R3,
+        )),
+        _ => None,
+    }
+}
+
 pub(super) fn evaluate_network_guardrails(
     req: &EvalRequest,
     lease: &Lease,

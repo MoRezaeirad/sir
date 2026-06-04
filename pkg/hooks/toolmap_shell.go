@@ -106,6 +106,7 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 				if segIntent.RemoteName != "" {
 					highest.RemoteName = segIntent.RemoteName
 				}
+				highest.IsForgePublish = highest.IsForgePublish || segIntent.IsForgePublish
 				if sensitiveRead == nil && segIntent.Verb == policy.VerbReadRef && segIntent.IsSensitive {
 					captured := segIntent
 					sensitiveRead = &captured
@@ -282,6 +283,18 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 			Verb:       verb,
 			Target:     trimmed,
 			RemoteName: remoteName,
+		}
+	}
+
+	// Code-host CLIs can publish code, diffs, release assets, gists, and PR/issue
+	// comments without invoking `git push`. Treat write-like forge commands as
+	// push_remote sinks so the same lineage and untrusted-content guards apply.
+	if remoteName, ok := hookclassify.ClassifyForgePublish(normalized); ok {
+		return Intent{
+			Verb:           policy.VerbPushRemote,
+			Target:         trimmed,
+			RemoteName:     remoteName,
+			IsForgePublish: true,
 		}
 	}
 

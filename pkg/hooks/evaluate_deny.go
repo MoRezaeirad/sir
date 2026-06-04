@@ -23,6 +23,13 @@ func formatDenyReason(originalReason string, intent Intent, state *session.State
 	case policy.VerbNetExternal:
 		return FormatBlockNetExternal(agentName, intent.Target, secretSince)
 	case policy.VerbPushRemote:
+		if !state.SecretSession {
+			return FormatBlock(
+				fmt.Sprintf("%s: %s", intent.Verb, intent.Target),
+				originalReason,
+				"sir doctor                       (diagnose the block)\n       sir why                          (explain the most recent decision)",
+			)
+		}
 		remote := intent.RemoteName
 		if remote == "" {
 			remote = "origin"

@@ -26,6 +26,11 @@ type Intent struct {
 	// compound like `git push 2>&1 | tail -5` would leak shell
 	// metacharacters into the fix suggestion).
 	RemoteName string
+
+	// IsForgePublish marks push_remote intents produced by code-host CLIs
+	// (gh/glab/hub/tea), not by a native git remote. It prevents synthetic remote
+	// names such as "github-cli" from participating in git remote auto-approval.
+	IsForgePublish bool
 }
 
 // MapToolToIntent maps a Claude Code tool call to a sir intent.
