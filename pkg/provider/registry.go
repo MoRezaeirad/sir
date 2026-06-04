@@ -263,6 +263,62 @@ func (r *Registry) Use(name string) error {
 	return r.Enable(name)
 }
 
+// SetAuthority sets a policy_provider's authority ("authoritative" or "advisory")
+// and, for authoritative, its on-failure verdict ("ask" or "deny"). Only a
+// policy_provider can be authoritative — any other kind is an error. onFailure is
+// ignored (cleared) when setting advisory. The provider must be enabled to be
+// authoritative, since only the active policy provider's verdict is consulted.
+func (r *Registry) SetAuthority(name, authority, onFailure string) error {
+	e, ok := r.ByName(name)
+	if !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if authority != AuthorityAuthoritative && authority != AuthorityAdvisory {
+		return fmt.Errorf("authority must be %q or %q, got %q", AuthorityAuthoritative, AuthorityAdvisory, authority)
+	}
+	if authority == AuthorityAuthoritative {
+		if e.Kind != KindPolicy {
+			return fmt.Errorf("only a %s can be authoritative; %q is a %s", KindPolicy, name, e.Kind)
+		}
+		if !e.Enabled {
+			return fmt.Errorf("provider %q must be enabled before it can be authoritative (run `sir provider use %s`)", name, name)
+		}
+		if onFailure != "" && onFailure != OnFailureAsk && onFailure != OnFailureDeny {
+			return fmt.Errorf("on-failure must be %q or %q, got %q", OnFailureAsk, OnFailureDeny, onFailure)
+		}
+	}
+	// Authority is EXCLUSIVE: at most one policy_provider may be authoritative.
+	// When promoting, clear authority on every OTHER policy provider first, so the
+	// registry can never hold two authoritative entries (which would make
+	// activeAuthoritativePolicyProvider's "first match" diverge from what the CLI
+	// reports as the decision point). Mirrors the exclusive-kind invariant Enable
+	// enforces for the active provider.
+	if authority == AuthorityAuthoritative {
+		for i := range r.Providers {
+			if r.Providers[i].Kind == KindPolicy && r.Providers[i].Name != name {
+				r.Providers[i].Authority = ""
+				r.Providers[i].OnFailure = ""
+			}
+		}
+	}
+	for i := range r.Providers {
+		if r.Providers[i].Name != name {
+			continue
+		}
+		if authority == AuthorityAuthoritative {
+			r.Providers[i].Authority = AuthorityAuthoritative
+			r.Providers[i].OnFailure = onFailure // "" → FailureVerdict() defaults to ask
+		} else {
+			// Demote to advisory: clear both fields so the entry reads as a plain
+			// advisory provider (omitempty).
+			r.Providers[i].Authority = ""
+			r.Providers[i].OnFailure = ""
+		}
+		return nil
+	}
+	return fmt.Errorf("provider %q not found", name)
+}
+
 // Swap atomically disables oldName and enables newName. Both must exist and
 // have the same kind.
 func (r *Registry) Swap(oldName, newName string) error {

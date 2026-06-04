@@ -20,6 +20,30 @@ func IsSirSelfCommand(cmd string) bool {
 	if strings.ToLower(parts[1]) == "mcp" {
 		return len(parts) >= 3 && strings.ToLower(parts[2]) == "wrap"
 	}
+	// `sir provider` MUTATING subcommands control which policy provider decides —
+	// including promoting one to AUTHORITATIVE (its verdict replaces the native
+	// decision). An injected agent that could run these through the sir binary
+	// would bypass the sirStateTamper file-write floor (sir does the write, not
+	// the agent) and self-amplify into installing its own decision-maker. So
+	// classify them as sir-self — a non-delegable floor that fires BEFORE the
+	// authoritative override (O3). Read-only subcommands (list/status/health/
+	// validate/test/scaffold) are deliberately NOT gated.
+	if strings.ToLower(parts[1]) == "provider" && len(parts) >= 3 {
+		mutatingProviderSubcommands := map[string]bool{
+			"authoritative": true,
+			"advisory":      true,
+			"use":           true,
+			"swap":          true,
+			"enable":        true,
+			"disable":       true,
+			"install":       true,
+			"uninstall":     true,
+			"configure":     true,
+		}
+		if mutatingProviderSubcommands[strings.ToLower(parts[2])] {
+			return true
+		}
+	}
 	protectedSubcommands := map[string]bool{
 		"install":      true,
 		"uninstall":    true,

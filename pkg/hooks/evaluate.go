@@ -248,6 +248,26 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		return resp, nil
 	}
 
+	// sir self-modification (sir CLI subcommands that change sir's posture or
+	// provider registry — including `sir provider authoritative`, which installs
+	// the policy decision-maker). This is a NON-DELEGABLE floor: it short-circuits
+	// BEFORE evaluatePolicy, so an authoritative policy provider CANNOT override
+	// it. Without this, an injected agent under a permissive authoritative
+	// provider could self-amplify by promoting its own provider (the O3 boundary).
+	// It runs via the sir binary, so it also bypasses the sirStateTamper file-write
+	// floor above — this is the shell-command counterpart. Ask (not deny): a human
+	// operator running these at a terminal is unaffected (the hook gates the
+	// AGENT's tool calls); an agent's attempt is held for explicit approval.
+	if intent.Verb == policy.VerbSirSelf {
+		resp := &HookResponse{
+			Decision: policy.VerdictAsk,
+			Reason:   "sir self-modification (`" + intent.Target + "`) requires your approval — this changes sir's own security posture and cannot be delegated to a policy provider.",
+			Floor:    true,
+		}
+		appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, resp.Decision, resp.Reason, state, l.ObserveOnly, ag)
+		return resp, nil
+	}
+
 	// Credential-helper / hooks-path config rewrite: the shell/config form of
 	// credential theft and hook redirection. Ask (Go-only restriction, allow->ask,
 	// never widens a deny; self-guards on verb risk so it never preempts a

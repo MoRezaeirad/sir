@@ -398,7 +398,16 @@ fixtures:
 
 ### Authoritative mode (PDP delegation)
 
-An operator can mark the active policy provider **authoritative** (registry field `authority: "authoritative"`). Its verdict then **replaces** the native `core.Evaluate` decision — including *granting* actions the native engine would gate. This is how OPA/Cedar/Rego becomes the decision point ("policy is the whole truth"), not just an advisory voice. It is an explicit operator act; a provider can never self-promote on the wire.
+An operator can mark the active policy provider **authoritative**. Its verdict then **replaces** the native `core.Evaluate` decision — including *granting* actions the native engine would gate. This is how OPA/Cedar/Rego becomes the decision point ("policy is the whole truth"), not just an advisory voice. It is an explicit operator act; a provider can never self-promote on the wire.
+
+```sh
+sir provider use opa                              # enable it as the active policy provider
+sir provider authoritative opa --on-failure deny  # promote (prints what it means, asks to confirm)
+sir provider status opa                           # verify: Authority: AUTHORITATIVE
+sir provider advisory opa                          # demote back to advisory (the default)
+```
+
+`--on-failure` selects the fail-closed verdict when the provider can't decide: `ask` (default) or `deny`. Only an **enabled** `policy_provider` can be authoritative. Add `--yes` to skip the confirmation in scripts.
 
 Scope and safety:
 - **Fail closed.** If an authoritative provider is unreachable, times out, returns empty/malformed output, or its registry is corrupt, SIR does **not** silently fall back to native-allow — it holds the action (`ask`, or `deny` in managed mode). Silence is never a grant.

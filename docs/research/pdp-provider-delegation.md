@@ -118,26 +118,30 @@ hard-invalidate on any posture transition.
 
 ## 7. Scope — what PDP does NOT delegate (non-delegable floors)
 
-The override sits AFTER `core.Evaluate`. Seven integrity/tamper floors
-short-circuit in `pkg/hooks/evaluate.go` (~lines 202–295) **before**
-`evaluatePolicy` runs, so they are NOT subject to the authoritative override. All
-are deny/ask — fail-safe (native gates where a provider might grant; never the
-reverse). Per operator decision, all seven stay non-delegable hard floors even
-under PDP:
+The override sits AFTER `core.Evaluate`. Integrity/tamper floors short-circuit in
+`pkg/hooks/evaluate.go` **before** `evaluatePolicy` runs, so they are NOT subject
+to the authoritative override. All are deny/ask — fail-safe (native gates where a
+provider might grant; never the reverse). Per operator decision, all stay
+non-delegable hard floors even under PDP:
 
-1. **sir-state-tamper** (`sirStateTamper`) — O3 self-amplification boundary.
-2. **posture-file writes** (`gitConfigSensitiveAsk` + posture gate) — #9.
-3. **outbound secret leak** (`outboundSecretLeak`) — the exfil wall.
-4. **DNS-tunnel exfil** (`dnsTunnelEscalation`).
-5. **tainted-MCP / injection** (`evaluateTaintedMCPServer`).
-6. **delegation-after-injection** (`evaluateDelegationHardDeny` + approval gate).
-7. **opaque-shell escalation** (`opaqueShellEscalation`).
+1. **sir-state-tamper** (`sirStateTamper`) — O3 self-amplification boundary
+   (agent writing into `~/.sir`).
+2. **sir self-modification** (`VerbSirSelf` floor) — shell-command counterpart of
+   row 1: `sir provider authoritative|use|swap|…` posture-changing subcommands run
+   via the sir binary (bypassing the row-1 file-write floor). O3-critical now the
+   `sir provider authoritative` CLI exists: without it an injected agent under a
+   permissive provider could promote its OWN provider and seize the decision
+   point. Held for approval (ask), pre-override.
+3. **posture-file writes** (#9) · 4. **outbound secret leak** — the exfil wall ·
+   5. **DNS-tunnel exfil** · 6. **tainted-MCP / injection** ·
+   7. **delegation-after-injection** · 8. **opaque-shell escalation**.
+   (Functions: `gitConfigSensitiveAsk`, `outboundSecretLeak`, `dnsTunnelEscalation`,
+   `evaluateTaintedMCPServer`, `evaluateDelegationHardDeny`, `opaqueShellEscalation`.)
 
 So "policy is the whole truth" applies to the `core.Evaluate` decision surface,
-NOT to these pre-decision integrity floors. **This is delegation of the core
-decision, not full delegation.** Specific floors (e.g. the exfil wall) could be
-made delegable later as deliberate, separate opt-ins; #9 and O3 (rows 1–2) must
-always stay hard, or PDP self-amplifies.
+NOT these pre-decision floors. **Delegation of the core decision, not full
+delegation.** Other floors (e.g. the exfil wall) could be made delegable later as
+deliberate opt-ins; the O3/self-amplification rows (1–3) must always stay hard.
 
 ## 8. Insertion point — substitution in the Go orchestrator
 
@@ -205,19 +209,13 @@ so registry mutation stays a posture-file write that asks, outside the PDP path
   permits this action," NOT "run outside the sandbox" — it still runs inside any
   effect_provider jail.
 
-## 10. Build plan & test net (correctness before capability before perf)
+## 10. Build plan & test net
 
-The structural safety valve: **explicit operator opt-in = zero default blast
-radius** — nothing changes until an authoritative provider is registered. Chunk 1
-(merged): inert plumbing — registry `authority`/`on_failure`, ledger fields (O4),
-`sir.policy_request.v1` (§2b). Chunk 2 (merged): authoritative path + fail-closed
-behind the opt-in, shipped WITH the adversarial net FIRST. Chunk 3: latency
-(warm-provider sidecar + raised timeout; cache deferred). The docs amendment ships
-WITH the behavior, never before or after.
-
-The net: for an authoritative provider every failure mode must yield ask-or-deny,
-never allow-where-native-would-gate — empty stdout (written first), unreachable,
-timeout, malformed, wrong schema version. Plus a *grant*-axis differential mirror:
-a sibling of `TestDifferentialFallbackNeverMorePermissive` (whose
-empty-`PolicyVerdicts` corpus stays valid) feeding authoritative verdicts, asserting
-Go/Rust compose them identically and floor-bypass only when one is present.
+Safety valve: **explicit operator opt-in = zero default blast radius.** Shipped in
+chunks behind the opt-in, fail-closed paths + adversarial net FIRST; docs amend
+WITH the behavior. The net asserts that for an authoritative provider every
+failure mode (empty stdout — written first — unreachable, timeout, malformed,
+wrong schema) yields ask-or-deny, never allow-where-native-would-gate. The
+`sir provider authoritative` CLI is itself gated as a non-delegable sir-self floor
+(§7 row 2) so an injected agent can't self-promote even under a permissive
+provider.

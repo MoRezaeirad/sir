@@ -42,7 +42,7 @@ tests/          higher-level integration coverage
 9. Posture-file writes always ask.
 10. Public guarantees need tests or contract checks.
 
-The authoritative-PDP override (Core model) is **scoped to the `core.Evaluate` decision only**. The seven integrity/tamper floors that short-circuit in `pkg/hooks/evaluate.go` *before* the override stay non-delegable even under PDP: sir-state-tamper, posture-file writes (#9), outbound secret leak, DNS-tunnel exfil, tainted-MCP/injection, delegation-after-injection, opaque-shell/git-config. A corrupt provider registry fails closed (#3); a missing one proceeds to native.
+The authoritative-PDP override (Core model) is **scoped to the `core.Evaluate` decision only**. The eight integrity/tamper floors that short-circuit in `pkg/hooks/evaluate.go` *before* the override stay non-delegable even under PDP: sir-state-tamper, sir self-modification (`VerbSirSelf` — posture-changing `sir` subcommands incl. `sir provider authoritative`, the shell-command counterpart of sir-state-tamper), posture-file writes (#9), outbound secret leak, DNS-tunnel exfil, tainted-MCP/injection, delegation-after-injection, opaque-shell/git-config. A corrupt provider registry fails closed (#3); a missing one proceeds to native.
 
 ## Supply chain rules
 
