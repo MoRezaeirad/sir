@@ -102,6 +102,29 @@ type Response struct {
 
 	ProviderVerdicts []policy.PolicyVerdict `json:"-"`
 	ProviderFailures []ProviderFailure      `json:"-"`
+
+	// --- PDP authoritative-override audit (Go-populated, not on the Rust wire).
+	// Set only when an authoritative policy_provider replaced the native decision.
+	// These flow to the ledger's ProviderPolicyEvidence so an override is
+	// forensically attributable. Empty AuthoritativeProvider means "no override".
+
+	// AuthoritativeActive is true when an authoritative policy_provider produced
+	// the final verdict (grant OR fail-closed). When set, the verdict is FINAL:
+	// no downstream native convenience layer (ask→allow suppression, observe-mode
+	// downgrades) may touch it. This is the structural seal that keeps the
+	// override actually holding through the rest of the hook pipeline.
+	AuthoritativeActive bool `json:"-"`
+	// AuthoritativeProvider is the name of the authoritative provider that decided.
+	AuthoritativeProvider string `json:"-"`
+	// AuthoritativeNativeBase is the verdict native SIR would have returned
+	// (native + advisory, floors applied) before the override — the audit delta.
+	AuthoritativeNativeBase string `json:"-"`
+	// AuthoritativeFloorsBypassed is true when a real authoritative verdict (not a
+	// fail-closed substitute) replaced the native decision.
+	AuthoritativeFloorsBypassed bool `json:"-"`
+	// AuthoritativeFailClosed is true when the override is a fail-closed substitute
+	// because the provider could not produce a decision.
+	AuthoritativeFailClosed bool `json:"-"`
 }
 
 // CoreBinaryPath is the path to the mister-core binary.

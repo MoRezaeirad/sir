@@ -18,23 +18,37 @@ import (
 var (
 	providerRegistryOnce   sync.Once
 	providerRegistryVal    *providerreg.Registry
+	providerRegistryErr    error
 	invokePolicyProvider   = providerreg.InvokePolicy
 	invokeAdvisoryProvider = providerreg.InvokeAdvisory
 )
 
 func loadProviderRegistry() *providerreg.Registry {
+	reg, _ := loadProviderRegistryChecked()
+	return reg
+}
+
+// loadProviderRegistryChecked returns the registry AND any load error. A load
+// error means the on-disk registry (~/.sir/providers.json) is CORRUPT or
+// unreadable — distinct from "no registry file" (providerreg.Load returns a nil
+// error for a missing file). Callers that gate a security decision on the
+// registry (the PDP authoritative path) MUST fail closed on a non-nil error: a
+// corrupt control-plane file cannot tell us whether an authoritative provider
+// was configured, so we must assume it was (non-negotiable #3 — corrupted state
+// fails closed; only a MISSING file seeds defaults).
+func loadProviderRegistryChecked() (*providerreg.Registry, error) {
 	providerRegistryOnce.Do(func() {
 		reg, err := providerreg.Load()
+		if reg == nil {
+			reg = &providerreg.Registry{}
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sir: load provider registry: %v\n", err)
-			reg, _ = providerreg.Load() // second attempt; returns empty on error
-			if reg == nil {
-				reg = &providerreg.Registry{}
-			}
 		}
 		providerRegistryVal = reg
+		providerRegistryErr = err
 	})
-	return providerRegistryVal
+	return providerRegistryVal, providerRegistryErr
 }
 
 // collectPolicyVerdicts calls all active policy_providers from the registry and
@@ -67,6 +81,13 @@ func collectPolicyVerdictsFromRegistry(reg *providerreg.Registry, req policy.Pol
 
 	// Registry-based policy providers (OPA, Cedar, Falco, custom packs, etc.)
 	for _, entry := range reg.Active(providerreg.KindPolicy) {
+		// An AUTHORITATIVE provider is resolved separately in the orchestrator
+		// (resolveAuthoritative) — its verdict REPLACES the native decision and
+		// must NOT be folded in here as advisory (that would both double-invoke it
+		// and let it merely escalate allow→ask instead of granting). Skip it.
+		if entry.IsAuthoritative() {
+			continue
+		}
 		verdicts, err := invokePolicyProvider(entry, req)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sir: policy provider %s: %v\n", entry.Name, err)

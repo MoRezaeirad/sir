@@ -43,6 +43,16 @@ func applyCoreEvaluationResult(coreResp *core.Response, intent Intent, labels co
 			hookResp.Floor = true
 		}
 	}
+
+	// An authoritative PDP verdict is FINAL on the wire — observe mode must not
+	// downgrade an authoritative deny/ask to allow. Observe mode exists for the
+	// NATIVE policy rollout; an operator who explicitly configured an
+	// authoritative provider opted that provider in as the decision, so its
+	// deny/ask is a real enforced decision, not a "would-block" to observe past.
+	// (applyThinkingGuard only tightens ask→deny, fail-safe, so needs no guard.)
+	if coreResp.AuthoritativeActive {
+		hookResp.Floor = true
+	}
 	return hookResp
 }
 

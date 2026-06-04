@@ -323,90 +323,102 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 	if err != nil {
 		return nil, err
 	}
-	if coreResp.Decision == policy.VerdictAsk {
-		if grant, ok := state.ConsumeApprovalGrant(string(intent.Verb), intent.Target); ok {
-			coreResp.Decision = policy.VerdictAllow
-			if grant.Reason != "" {
-				coreResp.Reason = "manual approval grant: " + grant.Reason
-			} else {
-				coreResp.Reason = "manual approval grant"
+	// STRUCTURAL SEAL: when an authoritative policy_provider produced the verdict
+	// (grant OR fail-closed), it is FINAL — none of the native convenience
+	// downgrades below (manual approval grant, SilentApprovedHosts, NPX/REMOTE/
+	// ENV ask-suppression) may turn it into an allow. Gating the whole region
+	// with one guard (rather than annotating each site) means a future downgrade
+	// block can't silently re-open this hole. The downgrades only ever turn
+	// ask→allow, so skipping them for an authoritative allow/deny is a no-op;
+	// the case that matters is an authoritative (or fail-closed) ASK, which must
+	// survive to the user. See pdp-provider-delegation.md §8.
+	if !coreResp.AuthoritativeActive {
+		if coreResp.Decision == policy.VerdictAsk {
+			if grant, ok := state.ConsumeApprovalGrant(string(intent.Verb), intent.Target); ok {
+				coreResp.Decision = policy.VerdictAllow
+				if grant.Reason != "" {
+					coreResp.Reason = "manual approval grant: " + grant.Reason
+				} else {
+					coreResp.Reason = "manual approval grant"
+				}
 			}
 		}
-	}
 
-	// NETALLOW-1: an already-allowlisted host asks on a clean session but is
-	// silently allowed under a *secret* session (an inverted gradient — the
-	// safer-context case is noisier). When the profile enables it and the
-	// session posture is clean, drop the redundant prompt. This narrows an ask
-	// to an allow for a host the operator already approved; the oracle's IFC
-	// flow check already ran, and it never touches a deny. Gated by profile
-	// (off in strict/managed) and the clean-context guard.
-	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbNetAllowlisted &&
-		l != nil && l.SilentApprovedHosts && autoLeaseSafeContext(state) {
-		coreResp.Decision = policy.VerdictAllow
-		coreResp.Reason = "approved host on a clean session — silent by policy (sir policy show)"
-	}
-
-	// NPX-1: an ephemeral package (npx) approved earlier this session stops
-	// re-prompting. The first run still asks; on observed approval PostToolUse
-	// records it, and subsequent runs of the SAME package under clean posture
-	// are silent. Gated by profile (ReuseSessionApprovals) and clean context.
-	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbRunEphemeral &&
-		l != nil && l.ReuseSessionApprovals && autoLeaseSafeContext(state) {
-		if state.EphemeralApproved(intent.Target) {
+		// NETALLOW-1: an already-allowlisted host asks on a clean session but is
+		// silently allowed under a *secret* session (an inverted gradient — the
+		// safer-context case is noisier). When the profile enables it and the
+		// session posture is clean, drop the redundant prompt. This narrows an ask
+		// to an allow for a host the operator already approved; the oracle's IFC
+		// flow check already ran, and it never touches a deny. Gated by profile
+		// (off in strict/managed) and the clean-context guard.
+		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbNetAllowlisted &&
+			l != nil && l.SilentApprovedHosts && autoLeaseSafeContext(state) {
 			coreResp.Decision = policy.VerdictAllow
-			coreResp.Reason = "ephemeral package approved earlier this session (sir policy show)"
-		} else {
-			state.MarkPendingEphemeralApproval(intent.Target)
+			coreResp.Reason = "approved host on a clean session — silent by policy (sir policy show)"
 		}
-	}
 
-	// REMOTE-1: a git push to an unapproved remote approved earlier this session
-	// stops re-prompting. First push still asks; on observed approval PostToolUse
-	// records the remote, and subsequent pushes to the SAME remote under clean
-	// posture are silent. Gated by profile (AutoLeaseApprovedRemotes).
-	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushRemote &&
-		intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
-		if state.PushRemoteApproved(intent.RemoteName) {
-			coreResp.Decision = policy.VerdictAllow
-			coreResp.Reason = "git remote approved earlier this session (sir policy show)"
-		} else {
-			state.MarkPendingPushRemote(intent.RemoteName)
+		// NPX-1: an ephemeral package (npx) approved earlier this session stops
+		// re-prompting. The first run still asks; on observed approval PostToolUse
+		// records it, and subsequent runs of the SAME package under clean posture
+		// are silent. Gated by profile (ReuseSessionApprovals) and clean context.
+		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbRunEphemeral &&
+			l != nil && l.ReuseSessionApprovals && autoLeaseSafeContext(state) {
+			if state.EphemeralApproved(intent.Target) {
+				coreResp.Decision = policy.VerdictAllow
+				coreResp.Reason = "ephemeral package approved earlier this session (sir policy show)"
+			} else {
+				state.MarkPendingEphemeralApproval(intent.Target)
+			}
 		}
-	}
 
-	// ORIGIN-1: a git push to an already-approved remote (origin) that was
-	// re-asked because the session previously held secret data. Mirrors REMOTE-1:
-	// the first push still asks (or denies in thinking mode), but once the
-	// developer approves via `sir approve --last` the remote is recorded in
-	// session and subsequent same-session pushes are silent.
-	//
-	// Security contract: autoLeaseSafeContext is false while SecretSession is
-	// true (active credentials), so auto-approval only fires after the secret
-	// context clears — preserving the IFC floor for the live-secret case.
-	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushOrigin &&
-		intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
-		if state.PushRemoteApproved(intent.RemoteName) {
-			coreResp.Decision = policy.VerdictAllow
-			coreResp.Reason = "git origin approved earlier this session (sir approve remote origin)"
-		} else {
-			state.MarkPendingPushRemote(intent.RemoteName)
+		// REMOTE-1: a git push to an unapproved remote approved earlier this session
+		// stops re-prompting. First push still asks; on observed approval PostToolUse
+		// records the remote, and subsequent pushes to the SAME remote under clean
+		// posture are silent. Gated by profile (AutoLeaseApprovedRemotes).
+		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushRemote &&
+			intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+			if state.PushRemoteApproved(intent.RemoteName) {
+				coreResp.Decision = policy.VerdictAllow
+				coreResp.Reason = "git remote approved earlier this session (sir policy show)"
+			} else {
+				state.MarkPendingPushRemote(intent.RemoteName)
+			}
 		}
-	}
 
-	// ENV-1: a targeted read of a provably-non-secret env var (`printenv PATH`)
-	// is silent-allowed under the personal profile — but ONLY the prompt is
-	// suppressed. The PostToolUse env-read taint path is left entirely untouched,
-	// so the secret-session kill-switch stays armed for any env read whose value
-	// turns out to be secret. Bulk dumps and any non-allowlisted var keep the ask
-	// (fail-closed). Gated by NarrowEnvReads (personal only) and clean context.
-	if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbEnvRead &&
-		l != nil && l.NarrowEnvReads && autoLeaseSafeContext(state) {
-		if v, ok := singleSafeEnvVarRead(intent.Target); ok {
-			coreResp.Decision = policy.VerdictAllow
-			coreResp.Reason = "read of non-secret environment variable " + v + " (policy: narrow-env-reads); taint stays armed for any secret-bearing read"
+		// ORIGIN-1: a git push to an already-approved remote (origin) that was
+		// re-asked because the session previously held secret data. Mirrors REMOTE-1:
+		// the first push still asks (or denies in thinking mode), but once the
+		// developer approves via `sir approve --last` the remote is recorded in
+		// session and subsequent same-session pushes are silent.
+		//
+		// Security contract: autoLeaseSafeContext is false while SecretSession is
+		// true (active credentials), so auto-approval only fires after the secret
+		// context clears — preserving the IFC floor for the live-secret case.
+		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushOrigin &&
+			intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+			if state.PushRemoteApproved(intent.RemoteName) {
+				coreResp.Decision = policy.VerdictAllow
+				coreResp.Reason = "git origin approved earlier this session (sir approve remote origin)"
+			} else {
+				state.MarkPendingPushRemote(intent.RemoteName)
+			}
 		}
-	}
+
+		// ENV-1: a targeted read of a provably-non-secret env var (`printenv PATH`)
+		// is silent-allowed under the personal profile — but ONLY the prompt is
+		// suppressed. The PostToolUse env-read taint path is left entirely untouched,
+		// so the secret-session kill-switch stays armed for any env read whose value
+		// turns out to be secret. Bulk dumps and any non-allowlisted var keep the ask
+		// (fail-closed). Gated by NarrowEnvReads (personal only) and clean context.
+		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbEnvRead &&
+			l != nil && l.NarrowEnvReads && autoLeaseSafeContext(state) {
+			if v, ok := singleSafeEnvVarRead(intent.Target); ok {
+				coreResp.Decision = policy.VerdictAllow
+				coreResp.Reason = "read of non-secret environment variable " + v + " (policy: narrow-env-reads); taint stays armed for any secret-bearing read"
+			}
+		}
+
+	} // end structural seal: native convenience downgrades skipped for authoritative verdicts
 
 	hookResp := applyCoreEvaluationResult(coreResp, intent, labels, state, ag)
 	overlayPendingInjectionWarning(hookResp, pendingInjectionDetail)
