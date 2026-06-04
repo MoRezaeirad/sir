@@ -56,6 +56,7 @@ func evaluateRawSecretReadGate(payload *HookPayload, intent Intent, labels core.
 		"Policy denies raw secret reads so credential values never enter the model context.",
 		fix,
 	)
+	seedSensitivePathLineage(projectRoot, state, intent.Target)
 	saveSessionBestEffort(state)
 	appendEvaluationLedgerEntry(projectRoot, payload, intent, labels, policy.VerdictDeny, reason, state, l.ObserveOnly, ag)
 	return &HookResponse{Decision: policy.VerdictDeny, Reason: reason}, true

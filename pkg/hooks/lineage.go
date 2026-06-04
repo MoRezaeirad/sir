@@ -31,6 +31,13 @@ func recordSensitiveReadEvidence(state *session.State, sourceRef string) {
 	state.RecordLineageEvidence("sensitive_read", sourceRef, "high", []session.LineageLabel{secretReadLineageLabel()})
 }
 
+func seedSensitivePathLineage(projectRoot string, state *session.State, target string) {
+	if state == nil || strings.TrimSpace(target) == "" {
+		return
+	}
+	state.AttachLineageLabelsToPath(ResolveTarget(projectRoot, target), []session.LineageLabel{secretReadLineageLabel()})
+}
+
 func recordCredentialOutputEvidence(state *session.State, sourceRef string, matches []CredentialMatch) {
 	state.RecordLineageEvidence("credential_output", sourceRef, highestCredentialConfidence(matches), []session.LineageLabel{secretOutputLineageLabel()})
 }

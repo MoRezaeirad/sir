@@ -86,3 +86,43 @@ func TestIsSensitivePath_WindowsCredentialPaths(t *testing.T) {
 		}
 	}
 }
+
+// TestMatchPath_RelativeDirGlobPrefix guards the fix for project-relative
+// directory-glob exclusions (e.g. "testdata/**") matching a canonicalized
+// ABSOLUTE path. Before the fix matchPath required the "testdata/" prefix at
+// the path root, so an absolute path like "/abs/proj/testdata/foo.pem" never
+// matched and the exclusion was silently bypassed.
+func TestMatchPath_RelativeDirGlobPrefix(t *testing.T) {
+	cases := []struct {
+		path, pattern string
+		want          bool
+	}{
+		{"/abs/proj/testdata/foo.pem", "testdata/**", true},
+		{"/abs/proj/fixtures/key.pem", "fixtures/**", true},
+		{"/abs/proj/sub/testdata/x", "testdata/**", true}, // any boundary
+		{"/abs/proj/mytestdata/foo.pem", "testdata/**", false}, // segment-anchored
+		{"/abs/proj/src/main.go", "testdata/**", false},
+		{"/etc/log/app.log", "/etc/**", true},  // absolute prefix preserved
+		{"/etclog/app.log", "/etc/**", false},  // absolute prefix anchored
+	}
+	for _, tc := range cases {
+		if got := matchPath(tc.path, tc.pattern); got != tc.want {
+			t.Errorf("matchPath(%q, %q) = %v, want %v", tc.path, tc.pattern, got, tc.want)
+		}
+	}
+}
+
+// TestIsSensitivePath_DirGlobExclusionBeatsBroadPattern confirms a directory
+// exclusion overrides a broad SensitivePaths match (*.pem) for an absolute path.
+func TestIsSensitivePath_DirGlobExclusionBeatsBroadPattern(t *testing.T) {
+	l := &lease.Lease{
+		SensitivePaths:          []string{"*.pem"},
+		SensitivePathExclusions: []string{"testdata/**"},
+	}
+	if IsSensitivePath("/abs/proj/testdata/foo.pem", l) {
+		t.Error("testdata/foo.pem should be excluded despite matching *.pem")
+	}
+	if !IsSensitivePath("/abs/proj/secrets/foo.pem", l) {
+		t.Error("secrets/foo.pem should remain sensitive (*.pem, not excluded)")
+	}
+}

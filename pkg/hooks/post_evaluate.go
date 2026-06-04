@@ -164,7 +164,7 @@ func postEvaluatePayload(payload *PostHookPayload, l *lease.Lease, state *sessio
 	}
 
 	alertFired := applyPostEvaluateOutputCredentialAnalysis(payload, state, projectRoot, ag)
-	propagateBashLineageMutation(projectRoot, state, payload)
+	propagateBashLineageMutationWithLease(projectRoot, state, l, payload)
 
 	// Check 1: If we had a pending install, compare sentinel hashes
 	if state.PendingInstall != nil && payload.ToolName == "Bash" {

@@ -227,16 +227,23 @@ func matchPath(path, pattern string) bool {
 		if len(parts) > 1 {
 			suffix = parts[1]
 		}
-		if prefix != "" && !strings.HasPrefix(path, strings.TrimRight(prefix, "/")) {
-			return false
+		// remaining is the path slice that the suffix (the part after **) is
+		// matched against. For a non-empty prefix it is the path with the prefix
+		// removed. The prefix may be anchored at the path root (e.g. "/etc/**")
+		// or be a project-relative segment (e.g. "testdata/**"); the latter must
+		// match at any /-segment boundary because callers canonicalize to an
+		// ABSOLUTE path before matching, so "testdata/" never appears at index 0.
+		remaining := path
+		if prefix != "" {
+			trimmedPrefix := strings.TrimRight(prefix, "/")
+			rest, matched := trimMatchedPrefix(path, trimmedPrefix)
+			if !matched {
+				return false
+			}
+			remaining = strings.TrimLeft(rest, "/")
 		}
 		if suffix != "" {
 			suffix = strings.TrimLeft(suffix, "/")
-			remaining := path
-			if prefix != "" {
-				remaining = strings.TrimPrefix(path, strings.TrimRight(prefix, "/"))
-				remaining = strings.TrimLeft(remaining, "/")
-			}
 			segments := strings.Split(remaining, "/")
 			for i := range segments {
 				subpath := strings.Join(segments[i:], "/")
@@ -255,6 +262,48 @@ func matchPath(path, pattern string) bool {
 		return true
 	}
 	return matchPathTail(path, pattern)
+}
+
+// trimMatchedPrefix reports whether prefix matches path and returns the
+// remainder after it. An absolute prefix ("/etc/log") must match at the path
+// root. A relative prefix ("testdata") matches at any /-segment boundary, so a
+// project-relative exclusion like "testdata/**" still matches the canonicalized
+// absolute path "/abs/proj/testdata/foo.pem". Both are anchored on segment
+// boundaries so "mytestdata" never matches a "testdata" prefix.
+func trimMatchedPrefix(path, prefix string) (string, bool) {
+	if prefix == "" {
+		return path, true
+	}
+	if strings.HasPrefix(prefix, "/") {
+		if path == prefix {
+			return "", true
+		}
+		if strings.HasPrefix(path, prefix+"/") {
+			return strings.TrimPrefix(path, prefix), true
+		}
+		return "", false
+	}
+	// Relative prefix: try it at each /-delimited segment boundary.
+	prefixSegs := strings.Split(strings.Trim(prefix, "/"), "/")
+	pathSegs := strings.Split(strings.TrimLeft(path, "/"), "/")
+	for start := 0; start+len(prefixSegs) <= len(pathSegs); start++ {
+		if segmentsEqual(pathSegs[start:start+len(prefixSegs)], prefixSegs) {
+			return strings.Join(pathSegs[start+len(prefixSegs):], "/"), true
+		}
+	}
+	return "", false
+}
+
+func segmentsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func matchPathTail(path, pattern string) bool {

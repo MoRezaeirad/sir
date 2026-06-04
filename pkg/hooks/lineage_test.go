@@ -86,6 +86,221 @@ func TestDerivedLineageSurvivesTurnBoundaryAndGatesPushOrigin(t *testing.T) {
 	}
 }
 
+func TestDeniedRawReadThenCopyPropagatesLineageAndGatesPushOrigin(t *testing.T) {
+	forceLocalPolicyFallback(t)
+	projectRoot := t.TempDir()
+	initGitRepo(t, projectRoot)
+
+	l := lease.DefaultLease()
+	l.DenyRawSecretReads = true
+	state := newTestSession(t, projectRoot)
+
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("OPENAI_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := evaluatePayload(&HookPayload{
+		ToolName:  "Read",
+		ToolInput: map[string]interface{}{"file_path": ".env"},
+		CWD:       projectRoot,
+	}, l, state, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload(read .env): %v", err)
+	}
+	if resp.Decision != "deny" {
+		t.Fatalf("raw .env read = %q, want deny", resp.Decision)
+	}
+
+	runCmd(t, projectRoot, "cp", ".env", "leak.txt")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp .env leak.txt"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp): %v", err)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "leak.txt")); len(got) != 1 || got[0] != secretReadLineageLabel() {
+		t.Fatalf("leak.txt labels = %+v, want copied secret lineage", got)
+	}
+
+	state.IncrementTurn()
+	if err := state.Save(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := session.Load(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, projectRoot, "add", "leak.txt")
+	runGit(t, projectRoot, "commit", "-m", "add leak")
+
+	resp, err = evaluatePayload(&HookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "git push origin main"},
+	}, l, reloaded, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload(push origin): %v", err)
+	}
+	if resp.Decision != "ask" {
+		t.Fatalf("git push origin with copied secret lineage = %q, want ask (reason=%s)", resp.Decision, resp.Reason)
+	}
+}
+
+func TestBlindSensitiveCopySeedsLineageAndBlocksPushRemote(t *testing.T) {
+	forceLocalPolicyFallback(t)
+	projectRoot := t.TempDir()
+	initGitRepo(t, projectRoot)
+
+	l := lease.DefaultLease()
+	state := newTestSession(t, projectRoot)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("OPENAI_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCmd(t, projectRoot, "cp", ".env", "leak.txt")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp .env leak.txt"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp): %v", err)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env")); len(got) != 1 || got[0] != secretReadLineageLabel() {
+		t.Fatalf(".env labels = %+v, want seeded secret source lineage", got)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "leak.txt")); len(got) != 1 || got[0] != secretReadLineageLabel() {
+		t.Fatalf("leak.txt labels = %+v, want copied secret lineage", got)
+	}
+	if err := state.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	runGit(t, projectRoot, "add", "leak.txt")
+	runGit(t, projectRoot, "commit", "-m", "add leak")
+
+	resp, err := evaluatePayload(&HookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "git push evil main"},
+	}, l, state, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload(push remote): %v", err)
+	}
+	if resp.Decision != "deny" {
+		t.Fatalf("git push remote with copied secret lineage = %q, want deny (reason=%s)", resp.Decision, resp.Reason)
+	}
+}
+
+func TestBlindSensitiveCopySeedsSecretLineageWhenSourceHasNonSecretLabel(t *testing.T) {
+	projectRoot := t.TempDir()
+	l := lease.DefaultLease()
+	state := newTestSession(t, projectRoot)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("OPENAI_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	nonSecretLabel := session.LineageLabel{Sensitivity: "public", Trust: "untrusted", Provenance: "web_fetch"}
+	state.AttachLineageLabelsToPath(ResolveTarget(projectRoot, ".env"), []session.LineageLabel{nonSecretLabel})
+	if err := state.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	runCmd(t, projectRoot, "cp", ".env", "leak.txt")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp .env leak.txt"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp): %v", err)
+	}
+
+	sourceLabels := state.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env"))
+	if !containsLineageLabel(sourceLabels, nonSecretLabel) || !containsLineageLabel(sourceLabels, secretReadLineageLabel()) {
+		t.Fatalf(".env labels = %+v, want existing non-secret label plus seeded secret lineage", sourceLabels)
+	}
+	destLabels := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "leak.txt"))
+	if !containsLineageLabel(destLabels, nonSecretLabel) || !containsLineageLabel(destLabels, secretReadLineageLabel()) {
+		t.Fatalf("leak.txt labels = %+v, want non-secret label plus copied secret lineage", destLabels)
+	}
+}
+
+func TestBlindSensitiveCopyThroughSymlinkSeedsResolvedLineage(t *testing.T) {
+	projectRoot := t.TempDir()
+	l := lease.DefaultLease()
+	state := newTestSession(t, projectRoot)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("OPENAI_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".env", filepath.Join(projectRoot, "config.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	runCmd(t, projectRoot, "cp", "config.txt", "leak.txt")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp config.txt leak.txt"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp symlink): %v", err)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env")); len(got) != 1 || got[0] != secretReadLineageLabel() {
+		t.Fatalf(".env labels = %+v, want seeded secret source lineage", got)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "leak.txt")); len(got) != 1 || got[0] != secretReadLineageLabel() {
+		t.Fatalf("leak.txt labels = %+v, want copied secret lineage", got)
+	}
+}
+
+func TestBlindSensitiveCopyRespectsSensitivePathExclusions(t *testing.T) {
+	projectRoot := t.TempDir()
+	l := lease.DefaultLease()
+	state := newTestSession(t, projectRoot)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env.example"), []byte("OPENAI_API_KEY=placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runCmd(t, projectRoot, "cp", ".env.example", "example-copy.txt")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp .env.example example-copy.txt"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp example): %v", err)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env.example")); len(got) != 0 {
+		t.Fatalf(".env.example labels = %+v, want none", got)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "example-copy.txt")); len(got) != 0 {
+		t.Fatalf("example-copy.txt labels = %+v, want none", got)
+	}
+}
+
+// A directory-glob exclusion (testdata/**, fixtures/**) must be honored even
+// though the source matches a broad SensitivePaths pattern like *.pem. The
+// source is canonicalized to an ABSOLUTE path before matching, so the
+// project-relative exclusion only matches if matchPath anchors the prefix at a
+// /-segment boundary rather than the path root. Regression for the matchPath
+// over-gating bug surfaced by the blind-copy lineage seed.
+func TestBlindCopyHonorsDirectoryGlobExclusion(t *testing.T) {
+	projectRoot := t.TempDir()
+	l := lease.DefaultLease()
+	state := newTestSession(t, projectRoot)
+	if err := os.MkdirAll(filepath.Join(projectRoot, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "testdata", "fixture.pem"), []byte("not-a-real-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runCmd(t, projectRoot, "cp", "testdata/fixture.pem", "leak.pem")
+	if _, err := postEvaluatePayload(&PostHookPayload{
+		ToolName:  "Bash",
+		ToolInput: map[string]interface{}{"command": "cp testdata/fixture.pem leak.pem"},
+	}, l, state, projectRoot); err != nil {
+		t.Fatalf("postEvaluatePayload(cp fixture): %v", err)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "testdata/fixture.pem")); len(got) != 0 {
+		t.Fatalf("excluded testdata/fixture.pem labels = %+v, want none (testdata/** exclusion)", got)
+	}
+	if got := state.DerivedLabelsForPath(ResolveTarget(projectRoot, "leak.pem")); len(got) != 0 {
+		t.Fatalf("copy of excluded fixture labels = %+v, want none", got)
+	}
+}
+
 func TestDerivedLineageSurvivesArchiveRenameAndLinkLaundering(t *testing.T) {
 	forceLocalPolicyFallback(t)
 	projectRoot := t.TempDir()
@@ -956,6 +1171,16 @@ func runGit(t *testing.T, dir string, args ...string) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+}
+
+func runCmd(t *testing.T, dir, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %v failed: %v\n%s", name, args, err, string(output))
 	}
 }
 
