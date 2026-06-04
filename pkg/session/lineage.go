@@ -82,6 +82,23 @@ func (s *State) AttachActiveEvidenceToPath(path string) {
 	s.DerivedFileLineage[path] = record
 }
 
+// AttachLineageLabelsToPath persists labels directly onto a canonical file path.
+// Use this when the source path itself must become a lineage root but no tool
+// output entered model context, such as a denied raw-secret read or a blind copy
+// from a sensitive file.
+func (s *State) AttachLineageLabelsToPath(path string, labels []LineageLabel) {
+	if path == "" || len(labels) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureLineageLocked()
+	record := s.DerivedFileLineage[path]
+	record.Labels = mergeLineageLabels(record.Labels, normalizeLineageLabels(labels))
+	record.UpdatedAt = time.Now()
+	s.DerivedFileLineage[path] = record
+}
+
 // DerivedLabelsForPath returns a copy of the labels attached to a derived path.
 func (s *State) DerivedLabelsForPath(path string) []LineageLabel {
 	s.mu.RLock()

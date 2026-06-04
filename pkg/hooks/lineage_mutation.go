@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	hookclassify "github.com/somoore/sir/pkg/hooks/classify"
+	"github.com/somoore/sir/pkg/lease"
 	"github.com/somoore/sir/pkg/session"
 )
 
@@ -19,6 +20,10 @@ import (
 // of direct file transforms that otherwise let a derived artifact be renamed or
 // linked under a fresh name and later lose its lineage surface.
 func propagateBashLineageMutation(projectRoot string, state *session.State, payload *PostHookPayload) {
+	propagateBashLineageMutationWithLease(projectRoot, state, nil, payload)
+}
+
+func propagateBashLineageMutationWithLease(projectRoot string, state *session.State, l *lease.Lease, payload *PostHookPayload) {
 	if state == nil || payload == nil || payload.ToolName != "Bash" {
 		return
 	}
@@ -29,18 +34,18 @@ func propagateBashLineageMutation(projectRoot string, state *session.State, payl
 	}
 
 	for _, segment := range splitBashScriptSegments(command) {
-		propagateBashLineageMutationSegment(projectRoot, state, segment)
+		propagateBashLineageMutationSegment(projectRoot, state, l, segment)
 	}
 }
 
-func propagateBashLineageMutationSegment(projectRoot string, state *session.State, command string) {
+func propagateBashLineageMutationSegment(projectRoot string, state *session.State, l *lease.Lease, command string) {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return
 	}
 	if inner, ok := extractShellWrapperInnerPreservingWhitespace(command); ok {
 		for _, segment := range splitBashScriptSegments(inner) {
-			propagateBashLineageMutationSegment(projectRoot, state, segment)
+			propagateBashLineageMutationSegment(projectRoot, state, l, segment)
 		}
 		return
 	}
@@ -59,8 +64,31 @@ func propagateBashLineageMutationSegment(projectRoot string, state *session.Stat
 		if symbolicLink {
 			sourcePath = resolveSymbolicLinkSource(destPath, source)
 		}
+		seedSensitiveMutationSourceLineage(projectRoot, state, l, sourcePath)
 		mirrorDerivedLineage(state, sourcePath, destPath)
 	}
+}
+
+func seedSensitiveMutationSourceLineage(projectRoot string, state *session.State, l *lease.Lease, sourcePath string) {
+	if l == nil || sourcePath == "" {
+		return
+	}
+	if containsLineageLabel(state.DerivedLabelsForPath(sourcePath), secretReadLineageLabel()) {
+		return
+	}
+	if !IsSensitivePath(sourcePath, l) && !IsSensitivePathResolvedIn(projectRoot, sourcePath, l) {
+		return
+	}
+	state.AttachLineageLabelsToPath(sourcePath, []session.LineageLabel{secretReadLineageLabel()})
+}
+
+func containsLineageLabel(labels []session.LineageLabel, want session.LineageLabel) bool {
+	for _, label := range labels {
+		if label == want {
+			return true
+		}
+	}
+	return false
 }
 
 func splitBashScriptSegments(cmd string) []string {

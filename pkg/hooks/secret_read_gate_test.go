@@ -46,6 +46,44 @@ func TestRawSecretReadGate_InlineRedactedView(t *testing.T) {
 	}
 }
 
+func TestRawSecretReadGate_SeedsSourceLineageWithoutActiveEvidence(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectRoot, ".env"), []byte("OPENAI_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatalf("seed .env: %v", err)
+	}
+	l := lease.DefaultLease()
+	l.DenyRawSecretReads = true
+	state := newTestSession(t, projectRoot)
+
+	resp, err := evaluatePayload(&HookPayload{
+		ToolName:  "Read",
+		ToolInput: map[string]interface{}{"file_path": ".env"},
+		CWD:       projectRoot,
+	}, l, state, projectRoot)
+	if err != nil {
+		t.Fatalf("evaluatePayload: %v", err)
+	}
+	if resp.Decision != "deny" {
+		t.Fatalf("raw .env read: decision = %q, want deny", resp.Decision)
+	}
+
+	labels := state.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env"))
+	if len(labels) != 1 || labels[0] != secretReadLineageLabel() {
+		t.Fatalf(".env labels = %+v, want secret source lineage", labels)
+	}
+	if got := len(state.ActiveEvidence); got != 0 {
+		t.Fatalf("denied raw read must not create active same-turn evidence, got %d record(s)", got)
+	}
+
+	reloaded, err := session.Load(projectRoot)
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if labels := reloaded.DerivedLabelsForPath(ResolveTarget(projectRoot, ".env")); len(labels) != 1 || labels[0] != secretReadLineageLabel() {
+		t.Fatalf("persisted .env labels = %+v, want secret source lineage", labels)
+	}
+}
+
 func TestRawSecretReadGate_DeniesUnderTeamProfile(t *testing.T) {
 	projectRoot := t.TempDir()
 	l := lease.DefaultLease()
