@@ -112,7 +112,7 @@ Primary files:
 
 ## 3. The Go layer may be stricter than Rust, never looser
 
-Go can add additional restrictions from facts Rust cannot see yet, but it exists to narrow authority, not to replace Rust as the policy oracle. This is the one invariant that keeps the policy surface reviewable: if you want to know the upper bound of what sir will allow, you only have to read `mister-core`. Parity is machine-checked by `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity`.
+Go can add additional restrictions from facts Rust cannot see yet, but it exists to narrow authority, not to replace Rust as the policy oracle. This is the one invariant that keeps the policy surface reviewable: if you want to know the upper bound of what sir will allow, you only have to read `mister-core`. The strongest machine check of this invariant is `TestDifferentialFallbackNeverMorePermissive`, which runs a broad corpus through both the real Rust binary and the Go fallback and fails if the fallback is ever looser. The fallback is currently at exact parity in the safe direction (the quarantine file `testdata/fallback-parity/known_divergences.txt` is empty); any regression fails as new drift. `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity` add per-case coverage.
 
 ## 4. The main state objects are small and important
 

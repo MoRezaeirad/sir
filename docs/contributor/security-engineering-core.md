@@ -49,7 +49,7 @@ When you need broader context, jump to [ARCHITECTURE.md](../../ARCHITECTURE.md) 
 
 ## Enforcement Gradient
 
-This is the machine-checked summary of the core enforcement gradient. The matching parity test in `pkg/core/doc_parity_test.go` treats these rows as an executable, contributor-facing contract for the local fallback path.
+This is the machine-checked summary of the core enforcement gradient. The matching parity test in `pkg/core/doc_parity_test.go` treats these rows as an executable, contributor-facing contract for the local fallback path. For the broader "fallback is never more permissive than the Rust oracle" guarantee across the full verb/session/label space, see `TestDifferentialFallbackNeverMorePermissive` and the shrink-only quarantine at `testdata/fallback-parity/known_divergences.txt`.
 
 ```text
 net_external         → ask (deny if secret session)
