@@ -357,6 +357,24 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 			coreResp.Reason = "approved host on a clean session — silent by policy (sir policy show)"
 		}
 
+		// MCPQUIET-1: mcp_network_unapproved is "friction, not containment" — it
+		// gates honest-server argument URLs only (a malicious MCP ignores the arg
+		// gate; real containment is the sandbox proxy). Silenced on a clean
+		// session. Narrows ask→allow only; never touches mcp_unapproved (the real
+		// unknown-server gate) or mcp_binary_drift (local supply-chain). Gated by
+		// profile (QuietMCPFriction, off in strict/managed) and the clean-context
+		// guard, so it never fires under a secret/tainted/elevated session. (The
+		// sibling mcp_onboarding case is silenced at its own preflight gate, which
+		// preserves the heightened first-call-exfil checkpoint — see
+		// evaluateMCPOnboarding.)
+		if coreResp.Decision == policy.VerdictAsk &&
+			intent.Verb == policy.VerbMcpNetworkUnapproved &&
+			l != nil && l.QuietMCPFriction && autoLeaseSafeContext(state) &&
+			!mcpOnboardingHeightened(l, state, extractMCPServerName(payload.ToolName)) {
+			coreResp.Decision = policy.VerdictAllow
+			coreResp.Reason = "MCP argument-host prompt on a clean session — silent by policy (friction, not containment; sir policy show)"
+		}
+
 		// NPX-1: an ephemeral package (npx) approved earlier this session stops
 		// re-prompting. The first run still asks; on observed approval PostToolUse
 		// records it, and subsequent runs of the SAME package under clean posture

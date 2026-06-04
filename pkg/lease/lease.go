@@ -166,6 +166,16 @@ type Lease struct {
 	// this fixes the inverted gradient). The IFC flow check still runs. Off in
 	// strict/managed (NETALLOW-1).
 	SilentApprovedHosts bool `json:"silent_approved_hosts,omitempty"`
+
+	// QuietMCPFriction silences two MCP asks the code itself documents as
+	// "friction, not containment" on a CLEAN session: mcp_onboarding (a
+	// new-server visibility heads-up — "a patient attacker can burn the counter
+	// in seconds") and mcp_network_unapproved (gates honest-server argument URLs
+	// only; a malicious MCP ignores the arg gate, and real containment is the
+	// sandbox proxy). It NEVER touches mcp_unapproved (the real unknown-server
+	// gate) or mcp_binary_drift, and only ever narrows ask→allow on a clean,
+	// untainted session (autoLeaseSafeContext). Off in strict/managed (MCPQUIET-1).
+	QuietMCPFriction bool `json:"quiet_mcp_friction,omitempty"`
 }
 
 // DefaultLease returns the default lease for sir v1.
@@ -301,6 +311,7 @@ func DefaultLease() *Lease {
 		ReuseSessionApprovals:    true,
 		NarrowEnvReads:           true,
 		SilentApprovedHosts:      true,
+		QuietMCPFriction:         true,
 	}
 }
 

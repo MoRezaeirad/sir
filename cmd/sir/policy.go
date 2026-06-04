@@ -337,6 +337,7 @@ func leaseForProfile(profile string) (*lease.Lease, error) {
 		l.ReuseSessionApprovals = false
 		l.NarrowEnvReads = false
 		l.SilentApprovedHosts = false
+		l.QuietMCPFriction = false
 		l.DenyRawSecretReads = true
 		// Strict keeps the hard egress block (NET-1/NET-2 only relaxes
 		// personal/team): external egress and DNS are forbidden, so the oracle
@@ -364,6 +365,7 @@ func leaseForProfile(profile string) (*lease.Lease, error) {
 		l.ReuseSessionApprovals = false
 		l.NarrowEnvReads = false
 		l.SilentApprovedHosts = false
+		l.QuietMCPFriction = false
 		l.DenyRawSecretReads = true
 		// Managed keeps the hard egress block (see strict).
 		l.ForbiddenVerbs = appendUniqueVerb(appendUniqueVerb(l.ForbiddenVerbs, policy.VerbNetExternal), policy.VerbDnsLookup)
