@@ -95,13 +95,46 @@ func derivedLabelsForIntent(projectRoot string, payload *HookPayload, intent Int
 	case "commit":
 		return coreLabelsFromLineage(state.DerivedLabelsForPaths(gitStagedPaths(projectRoot)))
 	case "push_origin", "push_remote":
-		return coreLabelsFromLineage(state.DerivedLabelsForPaths(gitOutgoingPaths(projectRoot, pushRemoteName(intent))))
+		paths := gitOutgoingPaths(projectRoot, pushRemoteName(intent))
+		if payload != nil && payload.ToolName == "Bash" {
+			paths = appendUniquePaths(paths, derivedPathsMentionedInCommand(projectRoot, state, intent.Target))
+		}
+		return coreLabelsFromLineage(state.DerivedLabelsForPaths(paths))
 	case "net_allowlisted", "net_external", "dns_lookup":
 		if payload != nil && payload.ToolName == "Bash" {
 			return coreLabelsFromLineage(state.DerivedLabelsForPaths(derivedPathsMentionedInCommand(projectRoot, state, intent.Target)))
 		}
 	}
 	return nil
+}
+
+func appendUniquePaths(paths []string, extra []string) []string {
+	if len(extra) == 0 {
+		return paths
+	}
+	seen := make(map[string]struct{}, len(paths)+len(extra))
+	out := make([]string, 0, len(paths)+len(extra))
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	for _, path := range extra {
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	return out
 }
 
 func gitStagedPaths(projectRoot string) []string {
@@ -201,17 +234,33 @@ func derivedPathsMentionedInCommand(projectRoot string, state *session.State, co
 	tokens := strings.Fields(command)
 	matched := make([]string, 0, len(tokens))
 	for _, token := range tokens {
-		cleaned := strings.Trim(token, "\"'`@,;:()[]{}<>|&")
-		if cleaned == "" {
-			continue
-		}
-		resolved := ResolveTarget(projectRoot, cleaned)
-		for _, path := range derivedPaths {
-			if resolved == path || cleaned == filepath.Base(path) {
-				matched = append(matched, path)
-				break
+		for _, cleaned := range lineagePathCandidatesFromToken(token) {
+			resolved := ResolveTarget(projectRoot, cleaned)
+			for _, path := range derivedPaths {
+				if resolved == path || cleaned == filepath.Base(path) {
+					matched = append(matched, path)
+					break
+				}
 			}
 		}
 	}
 	return matched
+}
+
+func lineagePathCandidatesFromToken(token string) []string {
+	cleaned := strings.Trim(token, "\"'`@,;:()[]{}<>|&")
+	if cleaned == "" {
+		return nil
+	}
+	candidates := []string{cleaned}
+	if idx := strings.IndexByte(cleaned, '='); idx >= 0 && idx+1 < len(cleaned) {
+		candidates = append(candidates, strings.TrimPrefix(cleaned[idx+1:], "@"))
+	}
+	if strings.HasPrefix(cleaned, "@") && len(cleaned) > 1 {
+		candidates = append(candidates, strings.TrimPrefix(cleaned, "@"))
+	}
+	if strings.HasPrefix(cleaned, "file://") && len(cleaned) > len("file://") {
+		candidates = append(candidates, strings.TrimPrefix(cleaned, "file://"))
+	}
+	return candidates
 }

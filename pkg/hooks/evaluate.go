@@ -414,7 +414,7 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		// records the remote, and subsequent pushes to the SAME remote under clean
 		// posture are silent. Gated by profile (AutoLeaseApprovedRemotes).
 		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushRemote &&
-			intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+			intent.RemoteName != "" && !intent.IsForgePublish && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
 			if state.PushRemoteApproved(intent.RemoteName) {
 				coreResp.Decision = policy.VerdictAllow
 				coreResp.Reason = "git remote approved earlier this session (sir policy show)"
@@ -433,7 +433,7 @@ func evaluatePayload(payload *HookPayload, l *lease.Lease, state *session.State,
 		// true (active credentials), so auto-approval only fires after the secret
 		// context clears — preserving the IFC floor for the live-secret case.
 		if coreResp.Decision == policy.VerdictAsk && intent.Verb == policy.VerbPushOrigin &&
-			intent.RemoteName != "" && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
+			intent.RemoteName != "" && !intent.IsForgePublish && l != nil && l.AutoLeaseApprovedRemotes && autoLeaseSafeContext(state) {
 			if state.PushRemoteApproved(intent.RemoteName) {
 				coreResp.Decision = policy.VerdictAllow
 				coreResp.Reason = "git origin approved earlier this session (sir approve remote origin)"

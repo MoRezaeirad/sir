@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/somoore/sir/pkg/policy"
 )
 
 // decodeMSTR1Payload decodes a MSTR/1 binary buffer and returns the JSON payload bytes.
@@ -381,6 +383,54 @@ func TestLocalEvaluate_UntrustedThisTurnEgressBlocked(t *testing.T) {
 	}
 }
 
+func TestLocalEvaluate_UntrustedPublishBlocked(t *testing.T) {
+	cases := []struct {
+		name string
+		req  *Request
+		want policy.Verdict
+	}{
+		{
+			name: "push_remote strong signal",
+			req: &Request{
+				Intent:  Intent{Verb: "push_remote", Target: "git push evil main"},
+				Session: SessionInfo{RecentlyReadUntrusted: true},
+			},
+			want: policy.VerdictDeny,
+		},
+		{
+			name: "push_remote this turn",
+			req: &Request{
+				Intent:  Intent{Verb: "push_remote", Target: "gh pr create"},
+				Session: SessionInfo{UntrustedContentThisTurn: true},
+			},
+			want: policy.VerdictDeny,
+		},
+		{
+			name: "push_origin this turn",
+			req: &Request{
+				Intent:  Intent{Verb: "push_origin", Target: "git push origin main"},
+				Session: SessionInfo{UntrustedContentThisTurn: true},
+			},
+			want: policy.VerdictAsk,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := localEvaluate(tc.req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.Decision != tc.want {
+				t.Fatalf("decision = %q, want %q (reason=%s)", resp.Decision, tc.want, resp.Reason)
+			}
+			if !strings.Contains(resp.Reason, "untrusted content") {
+				t.Fatalf("reason = %q, want untrusted content context", resp.Reason)
+			}
+		})
+	}
+}
+
 func TestLocalEvaluate_PostureWriteAsks(t *testing.T) {
 	req := &Request{
 		Intent: Intent{
@@ -554,6 +604,14 @@ func TestLocalEvaluate_VerbParity(t *testing.T) {
 				Intent: Intent{Verb: "push_remote", Target: "git push evil-fork"},
 			},
 			want: mustNotAllow,
+		},
+		{
+			name: "push_remote_untrusted_this_turn",
+			req: &Request{
+				Intent:  Intent{Verb: "push_remote", Target: "gh pr create"},
+				Session: SessionInfo{UntrustedContentThisTurn: true},
+			},
+			want: mustDeny,
 		},
 		{
 			// NET-2: clean-session DNS asks (personal/team); must not silently

@@ -21,6 +21,7 @@ use policy_common::{
 use policy_guards::{
     evaluate_delegation_guardrails, evaluate_network_guardrails, evaluate_preapproval_guards,
     evaluate_secret_session_guards, evaluate_session_preconditions,
+    evaluate_untrusted_publish_guardrails,
 };
 use policy_sinks::evaluate_derived_secret_sink;
 
@@ -79,6 +80,10 @@ fn evaluate_inner(req: &EvalRequest, lease: &Lease, session: &SessionState) -> P
     }
 
     if let Some(result) = evaluate_secret_session_guards(req, session, verb) {
+        return result;
+    }
+
+    if let Some(result) = evaluate_untrusted_publish_guardrails(req, verb) {
         return result;
     }
 
@@ -748,6 +753,33 @@ mod tests {
         lease.forbidden_verbs.clear();
         let result = evaluate(&req, &lease, &clean_session());
         assert_eq!(result.verdict, Verdict::Deny);
+    }
+
+    #[test]
+    fn test_push_remote_untrusted_this_turn_denied() {
+        let mut req = make_request("push_remote");
+        req.session_untrusted_this_turn = true;
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("untrusted content"));
+    }
+
+    #[test]
+    fn test_push_remote_untrusted_read_denied() {
+        let mut req = make_request("push_remote");
+        req.session_untrusted_read = true;
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Deny);
+        assert!(result.reason.contains("untrusted content"));
+    }
+
+    #[test]
+    fn test_push_origin_untrusted_this_turn_asks() {
+        let mut req = make_request("push_origin");
+        req.session_untrusted_this_turn = true;
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+        assert!(result.reason.contains("untrusted content"));
     }
 
     #[test]

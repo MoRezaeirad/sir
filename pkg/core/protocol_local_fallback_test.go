@@ -306,6 +306,24 @@ func TestLocalEvaluate_PushOrigin_WasSecret_Ask(t *testing.T) {
 	}
 }
 
+func TestLocalEvaluate_PushAfterUntrusted(t *testing.T) {
+	remote := &Request{
+		Intent:  Intent{Verb: "push_remote", Target: "gh pr create"},
+		Session: SessionInfo{UntrustedContentThisTurn: true},
+	}
+	if resp, _ := localEvaluate(remote); resp.Decision != "deny" {
+		t.Fatalf("push_remote after untrusted content = %q, want deny (reason=%s)", resp.Decision, resp.Reason)
+	}
+
+	origin := &Request{
+		Intent:  Intent{Verb: "push_origin", Target: "git push origin main"},
+		Session: SessionInfo{UntrustedContentThisTurn: true},
+	}
+	if resp, _ := localEvaluate(origin); resp.Decision != "ask" {
+		t.Fatalf("push_origin after untrusted content = %q, want ask (reason=%s)", resp.Decision, resp.Reason)
+	}
+}
+
 // TestEncodeMSTR1_CarriesWasSecret confirms the high-water mark is serialized
 // onto the wire as session_was_secret so the oracle can act on it.
 func TestEncodeMSTR1_CarriesWasSecret(t *testing.T) {

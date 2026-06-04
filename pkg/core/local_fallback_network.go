@@ -73,6 +73,9 @@ func localEvaluateNetwork(req *Request, effectiveLabels []Label) *Response {
 		if req.Session.SecretSession {
 			return &Response{Decision: policy.VerdictDeny, Reason: "This session may contain credentials. Push to unapproved remotes is blocked."}
 		}
+		if req.Session.RecentlyReadUntrusted || req.Session.UntrustedContentThisTurn {
+			return untrustedPublishResponse(policy.VerbPushRemote)
+		}
 		return &Response{Decision: policy.VerdictAsk, Reason: "Git push to unapproved remote requires approval."}
 	case policy.VerbPushOrigin:
 		if req.Session.SecretSession {
@@ -86,6 +89,9 @@ func localEvaluateNetwork(req *Request, effectiveLabels []Label) *Response {
 		// of silently allowing (taint is monotonic across turns).
 		if req.Session.WasSecret {
 			return &Response{Decision: policy.VerdictAsk, Reason: "This session previously contained credentials. Push to approved remote requires approval."}
+		}
+		if req.Session.RecentlyReadUntrusted || req.Session.UntrustedContentThisTurn {
+			return untrustedPublishResponse(policy.VerbPushOrigin)
 		}
 	case policy.VerbNetAllowlisted:
 		if deniesFlowToVerb(effectiveLabels, req.Intent.Verb) {
@@ -134,4 +140,14 @@ func untrustedEgressDeny(action string) *Response {
 		reason = "DNS lookup blocked — untrusted content was ingested this session (possible prompt injection); outbound requests are held. Verify intent, then `sir unlock`."
 	}
 	return &Response{Decision: policy.VerdictDeny, Reason: reason}
+}
+
+func untrustedPublishResponse(verb policy.Verb) *Response {
+	reason := "Code-host publish blocked — untrusted content was ingested this session (possible prompt injection); outbound publish is held. Verify intent, then `sir unlock`."
+	decision := policy.VerdictDeny
+	if verb == policy.VerbPushOrigin {
+		decision = policy.VerdictAsk
+		reason = "Code-host publish after untrusted content requires approval. Verify intent, then `sir unlock`."
+	}
+	return &Response{Decision: decision, Reason: reason}
 }
