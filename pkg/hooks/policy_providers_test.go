@@ -120,9 +120,15 @@ func TestProviderFailureTimedOut(t *testing.T) {
 
 func stubPolicyProviderInvocation(t *testing.T, fn func(providerreg.Entry, policy.PolicyRequest) ([]policy.PolicyVerdict, error)) {
 	t.Helper()
-	old := invokePolicyProvider
+	// Swap BOTH the advisory and authoritative invocation indirections so a test
+	// stub applies whether the code path is advisory collection or the
+	// authoritative resolver (which uses the larger-timeout entry point).
+	oldPolicy := invokePolicyProvider
+	oldAuth := invokeAuthoritativeProvider
 	invokePolicyProvider = fn
+	invokeAuthoritativeProvider = fn
 	t.Cleanup(func() {
-		invokePolicyProvider = old
+		invokePolicyProvider = oldPolicy
+		invokeAuthoritativeProvider = oldAuth
 	})
 }

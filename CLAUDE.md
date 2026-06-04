@@ -9,7 +9,8 @@ Security runtime for AI coding agents. Go CLI, Rust policy oracle, quiet on norm
 
 - `sir` collects facts, manages state, writes the ledger, and talks to host-agent hooks.
 - `mister-core` decides allow / deny / ask from normalized inputs.
-- Go may add restrictions from facts Rust cannot see. Go must never widen a Rust deny.
+- Go may add restrictions from facts Rust cannot see. With no authoritative policy provider, Go must never widen a Rust deny.
+- Exception (scoped): an **authoritative** policy provider, when the operator explicitly configures one (registry `authority: "authoritative"`), *replaces* the native `core.Evaluate` decision and may widen/grant it. The "never widen" invariant holds unchanged in the default no-authoritative-provider case. See [docs/research/pdp-provider-delegation.md](docs/research/pdp-provider-delegation.md).
 
 ## Layout
 
@@ -40,6 +41,8 @@ tests/          higher-level integration coverage
 8. Hook handlers return well-formed deny JSON on internal errors.
 9. Posture-file writes always ask.
 10. Public guarantees need tests or contract checks.
+
+The authoritative-PDP override (Core model) is **scoped to the `core.Evaluate` decision only**. The seven integrity/tamper floors that short-circuit in `pkg/hooks/evaluate.go` *before* the override stay non-delegable even under PDP: sir-state-tamper, posture-file writes (#9), outbound secret leak, DNS-tunnel exfil, tainted-MCP/injection, delegation-after-injection, opaque-shell/git-config. A corrupt provider registry fails closed (#3); a missing one proceeds to native.
 
 ## Supply chain rules
 

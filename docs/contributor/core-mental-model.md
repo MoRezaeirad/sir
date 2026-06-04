@@ -49,7 +49,7 @@ Go also enforces preflight and session-level gates when it can see facts Rust ca
 - Pending-injection posture.
 - Managed-mode command refusal.
 
-These Go checks may narrow a Rust verdict. They must never widen a Rust deny into `ask` or `allow`.
+These Go checks may narrow a Rust verdict. With no authoritative policy provider configured, they must never widen a Rust deny into `ask` or `allow`. The one scoped exception is an operator-configured **authoritative** policy provider, whose verdict replaces the native `core.Evaluate` decision and may widen it (see §3 and [pdp-provider-delegation.md](../research/pdp-provider-delegation.md)).
 
 ### Hook mediation
 
@@ -112,7 +112,7 @@ Primary files:
 
 ## 3. The Go layer may be stricter than Rust, never looser
 
-Go can add additional restrictions from facts Rust cannot see yet, but it exists to narrow authority, not to replace Rust as the policy oracle. This is the one invariant that keeps the policy surface reviewable: if you want to know the upper bound of what sir will allow, you only have to read `mister-core`. The strongest machine check of this invariant is `TestDifferentialFallbackNeverMorePermissive`, which runs a broad corpus through both the real Rust binary and the Go fallback and fails if the fallback is ever looser. The fallback is currently at exact parity in the safe direction (the quarantine file `testdata/fallback-parity/known_divergences.txt` is empty); any regression fails as new drift. `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity` add per-case coverage.
+Go can add additional restrictions from facts Rust cannot see yet, but it exists to narrow authority, not to replace Rust as the policy oracle — **except** when an operator configures an authoritative policy provider, which deliberately replaces the native decision (see §3 of the lease-and-policy layer and [pdp-provider-delegation.md](../research/pdp-provider-delegation.md)). This invariant keeps the policy surface reviewable: to know the upper bound of what sir will allow, you read `mister-core` **or**, when one is configured, the active authoritative policy provider. The strongest machine check of the no-provider path is `TestDifferentialFallbackNeverMorePermissive`, which runs a broad corpus through both the real Rust binary and the Go fallback and fails if the fallback is ever looser. Its corpus sends **empty** `PolicyVerdicts`, so it exercises the no-authoritative-provider path and the authoritative override does not affect it. The fallback is currently at exact parity in the safe direction (the quarantine file `testdata/fallback-parity/known_divergences.txt` is empty); any regression fails as new drift. `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity` add per-case coverage.
 
 ## 4. The main state objects are small and important
 

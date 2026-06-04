@@ -97,7 +97,7 @@ func resolveAuthoritative(entry providerreg.Entry, req policy.PolicyRequest, man
 		}
 	}
 
-	verdicts, err := invokePolicyProvider(entry, req)
+	verdicts, err := invokeAuthoritativeProvider(entry, req)
 	if err != nil {
 		// Unreachable / spawn error / timeout / malformed output all surface here.
 		return failClosed(err.Error())

@@ -21,6 +21,10 @@ var (
 	providerRegistryErr    error
 	invokePolicyProvider   = providerreg.InvokePolicy
 	invokeAdvisoryProvider = providerreg.InvokeAdvisory
+	// invokeAuthoritativeProvider uses the larger authoritative timeout (the
+	// verdict IS the decision). Separate indirection so tests can stub it and so
+	// advisory collection keeps the tight 200ms budget.
+	invokeAuthoritativeProvider = providerreg.InvokePolicyAuthoritative
 )
 
 func loadProviderRegistry() *providerreg.Registry {

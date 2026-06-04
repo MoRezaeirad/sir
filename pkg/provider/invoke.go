@@ -21,6 +21,17 @@ const (
 	advisoryTimeout = 250 * time.Millisecond // slightly slower than policy; risk scoring is heavier
 	effectTimeout   = 5 * time.Second
 	healthTimeout   = 3 * time.Second
+
+	// authoritativePolicyTimeout is the budget for an AUTHORITATIVE policy
+	// provider (PDP delegation). It is larger than the 200ms advisory budget
+	// because an authoritative provider's verdict IS the decision (a timeout
+	// fails closed to ask/deny, so a too-tight budget re-introduces friction —
+	// the very thing PDP exists to reduce). It is still CAPPED so a hung provider
+	// becomes a fast fail-closed ask rather than a hang. Authoritative providers
+	// are expected to run WARM (a localhost sidecar/daemon, not a cold spawn per
+	// call); under that expectation p50 is well under this cap. See
+	// docs/research/pdp-provider-delegation.md (latency).
+	authoritativePolicyTimeout = 1 * time.Second
 )
 
 // AdvisoryRisk is the normalized risk assessment returned by an advisory_provider.
@@ -90,11 +101,22 @@ type policyResponse struct {
 }
 
 // InvokePolicy spawns the provider process, sends a PolicyRequest, and returns
-// the resulting PolicyVerdicts. Times out after 200ms. Provider errors are
-// returned to the caller; hook collection records them as non-fatal failures
-// and evaluation falls back to native floors.
+// the resulting PolicyVerdicts. Times out after 200ms (advisory budget).
+// Provider errors are returned to the caller; hook collection records them as
+// non-fatal failures and evaluation falls back to native floors.
 func InvokePolicy(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), policyTimeout)
+	return invokePolicyWithTimeout(e, req, policyTimeout)
+}
+
+// InvokePolicyAuthoritative is InvokePolicy with the larger authoritative budget
+// (the provider's verdict IS the decision, so a timeout fails closed). Used only
+// for an authoritative policy_provider; advisory providers keep the 200ms budget.
+func InvokePolicyAuthoritative(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, error) {
+	return invokePolicyWithTimeout(e, req, authoritativePolicyTimeout)
+}
+
+func invokePolicyWithTimeout(e Entry, req policy.PolicyRequest, timeout time.Duration) ([]policy.PolicyVerdict, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	payload, err := json.Marshal(policyRequest{
