@@ -1,0 +1,28 @@
+# Known Go-fallback ↔ Rust mister-core divergences (shrink-only quarantine).
+#
+# Each line: <verb>/<session>/<labelset> <rust_verdict> <go_verdict>
+# meaning the Go fallback (local_fallback*.go) returns go_verdict where the Rust
+# oracle returns the STRICTER rust_verdict — i.e. the fallback is more permissive
+# than the oracle for this input.
+#
+# This file is consumed by TestDifferentialFallbackNeverMorePermissive. The test
+# FAILS if:
+#   (a) a divergence appears that is NOT listed here          (new drift), or
+#   (b) a listed divergence changes verdicts                  (drift moved), or
+#   (c) a listed case no longer diverges                      (stale entry —
+#       delete the line; the quarantine must only ever shrink).
+#
+# CURRENT STATE: EMPTY. With a valid corpus, the Go fallback is never more
+# permissive than the Rust oracle across all 588 (verb × session × label) cases —
+# i.e. exact parity in the safe direction. Any future drift fails the test as
+# NEW DRIFT and must be fixed in local_fallback*.go, not quarantined here.
+#
+# HISTORY (why this was once large): the first revision of the corpus fed
+# mister-core invalid IFC provenance values ("local"/"external") that its parser
+# rejects, AND sent no lease. Both made Rust return artificial denies (a parse
+# error and a built-in default-deny, respectively) that core.Evaluate surfaces as
+# fail-closed denies — so the test was comparing the Go fallback against Rust
+# *errors*, not Rust *policy*, fabricating ~250 phantom divergences. The corpus
+# now uses valid provenance (user / external_package) and supplies the production
+# default lease (lease.DefaultLease(), empty forbidden_verbs). With realistic
+# input the divergence set is empty. A reviewer (Codex) caught the provenance bug.

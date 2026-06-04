@@ -52,19 +52,62 @@ func exclusiveKind(kind string) bool {
 
 // Entry is a registered provider with its runtime state.
 type Entry struct {
-	RegistryID   string         `json:"registry_id"`
-	Name         string         `json:"name"`
-	Kind         string         `json:"kind"`
-	Version      string         `json:"version"`
-	ManifestPath string         `json:"manifest_path"`
-	Entrypoint   string         `json:"entrypoint"` // absolute, resolved at install time
-	Platforms    []string       `json:"platforms,omitempty"`
-	Capabilities map[string]any `json:"capabilities,omitempty"`
-	Enabled      bool           `json:"enabled"`
-	Health       Health         `json:"health"`
-	InstalledAt  time.Time      `json:"installed_at"`
-	InstalledBy  string         `json:"installed_by"`
+	RegistryID   string            `json:"registry_id"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"`
+	Version      string            `json:"version"`
+	ManifestPath string            `json:"manifest_path"`
+	Entrypoint   string            `json:"entrypoint"` // absolute, resolved at install time
+	Platforms    []string          `json:"platforms,omitempty"`
+	Capabilities map[string]any    `json:"capabilities,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Health       Health            `json:"health"`
+	InstalledAt  time.Time         `json:"installed_at"`
+	InstalledBy  string            `json:"installed_by"`
 	Config       map[string]string `json:"config,omitempty"` // key=val provider-specific config
+
+	// Authority controls whether a policy_provider's verdict is advisory (the
+	// default and only behavior today) or authoritative (PDP delegation — its
+	// verdict replaces the native decision, see docs/research/pdp-provider-delegation.md).
+	// Empty or "advisory" => advisory (current behavior). "authoritative" is an
+	// explicit operator opt-in; a provider can NEVER self-promote via its wire
+	// response. omitempty so existing registries load unchanged as advisory.
+	// Only meaningful for policy_provider. Plumbing only in Chunk 1: the
+	// authoritative compose path is not wired until Chunk 2.
+	Authority string `json:"authority,omitempty"`
+
+	// OnFailure selects the fail-closed verdict when an AUTHORITATIVE provider
+	// cannot produce a decision (unreachable, timeout, empty, malformed): "ask"
+	// (default, personal/team) or "deny". Managed mode forces "deny" regardless.
+	// Empty => "ask". Has no effect on advisory providers. Chunk 1 plumbing only.
+	OnFailure string `json:"on_failure,omitempty"`
+}
+
+// Authority values for Entry.Authority.
+const (
+	AuthorityAdvisory      = "advisory"      // default: verdict is advisory only
+	AuthorityAuthoritative = "authoritative" // PDP: verdict replaces native decision
+)
+
+// OnFailure values for Entry.OnFailure (authoritative providers only).
+const (
+	OnFailureAsk  = "ask"  // default: hold for human approval when provider can't decide
+	OnFailureDeny = "deny" // hard-block when provider can't decide (forced in managed mode)
+)
+
+// IsAuthoritative reports whether this entry is an authoritative policy_provider.
+// Only policy_provider can be authoritative; any other kind is always advisory.
+func (e Entry) IsAuthoritative() bool {
+	return e.Kind == KindPolicy && e.Authority == AuthorityAuthoritative
+}
+
+// FailureVerdict returns the fail-closed verdict for this provider ("ask" or
+// "deny"). Defaults to "ask"; callers apply the managed-mode "deny" override.
+func (e Entry) FailureVerdict() string {
+	if e.OnFailure == OnFailureDeny {
+		return OnFailureDeny
+	}
+	return OnFailureAsk
 }
 
 // Health holds the last health check result for a provider.
@@ -218,6 +261,62 @@ func (r *Registry) Disable(name string) error {
 // providers of the same kind. Equivalent to Enable for non-exclusive kinds.
 func (r *Registry) Use(name string) error {
 	return r.Enable(name)
+}
+
+// SetAuthority sets a policy_provider's authority ("authoritative" or "advisory")
+// and, for authoritative, its on-failure verdict ("ask" or "deny"). Only a
+// policy_provider can be authoritative — any other kind is an error. onFailure is
+// ignored (cleared) when setting advisory. The provider must be enabled to be
+// authoritative, since only the active policy provider's verdict is consulted.
+func (r *Registry) SetAuthority(name, authority, onFailure string) error {
+	e, ok := r.ByName(name)
+	if !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if authority != AuthorityAuthoritative && authority != AuthorityAdvisory {
+		return fmt.Errorf("authority must be %q or %q, got %q", AuthorityAuthoritative, AuthorityAdvisory, authority)
+	}
+	if authority == AuthorityAuthoritative {
+		if e.Kind != KindPolicy {
+			return fmt.Errorf("only a %s can be authoritative; %q is a %s", KindPolicy, name, e.Kind)
+		}
+		if !e.Enabled {
+			return fmt.Errorf("provider %q must be enabled before it can be authoritative (run `sir provider use %s`)", name, name)
+		}
+		if onFailure != "" && onFailure != OnFailureAsk && onFailure != OnFailureDeny {
+			return fmt.Errorf("on-failure must be %q or %q, got %q", OnFailureAsk, OnFailureDeny, onFailure)
+		}
+	}
+	// Authority is EXCLUSIVE: at most one policy_provider may be authoritative.
+	// When promoting, clear authority on every OTHER policy provider first, so the
+	// registry can never hold two authoritative entries (which would make
+	// activeAuthoritativePolicyProvider's "first match" diverge from what the CLI
+	// reports as the decision point). Mirrors the exclusive-kind invariant Enable
+	// enforces for the active provider.
+	if authority == AuthorityAuthoritative {
+		for i := range r.Providers {
+			if r.Providers[i].Kind == KindPolicy && r.Providers[i].Name != name {
+				r.Providers[i].Authority = ""
+				r.Providers[i].OnFailure = ""
+			}
+		}
+	}
+	for i := range r.Providers {
+		if r.Providers[i].Name != name {
+			continue
+		}
+		if authority == AuthorityAuthoritative {
+			r.Providers[i].Authority = AuthorityAuthoritative
+			r.Providers[i].OnFailure = onFailure // "" → FailureVerdict() defaults to ask
+		} else {
+			// Demote to advisory: clear both fields so the entry reads as a plain
+			// advisory provider (omitempty).
+			r.Providers[i].Authority = ""
+			r.Providers[i].OnFailure = ""
+		}
+		return nil
+	}
+	return fmt.Errorf("provider %q not found", name)
 }
 
 // Swap atomically disables oldName and enables newName. Both must exist and

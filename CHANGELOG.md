@@ -7,6 +7,16 @@ sir is experimental. Each release listed here is a snapshot of the "sandbox in r
 
 This file tracks shipped releases only. Historical planning notes, launch copy, and exploratory findings live in git history rather than on the production repo surface.
 
+## v0.1.5 — 2026-06-02 — Codex hook fixes and cross-project recovery
+
+This patch fixes the Codex hook integration and adds a cwd-independent recovery path, verified against codex-cli 0.135 and 0.136. The Claude-only install posture is unchanged; non-Claude adapters remain documented but disabled for hook installation in this build.
+
+- **Codex feature flag.** sir now writes the canonical `hooks` feature flag instead of the deprecated `codex_hooks`, and migrates an existing legacy key during install. The migration never silently disables hooks when a stale `hooks = false` is present.
+- **Codex PermissionRequest format.** sir emits the nested `hookSpecificOutput.decision.behavior` shape Codex 0.135/0.136 require; the legacy `{decision:"block"}` shape is ignored by Codex for that event. Verified live: Codex honors a sir deny and blocks the action.
+- **Documented the exec limitation.** `codex exec` (non-interactive) does not fire user hooks on 0.135/0.136, even with `--dangerously-bypass-hook-trust`; interactive `codex` does fire them after the hook-trust prompt. `docs/user/codex-support.md` states this explicitly.
+- **`sir doctor` hook-trust diagnostic.** Reports whether Codex has a recorded trust entry (non-empty `trusted_hash`) per event, without overclaiming certified trust (Codex re-verifies the hash at session start).
+- **`sir doctor --all`.** Clears deny-all and refreshes posture baselines across every project — recovery that no longer requires running `sir doctor` from the exact wedged project directory. The EMERGENCY message leads with the security prompt before pointing at `--all`.
+
 ## v0.1.4 — 2026-06-01 — provider verdict evidence and redacted exports
 
 This release makes policy-provider participation observable without letting provider output blur the native sir decision. Rust still owns the final deterministic allow / ask / deny verdict, while kernel replay now records enough structured evidence to audit why provider verdicts mattered or did not matter.
@@ -227,22 +237,6 @@ Four-part expansion of the MCP gating surface, ordered least-risk to most-opt-in
 
 This is the first tagged public release of sir. The project is **pre-alpha**: the core "sandbox in reverse" model ships end to end, but the threat model is narrow, several detections are heuristic, and the public API (both CLI and policy verbs) is expected to change without notice. Do not deploy on production infrastructure.
 
-**What ships**
+**What ships:** hook-mediated intent enforcement across Claude Code, Gemini CLI, and Codex; a zero-dependency Rust policy oracle (`mister-core`) with Go-fallback parity; information-flow labeling and taint propagation; MCP defense (credential, injection, elicitation, proxy); posture tamper detection with auto-restore and session-fatal deny-all; a hash-chained append-only ledger with `sir log verify`; optional below-hook containment via `sir run`; a full operator CLI; idempotent install/update with a downgrade guard and SHA-pinned `rustup-init`; and release trust (reproducible builds, cosign signing, SBOMs, AIBOM). See git history for the full first-release detail.
 
-- **Hook-mediated intent enforcement** across Claude Code (reference support, 10 hooks), Gemini CLI (near-parity, 6 hooks), and Codex (limited, 5 hooks, Bash-only surface).
-- **Zero-dependency Rust policy oracle** (`mister-core`) with hand-maintained parity tests against a restrictive Go fallback.
-- **Information flow control** labeling on sensitive reads; taint propagation into writes, commits, pushes, and delegation in the same session.
-- **MCP defense**: credential-leak scanning on arguments (runs regardless of secret-session state), injection scanning on responses with server tainting, elicitation harvest detection, and an MCP proxy path.
-- **Posture tamper detection** on `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, and in-repo posture files, with auto-restore from a canonical copy and session-fatal deny-all on tamper.
-- **Hash-chained append-only ledger** (v2.1 length-prefixed encoding, SHA-256) with `sir log verify` and per-entry redaction.
-- **Optional below-hook containment** via `sir run <agent>` — macOS `sandbox-exec` proxy, Linux `unshare --net` namespace. Measured preview, not the primary shipped boundary.
-- **Operator surface**: `sir status`, `sir doctor`, `sir explain`, `sir why`, `sir log`, `sir audit`, `sir trace`, `sir mcp`, `sir unlock`, `sir allow-host`, `sir allow-remote`, `sir trust`.
-- **Install and update discipline**: `install.sh` is idempotent and the only supported update path, with a downgrade guard gated on `SIR_ALLOW_DOWNGRADE=1`. `rustup-init` is pinned by SHA-256 across Linux x86_64, Linux arm64, macOS x86_64, and macOS arm64.
-- **Release trust**: reproducible-build verification, signed artifacts via Sigstore cosign (keyless OIDC), CycloneDX and SPDX SBOMs, and an AIBOM zero-ML declaration. SLSA provenance is wired but deferred pending an upstream `slsa-github-generator` fix.
-- **CI hygiene**: GitHub Actions pinned by commit SHA, least-privilege permissions, `persist-credentials: false`, CodeQL Go SAST on every PR and push, gosec on every PR and every main commit, `cargo-deny`, `govulncheck`, reproducible-build diff check, OpenSSF Scorecard workflow, and zizmor Actions linting.
-
-**Known limitations:** MCP injection detection is regex-based, turn boundaries use a 30-second gap heuristic, shell classification is prefix-aware rather than a full POSIX parser, default leases are intentionally permissive for first-run usability, `sir run <agent>` is preview containment, and single-maintainer tradeoffs are documented in `docs/contributor/supply-chain-policy.md`.
-
-**For operators:** Install with `curl -sSL https://raw.githubusercontent.com/somoore/sir/main/install.sh | bash` then `sir install`; verify with `sir status && sir doctor && sir log verify`; uninstall with `sir uninstall` (state preserved at `~/.sir/` for forensic review).
-
-See [README.md](README.md) for the full quickstart and limitations, [ARCHITECTURE.md](ARCHITECTURE.md) for the Go + Rust split, [docs/research/sir-threat-model.md](docs/research/sir-threat-model.md) for the threat model, and [docs/research/security-verification-guide.md](docs/research/security-verification-guide.md) for the verification path.
+**Known limitations:** MCP injection detection is regex-based, turn boundaries use a 30-second gap heuristic, shell classification is prefix-aware, default leases are permissive for first-run usability, and `sir run` is preview containment. See [README.md](README.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [docs/research/sir-threat-model.md](docs/research/sir-threat-model.md).

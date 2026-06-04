@@ -108,7 +108,7 @@ Good contribution areas: agent adapters, Cursor and MCP conformance fixtures, st
 
 ```bash
 # Requires [Rust 1.94.0](https://rustup.rs/) (pinned in rust-toolchain.toml)
-# Requires [Go 1.22+](https://go.dev/dl/) with toolchain auto-fetch to go1.25.10
+# Requires [Go 1.22+](https://go.dev/dl/) with toolchain auto-fetch to go1.25.11
 make contributor-check
 ```
 

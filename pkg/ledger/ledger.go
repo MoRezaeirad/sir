@@ -83,6 +83,24 @@ type ProviderVerdictRecord struct {
 	RulesMatched []string `json:"rules_matched,omitempty"`
 	Reason       string   `json:"reason,omitempty"`
 	Used         bool     `json:"used"`
+
+	// --- PDP authoritative-override audit (set only when this record is an
+	// authoritative provider that REPLACED the native decision). Under full PDP
+	// delegation the audit trail is the safety net: it must be forensically
+	// obvious that the provider — not native SIR — made the call, and what native
+	// would have done. omitempty so advisory records are byte-for-byte unchanged.
+
+	// Authoritative is true when this provider's verdict replaced the native one.
+	Authoritative bool `json:"authoritative,omitempty"`
+	// NativeBaseVerdict is what native SIR (native + advisory, floors applied)
+	// would have returned before the override — the audit delta.
+	NativeBaseVerdict string `json:"native_base_verdict,omitempty"`
+	// FloorsBypassed is true when a real authoritative verdict (not a fail-closed
+	// substitute) replaced the native decision — i.e. native floors were skipped.
+	FloorsBypassed bool `json:"floors_bypassed,omitempty"`
+	// FailClosed is true when the override was a fail-closed substitute because
+	// the provider could not produce a decision (unreachable/timeout/empty/etc.).
+	FailClosed bool `json:"fail_closed,omitempty"`
 }
 
 // ProviderFailureRecord is a single provider failure as persisted in the

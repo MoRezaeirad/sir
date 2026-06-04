@@ -21,6 +21,17 @@ const (
 	advisoryTimeout = 250 * time.Millisecond // slightly slower than policy; risk scoring is heavier
 	effectTimeout   = 5 * time.Second
 	healthTimeout   = 3 * time.Second
+
+	// authoritativePolicyTimeout is the budget for an AUTHORITATIVE policy
+	// provider (PDP delegation). It is larger than the 200ms advisory budget
+	// because an authoritative provider's verdict IS the decision (a timeout
+	// fails closed to ask/deny, so a too-tight budget re-introduces friction —
+	// the very thing PDP exists to reduce). It is still CAPPED so a hung provider
+	// becomes a fast fail-closed ask rather than a hang. Authoritative providers
+	// are expected to run WARM (a localhost sidecar/daemon, not a cold spawn per
+	// call); under that expectation p50 is well under this cap. See
+	// docs/research/pdp-provider-delegation.md (latency).
+	authoritativePolicyTimeout = 1 * time.Second
 )
 
 // AdvisoryRisk is the normalized risk assessment returned by an advisory_provider.
@@ -68,6 +79,14 @@ type policyRequest struct {
 	Taint           []string `json:"taint,omitempty"`
 	Enforceability  string   `json:"enforceability,omitempty"`
 	Mode            string   `json:"mode,omitempty"`
+
+	// Additive session/integrity signals (schema string stays v0; see
+	// InvokePolicy and policy.PolicyRequest). omitempty → invisible to v0
+	// providers on a clean session. See pdp-provider-delegation.md §2b.
+	SessionSecret            bool `json:"session_secret,omitempty"`
+	SessionWasSecret         bool `json:"session_was_secret,omitempty"`
+	SessionUntrustedRead     bool `json:"session_untrusted_read,omitempty"`
+	SessionUntrustedThisTurn bool `json:"session_untrusted_this_turn,omitempty"`
 }
 
 // policyResponse is the wire format received from a policy_provider on stdout.
@@ -82,15 +101,34 @@ type policyResponse struct {
 }
 
 // InvokePolicy spawns the provider process, sends a PolicyRequest, and returns
-// the resulting PolicyVerdicts. Times out after 200ms. Provider errors are
-// returned to the caller; hook collection records them as non-fatal failures
-// and evaluation falls back to native floors.
+// the resulting PolicyVerdicts. Times out after 200ms (advisory budget).
+// Provider errors are returned to the caller; hook collection records them as
+// non-fatal failures and evaluation falls back to native floors.
 func InvokePolicy(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), policyTimeout)
+	return invokePolicyWithTimeout(e, req, policyTimeout)
+}
+
+// InvokePolicyAuthoritative is InvokePolicy with the larger authoritative budget
+// (the provider's verdict IS the decision, so a timeout fails closed). Used only
+// for an authoritative policy_provider; advisory providers keep the 200ms budget.
+func InvokePolicyAuthoritative(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, error) {
+	return invokePolicyWithTimeout(e, req, authoritativePolicyTimeout)
+}
+
+func invokePolicyWithTimeout(e Entry, req policy.PolicyRequest, timeout time.Duration) ([]policy.PolicyVerdict, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	payload, err := json.Marshal(policyRequest{
-		Op:              "evaluate",
+		Op: "evaluate",
+		// Schema string stays v0: the new session/integrity fields below are
+		// ADDITIVE and omitempty, so a strict v0 provider (the bundled packs
+		// advertise schema_version_supported: sir.policy_request.v0) sees only
+		// extra optional keys it can ignore and keeps working unchanged. Bumping
+		// the version string would break those providers — their verdicts would
+		// vanish and advisory escalation would silently stop until every pack is
+		// upgraded. v1-aware providers detect the new fields by presence, not by
+		// the version string.
 		SchemaVersion:   "sir.policy_request.v0",
 		Action:          req.Action,
 		Target:          req.Target,
@@ -99,6 +137,11 @@ func InvokePolicy(e Entry, req policy.PolicyRequest) ([]policy.PolicyVerdict, er
 		Taint:           req.Taint,
 		Enforceability:  req.Enforceability,
 		Mode:            req.Mode,
+
+		SessionSecret:            req.SessionSecret,
+		SessionWasSecret:         req.SessionWasSecret,
+		SessionUntrustedRead:     req.SessionUntrustedRead,
+		SessionUntrustedThisTurn: req.SessionUntrustedThisTurn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal policy request: %w", err)

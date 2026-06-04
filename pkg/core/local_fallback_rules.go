@@ -79,6 +79,45 @@ func localEvaluateCommandRisk(req *Request) *Response {
 		return &Response{Decision: policy.VerdictAsk, Reason: fmt.Sprintf("Delete/link targeting a security settings file requires approval. (%s)", req.Intent.Target)}
 	case policy.VerbMcpCredentialLeak:
 		return &Response{Decision: policy.VerdictDeny, Reason: fmt.Sprintf("Credential pattern detected in MCP tool arguments. Blocked. (%s)", req.Intent.Target)}
+	case policy.VerbCredentialDetected, policy.VerbElicitationHarvest, policy.VerbMcpInjectionDetected:
+		// Detection/alert verbs that the fallback previously had no case for —
+		// they fell through to the permissive default (allow), while Rust
+		// (default_unknown_verb_result) returns at least ask. This gates them so
+		// the fallback is never more permissive than the oracle.
+		//
+		// The Rust oracle returns ASK for these verbs even with a labeled flow
+		// (the safe-direction differential test confirms the fallback is never
+		// looser). This branch is INTENTIONALLY STRICTER than the oracle: it
+		// returns DENY when a label carries secret/restricted sensitivity or
+		// untrusted trust, and ASK otherwise — never allow. Stricter-than-oracle
+		// is permitted on the degraded fallback path (deny ≤ ask); the invariant
+		// is only that Go must not be looser than Rust.
+		if detectionVerbDenies(req.Intent.Labels, req.Intent.DerivedLabels) {
+			return &Response{Decision: policy.VerdictDeny, Reason: fmt.Sprintf("Detection signal carries sensitive or untrusted data; flow blocked. (%s)", req.Intent.Target)}
+		}
+		return &Response{Decision: policy.VerdictAsk, Reason: fmt.Sprintf("A security detection signal was raised and needs your review. (%s)", req.Intent.Target)}
 	}
 	return nil
+}
+
+// detectionVerbDenies reports whether the combined labels would fail the IFC flow
+// check that Rust applies to the detection/alert verbs (credential_detected,
+// elicitation_harvest, mcp_injection_detected). Any secret/restricted sensitivity
+// or untrusted trust makes Rust deny; otherwise it asks.
+func detectionVerbDenies(labels, derived []Label) bool {
+	for _, label := range labels {
+		if labelIsSensitiveOrUntrusted(label) {
+			return true
+		}
+	}
+	for _, label := range derived {
+		if labelIsSensitiveOrUntrusted(label) {
+			return true
+		}
+	}
+	return false
+}
+
+func labelIsSensitiveOrUntrusted(label Label) bool {
+	return label.Sensitivity == "secret" || label.Sensitivity == "restricted" || label.Trust == "untrusted"
 }

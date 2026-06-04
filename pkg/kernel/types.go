@@ -198,6 +198,32 @@ type ProviderPolicyEvidence struct {
 	RulesMatched []string `json:"rules_matched,omitempty"`
 	Reason       string   `json:"reason,omitempty"`
 	Used         bool     `json:"used"`
+
+	// --- PDP authoritative-decision audit fields (Chunk 1 plumbing; populated by
+	// Chunk 2). Under full PDP delegation the audit trail is the safety net: when
+	// an authoritative provider decides, the ledger must make it forensically
+	// obvious that the PROVIDER — not native SIR — allowed an action native would
+	// have gated, and what native would have done instead. All omitempty so
+	// advisory decisions and pre-PDP ledgers are byte-for-byte unchanged.
+
+	// DecidedBy is "authoritative:<name>" when this provider's verdict replaced
+	// the native decision; empty for advisory composition.
+	DecidedBy string `json:"decided_by,omitempty"`
+
+	// NativeFloorsBypassed is true when an authoritative verdict caused native
+	// integrity floors to be skipped ("policy is the whole truth").
+	NativeFloorsBypassed bool `json:"native_floors_bypassed,omitempty"`
+
+	// NativeBaseVerdict records what native SIR would have returned, so an audit
+	// can see the delta an authoritative provider introduced (e.g. native=deny,
+	// provider granted allow). Verdict string only — never raw values (#7).
+	NativeBaseVerdict string `json:"native_base_verdict,omitempty"`
+
+	// FailClosed and FailureReason record the fail-closed path: an authoritative
+	// provider that could not decide (unreachable/timeout/empty/malformed) and the
+	// ask/deny SIR applied instead of silently granting.
+	FailClosed    bool   `json:"fail_closed,omitempty"`
+	FailureReason string `json:"failure_reason,omitempty"`
 }
 
 // ProviderEvidence records a provider invocation that did not produce usable

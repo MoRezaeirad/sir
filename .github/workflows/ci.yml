@@ -22,7 +22,7 @@ env:
   GOFLAGS: "-trimpath"
   # Pin toolchain versions
   RUST_VERSION: "1.94.0"
-  GO_VERSION: "1.25.10"
+  GO_VERSION: "1.25.11"
   GOVULNCHECK_VERSION: "v1.1.4"
   GOSEC_VERSION: "v2.25.0"
   # Opt into Node.js 24 now ahead of the June 2, 2026 forced migration
@@ -229,7 +229,7 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         if: needs.changes.outputs.go == 'true'
         with:
-          go-version: "1.25.10"
+          go-version: "1.25.11"
           cache: false  # no external Go deps → no go.sum → caching not applicable
 
       - name: Ensure Linux namespace prerequisites
@@ -323,6 +323,16 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/sir ./cmd/sir
           # Run parity check: CI fails if Go and Rust disagree on any harness case.
           bin/sir harness run --engine both harness/fixtures/cases
+
+      - name: Differential fallback parity (Go fallback never looser than Rust)
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.rust == 'true'
+        # Builds the real mister-core binary into target/release/ (where the test's
+        # locateMisterCore looks) and runs the differential corpus through BOTH the
+        # binary and the Go fallback. SIR_REQUIRE_DIFFERENTIAL=1 turns a missing
+        # binary into a HARD FAILURE so this can never silently skip and read green.
+        run: |
+          cargo build --release -p mister-core
+          SIR_REQUIRE_DIFFERENTIAL=1 go test ./pkg/core/ -run TestDifferentialFallbackNeverMorePermissive -count=1 -v
 
       - name: Capture-tier honesty gate
         if: needs.changes.outputs.go == 'true' || needs.changes.outputs.rust == 'true'
@@ -437,7 +447,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version: "1.25.10"
+          go-version: "1.25.11"
           cache: false
 
       - name: Install gosec
@@ -468,7 +478,7 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         if: needs.changes.outputs.go == 'true'
         with:
-          go-version: "1.25.10"
+          go-version: "1.25.11"
           cache: false
 
       - name: Build (static, stripped)
@@ -532,7 +542,7 @@ jobs:
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         if: needs.changes.outputs.go == 'true' || needs.changes.outputs.platform == 'true'
         with:
-          go-version: "1.25.10"
+          go-version: "1.25.11"
           cache: false
 
       - name: Ensure Linux namespace prerequisites

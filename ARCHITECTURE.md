@@ -58,7 +58,7 @@ Operator CLI, hook handlers, state, telemetry, ledger, and runtime containment. 
 - Persists ledger, session, lineage, and runtime state.
 - Calls `mister-core` over the MSTR/1 subprocess boundary.
 
-> **Note:** If `mister-core` is missing from `PATH`, Go falls back to a deliberately restrictive local evaluator. The fallback is held to parity with Rust by `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity` — it is never more permissive than Rust, and a crashed or non-zero `mister-core` is a hard deny, not a silent pass.
+> **Note:** If `mister-core` is missing from `PATH`, Go falls back to a deliberately restrictive local evaluator. On that path Go *is* the policy engine, so the fallback must never be more permissive than Rust. This is enforced mechanically by `TestDifferentialFallbackNeverMorePermissive` (`pkg/core/differential_fallback_test.go`), which runs a broad verb × session × label corpus (with realistic IFC labels and the production default lease) through both the real `mister-core` binary and the Go fallback and fails if the fallback ever returns a looser verdict. The fallback is currently at exact parity in the safe direction — the divergence quarantine (`testdata/fallback-parity/known_divergences.txt`) is empty — and any future drift fails the test as new drift. (The older `TestLocalEvaluate_VerbParity` and `TestEnforcementGradientDocParity` remain as per-case contracts.) A crashed or non-zero `mister-core` is a hard deny, not a silent pass.
 
 ## 3. Enforcement layers
 

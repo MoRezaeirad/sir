@@ -100,6 +100,13 @@ func appendEvaluationLedgerEntry(projectRoot string, payload *HookPayload, inten
 	// it so `sir why` can show the base→final transition.
 	entry.BaseVerdict = base
 	entry.ProviderVerdicts = providerVerdictRecords(verdicts, string(decision), base)
+	// A PDP authoritative override (if any) is recorded as a distinct verdict
+	// record carrying the forensic audit fields (final=provider, native base,
+	// floors-bypassed). It is appended after the advisory records so `sir why`
+	// shows the override explicitly.
+	if auth := takeLastAuthoritativeRecord(); auth != nil {
+		entry.ProviderVerdicts = append(entry.ProviderVerdicts, *auth)
+	}
 	entry.ProviderFailures = providerFailureRecords(failures)
 	entry.LatencyMs = decisionLatencyMs(state)
 	stampStatefulDetection(projectRoot, payload, intent, labels, recorded, state, entry)

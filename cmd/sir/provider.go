@@ -35,6 +35,10 @@ func cmdProvider(args []string) {
 		cmdProviderUse(args[1:])
 	case "swap":
 		cmdProviderSwap(args[1:])
+	case "authoritative":
+		cmdProviderAuthoritative(args[1:])
+	case "advisory":
+		cmdProviderAdvisory(args[1:])
 	case "configure":
 		cmdProviderConfigure(args[1:])
 	case "status":
@@ -66,6 +70,10 @@ Lifecycle:
   sir provider disable <name>                 disable without removing
   sir provider use <name>                     set as active (exclusive kinds)
   sir provider swap <old> <new>               atomically swap active provider
+  sir provider authoritative <name> [--on-failure ask|deny] [--yes]
+                                              make a policy provider the DECISION
+                                              point (its verdict replaces native)
+  sir provider advisory <name> [--yes]        demote back to advisory (default)
   sir provider configure <name> --set k=v     set provider-specific config
   sir provider status [<name>]                health check and active status
 
@@ -305,6 +313,129 @@ func cmdProviderSwap(args []string) {
 	fmt.Printf("Swapped: %s → %s\n", args[0], args[1])
 }
 
+// cmdProviderAuthoritative promotes a policy provider to authoritative (PDP
+// delegation): its verdict REPLACES the native decision. Because this is a
+// security-posture change, it prints what it means and requires confirmation
+// (or --yes).
+func cmdProviderAuthoritative(args []string) {
+	name := ""
+	onFailure := provider.OnFailureAsk
+	autoYes := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--on-failure":
+			if i+1 >= len(args) {
+				fatal("--on-failure requires a value (ask|deny)")
+			}
+			onFailure = args[i+1]
+			i++
+		case "--yes", "-y":
+			autoYes = true
+		default:
+			if name == "" {
+				name = args[i]
+			} else {
+				fatal("unexpected argument %q", args[i])
+			}
+		}
+	}
+	if name == "" {
+		fatal("usage: sir provider authoritative <name> [--on-failure ask|deny] [--yes]")
+	}
+
+	reg, err := provider.Load()
+	if err != nil {
+		fatal("load registry: %v", err)
+	}
+	e, ok := reg.ByName(name)
+	if !ok {
+		fatal("provider %q not found", name)
+	}
+	// Validate up front so the warning isn't printed for an invalid request.
+	if e.Kind != provider.KindPolicy {
+		fatal("only a policy_provider can be authoritative; %q is a %s", name, e.Kind)
+	}
+	if !e.Enabled {
+		fatal("provider %q must be enabled first: run `sir provider use %s`", name, name)
+	}
+	if onFailure != provider.OnFailureAsk && onFailure != provider.OnFailureDeny {
+		fatal("--on-failure must be ask or deny, got %q", onFailure)
+	}
+
+	fmt.Printf(`Make %q the AUTHORITATIVE policy provider?
+
+  • Its verdict will REPLACE SIR's native decision — including GRANTING actions
+    the native engine would gate. External policy becomes the decision point.
+  • If it is unreachable / times out / returns nothing, SIR fails closed (%s).
+  • These integrity floors still apply regardless: SIR-state tamper, posture-file
+    writes, secret-exfil egress, DNS-tunnel, MCP-injection, delegation-after-
+    injection, opaque-shell.
+  • Run the provider WARM (a localhost sidecar/daemon), not spawn-per-call.
+
+Type 'y' to confirm: `, name, onFailure)
+	if !confirmYes(autoYes) {
+		fmt.Println("Cancelled.")
+		return
+	}
+
+	if err := reg.SetAuthority(name, provider.AuthorityAuthoritative, onFailure); err != nil {
+		fatal("%v", err)
+	}
+	if err := reg.Save(); err != nil {
+		fatal("save registry: %v", err)
+	}
+	fmt.Printf("%s is now AUTHORITATIVE (on-failure: %s). Verify: sir provider status %s\n", name, onFailure, name)
+}
+
+// cmdProviderAdvisory demotes a policy provider back to advisory (the default):
+// its verdict becomes input the native engine composes, never the final word.
+func cmdProviderAdvisory(args []string) {
+	name := ""
+	autoYes := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--yes", "-y":
+			autoYes = true
+		default:
+			if name == "" {
+				name = args[i]
+			} else {
+				fatal("unexpected argument %q", args[i])
+			}
+		}
+	}
+	if name == "" {
+		fatal("usage: sir provider advisory <name> [--yes]")
+	}
+
+	reg, err := provider.Load()
+	if err != nil {
+		fatal("load registry: %v", err)
+	}
+	e, ok := reg.ByName(name)
+	if !ok {
+		fatal("provider %q not found", name)
+	}
+	if !e.IsAuthoritative() {
+		fmt.Printf("%s is already advisory — nothing to do.\n", name)
+		return
+	}
+
+	fmt.Printf("Demote %q from authoritative back to advisory? SIR's native engine resumes making the final decision.\nType 'y' to confirm: ", name)
+	if !confirmYes(autoYes) {
+		fmt.Println("Cancelled.")
+		return
+	}
+
+	if err := reg.SetAuthority(name, provider.AuthorityAdvisory, ""); err != nil {
+		fatal("%v", err)
+	}
+	if err := reg.Save(); err != nil {
+		fatal("save registry: %v", err)
+	}
+	fmt.Printf("%s is now advisory.\n", name)
+}
+
 func cmdProviderConfigure(args []string) {
 	// Usage: sir provider configure <name> --set key=value [--set key2=val2]
 	if len(args) < 3 {
@@ -360,6 +491,11 @@ func cmdProviderStatus(args []string) {
 		fmt.Printf("  Kind:       %s\n", e.Kind)
 		fmt.Printf("  Version:    %s\n", e.Version)
 		fmt.Printf("  Enabled:    %v\n", e.Enabled)
+		if e.IsAuthoritative() {
+			fmt.Printf("  Authority:  AUTHORITATIVE (verdict replaces native; on-failure: %s)\n", e.FailureVerdict())
+		} else if e.Kind == provider.KindPolicy {
+			fmt.Printf("  Authority:  advisory\n")
+		}
 		fmt.Printf("  Entrypoint: %s\n", e.Entrypoint)
 		// Enforcement honesty: surface simulated effect providers explicitly so a
 		// real OS-level enforcer is never confused with capability plumbing.

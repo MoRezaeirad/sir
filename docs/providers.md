@@ -386,7 +386,7 @@ fixtures:
 
 ## Policy provider
 
-**What it does:** evaluates an action and emits a verdict. It is always advisory. The kernel's own rule engine makes the final call.
+**What it does:** evaluates an action and emits a verdict. By default it is **advisory** (the kernel makes the final call). An operator may opt a policy provider into **authoritative** mode, where its verdict *is* the decision — see below.
 
 **When to use it:**
 - You want OPA to evaluate your organization's Rego policies against SIR actions
@@ -394,7 +394,27 @@ fixtures:
 - You have compliance rules (SOC 2, FedRAMP) that need to contribute to decisions
 - You want to add domain-specific rules without modifying the SIR core
 
-**Critical rule: policy providers can recommend `deny`. They cannot guarantee it.** The kernel may override a provider verdict based on enforceability, attribution confidence, or other rules. Do not build systems that depend on a policy provider verdict being the last word.
+**Critical rule (advisory mode): policy providers can recommend `deny`, they cannot guarantee it.** The kernel may override an *advisory* verdict based on enforceability, attribution confidence, or other rules. Do not build systems that depend on an advisory verdict being the last word.
+
+### Authoritative mode (PDP delegation)
+
+An operator can mark the active policy provider **authoritative**. Its verdict then **replaces** the native `core.Evaluate` decision — including *granting* actions the native engine would gate. This is how OPA/Cedar/Rego becomes the decision point ("policy is the whole truth"), not just an advisory voice. It is an explicit operator act; a provider can never self-promote on the wire.
+
+```sh
+sir provider use opa                              # enable it as the active policy provider
+sir provider authoritative opa --on-failure deny  # promote (prints what it means, asks to confirm)
+sir provider status opa                           # verify: Authority: AUTHORITATIVE
+sir provider advisory opa                          # demote back to advisory (the default)
+```
+
+`--on-failure` selects the fail-closed verdict when the provider can't decide: `ask` (default) or `deny`. Only an **enabled** `policy_provider` can be authoritative. Add `--yes` to skip the confirmation in scripts.
+
+Scope and safety:
+- **Fail closed.** If an authoritative provider is unreachable, times out, returns empty/malformed output, or its registry is corrupt, SIR does **not** silently fall back to native-allow — it holds the action (`ask`, or `deny` in managed mode). Silence is never a grant.
+- **Non-delegable floors.** Authoritative mode delegates the core decision, not everything. Seven integrity/tamper floors still fire regardless: sir-state-tamper, posture-file writes, secret-exfil egress, DNS-tunnel, tainted-MCP/injection, delegation-after-injection, opaque-shell. These keep PDP from being a self-amplification or exfiltration bypass.
+- **Run the provider WARM.** Because the verdict is on the live decision path and a timeout fails closed, an authoritative provider should run as a **localhost sidecar/daemon** (e.g. `opa run --server`), not a cold process spawned per call. SIR allows a larger (capped) budget for authoritative calls, but a cold Python/OPA spawn per tool call will add friction — the warm process keeps it sub-millisecond.
+
+See [docs/research/pdp-provider-delegation.md](research/pdp-provider-delegation.md) for the full model.
 
 **Two safety floors the kernel enforces regardless of your verdict:**
 - **Native safety floors** — secret-session + external egress, SIR tamper, tripwire — always deny, no matter what a policy provider returns. Advisory verdicts cannot widen them and cannot override them.

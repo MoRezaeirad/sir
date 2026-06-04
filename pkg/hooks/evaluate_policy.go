@@ -8,6 +8,7 @@ import (
 
 	"github.com/somoore/sir/pkg/core"
 	"github.com/somoore/sir/pkg/lease"
+	"github.com/somoore/sir/pkg/ledger"
 	"github.com/somoore/sir/pkg/policy"
 	"github.com/somoore/sir/pkg/sdk"
 	"github.com/somoore/sir/pkg/session"
@@ -39,6 +40,15 @@ func evaluatePolicy(projectRoot string, payload *HookPayload, signals []sdk.Sign
 		Taint:           sessionTaintList(state),
 		Enforceability:  signal.EnforceabilityForSignals(signals),
 		Mode:            leaseMode(l),
+	}
+	// v1 session/integrity signals: the explicit inputs an authoritative provider
+	// needs to re-implement the native floors it may bypass under PDP delegation
+	// (the coarse Taint list collapses these). See pdp-provider-delegation.md §2b.
+	if state != nil {
+		policyReq.SessionSecret = state.SecretSession
+		policyReq.SessionWasSecret = state.SessionEverSecret
+		policyReq.SessionUntrustedRead = state.RecentlyReadUntrusted
+		policyReq.SessionUntrustedThisTurn = state.UntrustedContentThisTurn
 	}
 
 	verdicts, failures := collectPolicyVerdicts(policyReq)
@@ -77,6 +87,78 @@ func evaluatePolicy(projectRoot string, payload *HookPayload, signals []sdk.Sign
 		escalatedBase = string(coreResp.BaseVerdict)
 	}
 
+	// PDP authoritative override. At this point coreResp.Decision is the native +
+	// advisory verdict (floors executed). If an authoritative policy_provider is
+	// active, its verdict REPLACES that decision — including granting what native
+	// would have gated ("policy is the whole truth"). The native verdict we just
+	// computed becomes the audit base (native_base_verdict). Fail-closed and
+	// most-restrictive-reduction are handled inside resolveAuthoritative; this
+	// only applies the result. The compose functions stay untouched: the
+	// substitution is a Go-orchestrator override, so parity is unaffected.
+	// See docs/research/pdp-provider-delegation.md §8.
+	reg, regErr := loadProviderRegistryChecked()
+	if regErr != nil {
+		// CORRUPT control-plane state: providers.json is unreadable/malformed (a
+		// MISSING file is a nil error and falls through to the normal no-provider
+		// path). We cannot tell whether an authoritative provider was configured,
+		// so we must assume it was and fail closed — never silently fall back to
+		// native and risk allowing what the provider would have denied (#3).
+		coreResp.AuthoritativeActive = true
+		coreResp.AuthoritativeFailClosed = true
+		coreResp.AuthoritativeProvider = "(registry)"
+		coreResp.AuthoritativeNativeBase = string(coreResp.Decision)
+		failVerdict := policy.VerdictAsk
+		if leaseIsManaged(l) {
+			failVerdict = policy.VerdictDeny
+		}
+		coreResp.BaseVerdict = coreResp.Decision
+		coreResp.Decision = failVerdict
+		coreResp.Reason = "Provider registry is corrupt or unreadable — held for safety (fail closed). Run `sir doctor`."
+		setLastAuthoritativeRecord(&ledger.ProviderVerdictRecord{
+			Provider:          "(registry)",
+			Verdict:           string(failVerdict),
+			Reason:            coreResp.Reason,
+			Used:              true,
+			Authoritative:     true,
+			NativeBaseVerdict: string(coreResp.BaseVerdict),
+			FailClosed:        true,
+		})
+	} else if entry, ok := activeAuthoritativePolicyProvider(reg); ok {
+		nativeVerdict := string(coreResp.Decision)
+		outcome := resolveAuthoritative(entry, policyReq, leaseIsManaged(l))
+		coreResp.AuthoritativeActive = true // verdict is FINAL — seal it downstream
+		coreResp.AuthoritativeProvider = outcome.Provider
+		coreResp.AuthoritativeNativeBase = nativeVerdict
+		coreResp.AuthoritativeFloorsBypassed = !outcome.FailClosed
+		coreResp.AuthoritativeFailClosed = outcome.FailClosed
+		coreResp.Decision = policy.Verdict(outcome.Verdict)
+		// ALWAYS replace the reason on override: the native reason describes the
+		// native verdict, which no longer holds. Leaving it would render e.g.
+		// "ALLOWED … because: external network requests are blocked" — the
+		// native-deny reason stapled to an authoritative allow. Synthesize a
+		// coherent reason when the provider gives none.
+		if outcome.Reason != "" {
+			coreResp.Reason = outcome.Reason
+		} else {
+			coreResp.Reason = authoritativeReason(outcome)
+		}
+		// The native verdict is now the base; the authoritative verdict is final.
+		coreResp.BaseVerdict = policy.Verdict(nativeVerdict)
+		// Stash the forensic audit record (O4) for the ledger at the override
+		// point, so it reflects the override — not a stale native explanation.
+		setLastAuthoritativeRecord(&ledger.ProviderVerdictRecord{
+			Provider:          outcome.Provider,
+			Verdict:           outcome.Verdict,
+			RulesMatched:      outcome.RulesMatched,
+			Reason:            outcome.Reason,
+			Used:              true,
+			Authoritative:     true,
+			NativeBaseVerdict: nativeVerdict,
+			FloorsBypassed:    !outcome.FailClosed,
+			FailClosed:        outcome.FailClosed,
+		})
+	}
+
 	// Attach the provider verdicts/failures Go collected (pre-Rust) to the
 	// response so they reach the ledger and `sir why`, attributed separately
 	// from native policy rules. These are NOT decoded from the Rust wire — Go
@@ -100,6 +182,7 @@ var (
 	lastProviderVerdicts []policy.PolicyVerdict
 	lastProviderFailures []core.ProviderFailure
 	lastProviderBase     string
+	lastAuthoritative    *ledger.ProviderVerdictRecord // nil = no authoritative override this eval
 )
 
 func setLastProviderEvaluation(verdicts []policy.PolicyVerdict, failures []core.ProviderFailure, base string) {
@@ -110,8 +193,27 @@ func setLastProviderEvaluation(verdicts []policy.PolicyVerdict, failures []core.
 	lastProviderBase = base
 }
 
+// setLastAuthoritativeRecord stashes the authoritative-override audit record so
+// appendEvaluationLedgerEntry can persist it alongside the advisory verdicts.
+func setLastAuthoritativeRecord(rec *ledger.ProviderVerdictRecord) {
+	lastProviderMu.Lock()
+	defer lastProviderMu.Unlock()
+	lastAuthoritative = rec
+}
+
+// takeLastAuthoritativeRecord returns and clears the authoritative override
+// record from the most recent evaluation.
+func takeLastAuthoritativeRecord() *ledger.ProviderVerdictRecord {
+	lastProviderMu.Lock()
+	defer lastProviderMu.Unlock()
+	rec := lastAuthoritative
+	lastAuthoritative = nil
+	return rec
+}
+
 func resetLastProviderEvaluation() {
 	setLastProviderEvaluation(nil, nil, "")
+	setLastAuthoritativeRecord(nil)
 }
 
 // takeLastProviderEvaluation returns the verdicts/failures/base verdict from the
@@ -139,6 +241,13 @@ func leaseMode(l *lease.Lease) string {
 		return l.Mode
 	}
 	return "guard"
+}
+
+// leaseIsManaged reports whether the lease is in managed mode, where an
+// authoritative provider that cannot decide must fail closed to DENY (a missing
+// PDP in managed mode is a control failure, not a friction nuisance).
+func leaseIsManaged(l *lease.Lease) bool {
+	return l != nil && l.Mode == "managed"
 }
 
 // sessionTaintList builds the taint string slice for a PolicyRequest from

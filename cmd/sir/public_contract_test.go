@@ -301,6 +301,7 @@ func conciseDocs() []string {
 		"docs/contributor/security-engineering-core.md",
 		"docs/contributor/supply-chain-policy.md",
 		"docs/research/observability-design.md",
+		"docs/research/pdp-provider-delegation.md",
 		"docs/research/runtime-taint-containment.md",
 		"docs/research/security-verification-guide.md",
 		"docs/research/sir-threat-model.md",

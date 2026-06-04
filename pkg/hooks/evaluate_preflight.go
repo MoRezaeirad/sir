@@ -219,8 +219,20 @@ func evaluateMCPOnboarding(intent Intent, payload *HookPayload, l *lease.Lease, 
 	//   - a heightened floor: when the session carries secret context or a
 	//     pending injection alert, or the server has NO configured capability
 	//     scope, force a few early checkpoints even if the counter is disabled.
-	_, hasScope := l.FindMCPCapabilityScope(serverName)
-	heightened := state.SecretSession || state.PendingInjectionAlert || !hasScope
+	heightened := mcpOnboardingHeightened(l, state, serverName)
+
+	// MCPQUIET-1: onboarding is "friction, not containment" — a visibility
+	// heads-up on a newly-approved server. When QuietMCPFriction is on, the case
+	// is NOT heightened (a scoped server, no secret/injection — preserving the
+	// first-call-exfil checkpoint the red-team flagged), AND the session is in a
+	// safe context, skip the prompt. autoLeaseSafeContext is REQUIRED in addition
+	// to !heightened: `heightened` omits untrusted-ingestion (RecentlyReadUntrusted
+	// / UntrustedContentThisTurn), elevated posture, and tainted MCP — exactly the
+	// prompt-injection contexts every sibling reduction (NETALLOW-1/REUSE/ENV-1)
+	// refuses to silence in. Off in strict/managed via the profile gradient.
+	if l.QuietMCPFriction && !heightened && autoLeaseSafeContext(state) {
+		return nil, false
+	}
 
 	effectiveCallCount := cfg.MCPOnboardingCallCount
 	if heightened && effectiveCallCount < onboardingHeightenedFloor {
@@ -271,6 +283,18 @@ func evaluateMCPOnboarding(intent Intent, payload *HookPayload, l *lease.Lease, 
 // context, a pending injection alert, or the server has no configured
 // capability scope) — even when the per-call onboarding counter is disabled.
 const onboardingHeightenedFloor = 3
+
+// mcpOnboardingHeightened reports whether an approved MCP server is in a
+// "heightened" state where the first-call-exfil checkpoint must surface: a
+// secret session, a pending injection alert, or NO configured capability scope
+// (an unfamiliar server). This is the single source of truth shared by the
+// onboarding gate AND the MCPQUIET-1 mcp_network_unapproved downgrade, so a
+// network-bearing first call can't bypass the checkpoint that non-network calls
+// preserve (the two MCPQUIET-1 silences must agree on what "heightened" means).
+func mcpOnboardingHeightened(l *lease.Lease, state *session.State, serverName string) bool {
+	_, hasScope := l.FindMCPCapabilityScope(serverName)
+	return state.SecretSession || state.PendingInjectionAlert || !hasScope
+}
 
 // evaluateMCPBinaryDrift detects that the MCP command binary has changed
 // since approval. Fast-path: stat for mtime; if mtime matches the
