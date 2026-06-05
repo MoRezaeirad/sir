@@ -59,7 +59,7 @@
       "key": "shell_classification",
       "title": "Shell classification",
       "supported": true,
-      "notes": "Bash commands are classified for egress, DNS, persistence, sudo, and install risk."
+      "notes": "Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk."
     },
     {
       "key": "mcp_tool_hooks",

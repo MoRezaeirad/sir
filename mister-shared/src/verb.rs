@@ -15,6 +15,7 @@ pub enum Verb {
     ReadRef,              // File read
     StageWrite,           // File write
     ExecuteDryRun,        // Shell command
+    DangerousShell,       // Destructive shell command
     RunTests,             // Test runner
     Commit,               // git commit
     ListFiles,            // File listing
@@ -37,7 +38,7 @@ pub enum Verb {
 }
 
 impl Verb {
-    pub const ALL: [Verb; 28] = [
+    pub const ALL: [Verb; 29] = [
         Verb::NetLocal,
         Verb::NetAllowlisted,
         Verb::NetExternal,
@@ -47,6 +48,7 @@ impl Verb {
         Verb::ReadRef,
         Verb::StageWrite,
         Verb::ExecuteDryRun,
+        Verb::DangerousShell,
         Verb::RunTests,
         Verb::Commit,
         Verb::ListFiles,
@@ -80,6 +82,7 @@ impl Verb {
             "read_ref" => Some(Verb::ReadRef),
             "stage_write" => Some(Verb::StageWrite),
             "execute_dry_run" => Some(Verb::ExecuteDryRun),
+            "dangerous_shell" => Some(Verb::DangerousShell),
             "run_tests" => Some(Verb::RunTests),
             "commit" => Some(Verb::Commit),
             "list_files" => Some(Verb::ListFiles),
@@ -114,6 +117,7 @@ impl Verb {
             Verb::ReadRef => "read_ref",
             Verb::StageWrite => "stage_write",
             Verb::ExecuteDryRun => "execute_dry_run",
+            Verb::DangerousShell => "dangerous_shell",
             Verb::RunTests => "run_tests",
             Verb::Commit => "commit",
             Verb::ListFiles => "list_files",

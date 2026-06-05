@@ -90,6 +90,21 @@ func TestDeepVerbGating_DNSCommandDiverts(t *testing.T) {
 	}
 }
 
+func TestDeepVerbGating_DangerousShellDiverts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeDeepGatingConfig(t, home, true)
+
+	l := lease.DefaultLease()
+	l.ApprovedMCPServers = []string{"postgres"}
+	intent := MapToolToIntent("mcp__postgres__exec", map[string]interface{}{
+		"command": "rm -rf /",
+	}, l)
+	if string(intent.Verb) != "dangerous_shell" {
+		t.Fatalf("expected dangerous_shell divert, got %q", intent.Verb)
+	}
+}
+
 func TestDeepVerbGating_PostureFileWriteDiverts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

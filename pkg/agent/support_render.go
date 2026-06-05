@@ -215,7 +215,7 @@ func supportSurfaceNotes(spec *AgentSpec, key SupportSurfaceKey) string {
 		if spec.Capabilities.ToolCoverage == ToolCoverageBashOnly {
 			return "Every hooked Codex tool call is Bash, so sir's shell classifier is the primary enforcement path."
 		}
-		return "Bash commands are classified for egress, DNS, persistence, sudo, and install risk."
+		return "Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk."
 	}
 	return ""
 }

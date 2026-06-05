@@ -278,7 +278,13 @@ func DefaultLease() *Lease {
 		// oracle still denies them under a secret session, and the strict/managed
 		// profiles add them back to ForbiddenVerbs to keep the hard block.
 		ForbiddenVerbs: []policy.Verb{},
-		AskVerbs:       []policy.Verb{policy.VerbPushRemote, policy.VerbNetAllowlisted, policy.VerbRunEphemeral, policy.VerbMcpUnapproved},
+		AskVerbs: []policy.Verb{
+			policy.VerbPushRemote,
+			policy.VerbNetAllowlisted,
+			policy.VerbRunEphemeral,
+			policy.VerbDangerousShell,
+			policy.VerbMcpUnapproved,
+		},
 
 		ApprovedRemotes:    []string{"origin"},
 		ApprovedHosts:      []string{"localhost", "127.0.0.1", "::1", "host.docker.internal"},

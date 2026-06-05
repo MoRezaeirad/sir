@@ -11,6 +11,8 @@ func VerbRisk(verb policy.Verb) int {
 		return 90
 	case policy.VerbPushRemote:
 		return 85
+	case policy.VerbDangerousShell:
+		return 80
 	case policy.VerbNetAllowlisted, policy.VerbPushOrigin:
 		return 70
 	case policy.VerbRunEphemeral:

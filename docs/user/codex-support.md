@@ -20,7 +20,7 @@ sir — Sandbox in Reverse — is an experimental security runtime for AI coding
 | Permission-request broker | ✅ Yes | sir can broker agent-native permission request events through the same policy path. |
 | File-read IFC labeling | ✅ Yes | Bash-mediated sensitive reads (cat/sed/head/tail/grep/etc.) are promoted to read_ref before execution. |
 | File-write pre-gating | ✅ Yes | apply_patch/Edit/Write posture mutations are pre-gated when Codex emits their hooks; sentinel hashing remains the backstop. |
-| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, and install risk. |
+| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk. |
 | MCP tool hooks | ✅ Yes | sir registers Codex MCP matchers and sees MCP arguments/responses when Codex emits mcp__* tool hooks. |
 | Delegation gating | ❌ No | Codex exposes no SubagentStart-equivalent hook. |
 | Config change detection | ❌ No | Codex exposes no ConfigChange-equivalent hook. |

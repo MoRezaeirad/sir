@@ -201,6 +201,13 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		}
 	}
 
+	if hookclassify.IsDangerousShellCommand(normalized) {
+		return Intent{
+			Verb:   policy.VerbDangerousShell,
+			Target: trimmed,
+		}
+	}
+
 	// Check for install commands
 	if isInstall, manager := IsInstallCommand(normalized); isInstall {
 		return Intent{

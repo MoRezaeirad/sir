@@ -70,6 +70,7 @@ pub(super) fn sink_trust_for_verb(verb: Verb) -> TrustLevel {
         Verb::StageWrite => TrustLevel::Trusted,
         Verb::Commit => TrustLevel::Trusted,
         Verb::ExecuteDryRun => TrustLevel::Trusted,
+        Verb::DangerousShell => TrustLevel::Trusted,
         Verb::RunTests => TrustLevel::Trusted,
         Verb::ReadRef => TrustLevel::Trusted,
         Verb::ListFiles => TrustLevel::Trusted,

@@ -10,6 +10,7 @@
     { "name": "ReadRef", "wire": "read_ref" },
     { "name": "StageWrite", "wire": "stage_write" },
     { "name": "ExecuteDryRun", "wire": "execute_dry_run" },
+    { "name": "DangerousShell", "wire": "dangerous_shell" },
     { "name": "RunTests", "wire": "run_tests" },
     { "name": "Commit", "wire": "commit" },
     { "name": "ListFiles", "wire": "list_files" },

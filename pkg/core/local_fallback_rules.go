@@ -59,6 +59,8 @@ func localEvaluateCommandRisk(req *Request) *Response {
 	switch req.Intent.Verb {
 	case policy.VerbRunEphemeral:
 		return &Response{Decision: policy.VerdictAsk, Reason: fmt.Sprintf("npx downloads and runs remote code. Approve to proceed. (%s)", req.Intent.Target)}
+	case policy.VerbDangerousShell:
+		return &Response{Decision: policy.VerdictAsk, Reason: fmt.Sprintf("This shell command can destructively modify files, disks, permissions, or repository state. Approve to proceed. (%s)", req.Intent.Target)}
 	case policy.VerbMcpUnapproved:
 		return &Response{Decision: policy.VerdictAsk, Reason: fmt.Sprintf("This tool comes from a server sir hasn't seen before (%s). Approve this call once, or add the server to your MCP config and re-run `sir install` to refresh approved MCP servers.", req.Intent.Target)}
 	case policy.VerbMcpNetworkUnapproved:
