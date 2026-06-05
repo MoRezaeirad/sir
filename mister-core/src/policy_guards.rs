@@ -81,6 +81,11 @@ pub(super) fn evaluate_preapproval_guards(req: &EvalRequest, verb: Verb) -> Opti
             "Elevated privilege execution requires approval.",
             RiskTier::R3,
         )),
+        Verb::DangerousShell => Some(policy_result(
+            Verdict::Ask,
+            "Destructive shell operation requires approval.",
+            RiskTier::R3,
+        )),
         Verb::SirSelf => Some(policy_result(
             Verdict::Ask,
             "sir CLI self-modification requires developer approval.",

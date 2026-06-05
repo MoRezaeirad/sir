@@ -19,7 +19,7 @@ sir - Sandbox in Reverse - is an experimental security runtime for AI coding age
 | Permission-request broker | ❌ No | Cursor exposes no PermissionRequest-equivalent hook. |
 | File-read IFC labeling | ✅ Yes | beforeReadFile and preToolUse label sensitive reads before execution where Cursor emits those hooks. |
 | File-write pre-gating | ❌ No | Cursor's dedicated file-edit hook is after-action; sir relies on post-hook checks and posture sentinels unless Cursor also emits a generic preToolUse for that edit path. |
-| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, and install risk. |
+| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk. |
 | MCP tool hooks | ✅ Yes | beforeMCPExecution/afterMCPExecution expose MCP arguments and responses when Cursor emits those hooks. |
 | Delegation gating | ✅ Yes | Delegation policy is enforced at Cursor's subagentStart hook. |
 | Config change detection | ❌ No | Cursor exposes no ConfigChange-equivalent hook. |

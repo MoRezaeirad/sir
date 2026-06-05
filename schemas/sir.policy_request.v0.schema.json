@@ -21,7 +21,7 @@
       "description": "The verb being evaluated.",
       "examples": [
         "push_origin", "push_remote", "net_external", "read_ref",
-        "stage_write", "commit", "run_tests", "mcp_unapproved",
+        "stage_write", "dangerous_shell", "commit", "run_tests", "mcp_unapproved",
         "run_ephemeral", "dns_lookup", "env_read", "persistence", "sudo"
       ]
     },

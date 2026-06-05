@@ -234,6 +234,7 @@ func isRiskyShellVerb(v policy.Verb) bool {
 		policy.VerbDnsLookup,
 		policy.VerbSudo,
 		policy.VerbPersistence,
+		policy.VerbDangerousShell,
 		policy.VerbRunEphemeral,
 		policy.VerbEnvRead,
 		policy.VerbPushRemote,

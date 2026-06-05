@@ -49,6 +49,7 @@ pub(super) fn ask_verb_result(verb: Verb) -> PolicyResult {
         Verb::PushRemote => "Git push to unapproved remote requires approval.".to_string(),
         Verb::NetAllowlisted => "Network request to approved host requires approval.".to_string(),
         Verb::RunEphemeral => "Remote code execution (npx) requires approval.".to_string(),
+        Verb::DangerousShell => "Destructive shell operation requires approval.".to_string(),
         _ => format!("Verb '{}' requires approval.", verb.as_str()),
     };
     policy_result(Verdict::Ask, reason, RiskTier::R3)

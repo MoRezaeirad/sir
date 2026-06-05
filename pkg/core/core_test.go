@@ -671,6 +671,13 @@ func TestLocalEvaluate_VerbParity(t *testing.T) {
 			want: mustNotAllow,
 		},
 		{
+			name: "dangerous_shell",
+			req: &Request{
+				Intent: Intent{Verb: "dangerous_shell", Target: "rm -rf /"},
+			},
+			want: mustNotAllow,
+		},
+		{
 			name: "persistence",
 			req: &Request{
 				Intent: Intent{Verb: "persistence", Target: "crontab -l"},

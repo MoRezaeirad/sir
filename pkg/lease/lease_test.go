@@ -186,7 +186,7 @@ func TestDefaultLease_VerbClassifications(t *testing.T) {
 		}
 	}
 
-	askVerbs := []policy.Verb{policy.VerbRunEphemeral}
+	askVerbs := []policy.Verb{policy.VerbRunEphemeral, policy.VerbDangerousShell}
 	for _, v := range askVerbs {
 		if !l.IsVerbAsk(v) {
 			t.Errorf("verb %q should be in ask_verbs", v)

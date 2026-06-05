@@ -108,7 +108,12 @@ impl Lease {
 
             forbidden_verbs: vec![Verb::NetExternal],
 
-            ask_verbs: vec![Verb::PushRemote, Verb::NetAllowlisted, Verb::RunEphemeral],
+            ask_verbs: vec![
+                Verb::PushRemote,
+                Verb::NetAllowlisted,
+                Verb::RunEphemeral,
+                Verb::DangerousShell,
+            ],
 
             approved_remotes: vec!["origin".into()],
             approved_hosts: vec![
@@ -472,6 +477,7 @@ mod tests {
         assert!(lease.is_verb_ask(Verb::PushRemote));
         assert!(lease.is_verb_ask(Verb::NetAllowlisted));
         assert!(lease.is_verb_ask(Verb::RunEphemeral));
+        assert!(lease.is_verb_ask(Verb::DangerousShell));
     }
 
     #[test]

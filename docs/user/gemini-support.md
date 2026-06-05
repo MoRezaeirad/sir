@@ -19,7 +19,7 @@ sir — Sandbox in Reverse — is an experimental security runtime for AI coding
 | Permission-request broker | ❌ No | Gemini CLI exposes no PermissionRequest-equivalent hook. |
 | File-read IFC labeling | ✅ Yes | BeforeTool labels read_file/read_many_files before execution. |
 | File-write pre-gating | ✅ Yes | BeforeTool gates write_file / replace posture mutations before execution. |
-| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, and install risk. |
+| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk. |
 | MCP tool hooks | ✅ Yes | sir sees both MCP arguments and MCP responses on this agent. |
 | Delegation gating | ❌ No | Gemini CLI exposes no SubagentStart-equivalent hook. |
 | Config change detection | ❌ No | Gemini CLI exposes no ConfigChange-equivalent hook. |

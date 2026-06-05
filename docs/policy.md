@@ -101,13 +101,26 @@ All matching rules are collected. The composer applies these rules in order:
 
 ### ask-dangerous-shell
 
-**When:** A shell command matches one of the dangerous patterns: `rm -rf`, `chmod 777`, `chmod 0777`, `mkfs`, `dd if=`, `:(){:|:&};:`, `> /dev/sda`.
+**When:** A normalized shell command matches the `dangerous_shell` classifier. The classifier is intentionally narrow: it asks on high-blast-radius destructive operations, not ordinary project cleanup.
+
+Covered patterns include:
+
+- Recursive deletes of root, the current tree, home-directory roots, or Windows drive roots: `rm -rf /`, `rm -rf ./*`, `rm -rf $HOME/*`, `Remove-Item -Recurse C:\`, `rd /s C:\`, `del /s C:\*`.
+- Disk, partition, and filesystem destruction: `mkfs*`, `mke2fs`, `newfs`, `wipefs`, `blkdiscard`, `dd ... of=/dev/sdX`, `tee /dev/sdX`, `cp image.raw /dev/nvme0n1`, `shred /dev/nvme0n1`, `sgdisk --zap-all`, `parted ... mklabel`, `cryptsetup luksFormat`, `diskpart`, `format C:`, `format-volume`, `clear-disk`, `initialize-disk`, `remove-partition`.
+- macOS disk erase flows: `diskutil eraseDisk`, `diskutil eraseVolume`, `diskutil partitionDisk`, `diskutil secureErase`, `diskutil apfs deleteContainer`, `asr restore --erase`.
+- Permission and ownership changes with broad scope: `chmod -R 777 .`, `chmod -R a+w /path`, `chown -R user:group /`, `icacls C:\ /grant Everyone:F /T`, `takeown /F C:\ /R`.
+- Repository-wide destructive resets: `git clean -fdx`, `git clean -ffdx`, `git reset --hard`, `git checkout -- .`, `git restore .`.
+- Resource-destruction patterns: fork bombs such as `:(){ :|:& };:`, `kill -9 -1`, and Windows free-space wipe via `cipher /w:C:\`.
+
+The classifier recurses through common wrappers before matching, including `sudo`, `sh -c`, `bash -c`, `zsh -c`, `dash -c`, `ksh -c`, `powershell -Command`, `pwsh -c`, and `cmd /c`.
+
+Explicitly not covered: common cleanup and inspection commands such as `rm -rf node_modules`, `rm -rf build target dist`, `find build -delete`, `git clean -fd`, `diskutil list`, `del /q build\file.txt`, and disk reads like `cp /dev/sda backup.img`.
 
 **Verdict:** ask
 
 **Effects:** prompt (best-effort), record (required)
 
-**Why this exists:** These commands are irreversible or destructive. An agent running them without developer awareness is a meaningful risk regardless of the intended purpose.
+**Why this exists:** These commands can irreversibly destroy files, disks, permissions, repository state, or running processes. An agent running them without developer awareness is a meaningful risk regardless of the intended purpose.
 
 ---
 

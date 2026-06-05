@@ -263,6 +263,20 @@ func mapShellCommand(cmd string, l *lease.Lease) Intent {
 		}
 	}
 
+	// Destructive local shell operations (rm -rf /, mkfs, dd to a block device,
+	// recursive chmod 777, git clean -fdx, etc.) — map to dangerous_shell so the
+	// oracle asks. This runs AFTER the egress classifiers above: a command that is
+	// both an egress and trips a dangerous pattern (e.g. `curl http://x > /dev/sda`)
+	// must keep its higher-risk net_external verb, which is a hard deny under a
+	// secret/untrusted session, rather than being downgraded to a dangerous_shell
+	// ask. This mirrors the compound-fold path, which already reconciles by VerbRisk.
+	if hookclassify.IsDangerousShellCommand(normalized) {
+		return Intent{
+			Verb:   policy.VerbDangerousShell,
+			Target: trimmed,
+		}
+	}
+
 	// Check for git push
 	if hookclassify.IsGitPush(normalized) {
 		classification := ClassifyGitRemote(normalized, l)

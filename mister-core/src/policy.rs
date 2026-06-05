@@ -824,6 +824,14 @@ mod tests {
         assert!(result.reason.contains("Elevated"));
     }
 
+    #[test]
+    fn test_dangerous_shell_asks() {
+        let req = make_request("dangerous_shell");
+        let result = evaluate(&req, &default_lease(), &clean_session());
+        assert_eq!(result.verdict, Verdict::Ask);
+        assert!(result.reason.contains("Destructive shell"));
+    }
+
     // --- DeletePosture: ask ---
 
     #[test]

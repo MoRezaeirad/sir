@@ -25,7 +25,7 @@ Claude Code exposes the richest hook surface sir supports today:
 | Permission-request broker | ✅ Yes | sir can broker agent-native permission request events through the same policy path. |
 | File-read IFC labeling | ✅ Yes | Sensitive reads are labeled before execution via Claude's native Read/Edit hook path. |
 | File-write pre-gating | ✅ Yes | Write/Edit posture changes are gated before the write executes. |
-| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, and install risk. |
+| Shell classification | ✅ Yes | Bash commands are classified for egress, DNS, persistence, sudo, install, and dangerous-shell risk. |
 | MCP tool hooks | ✅ Yes | sir sees both MCP arguments and MCP responses on this agent. |
 | Delegation gating | ✅ Yes | Delegation policy is enforced at SubagentStart. |
 | Config change detection | ✅ Yes | Mid-session hook config edits are detected when they happen. |

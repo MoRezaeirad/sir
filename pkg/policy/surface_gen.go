@@ -5,34 +5,35 @@ package policy
 type Verb string
 
 const (
-	VerbNetLocal Verb = "net_local"
-	VerbNetAllowlisted Verb = "net_allowlisted"
-	VerbNetExternal Verb = "net_external"
-	VerbPushOrigin Verb = "push_origin"
-	VerbPushRemote Verb = "push_remote"
-	VerbRunEphemeral Verb = "run_ephemeral"
-	VerbReadRef Verb = "read_ref"
-	VerbStageWrite Verb = "stage_write"
-	VerbExecuteDryRun Verb = "execute_dry_run"
-	VerbRunTests Verb = "run_tests"
-	VerbCommit Verb = "commit"
-	VerbListFiles Verb = "list_files"
-	VerbSearchCode Verb = "search_code"
-	VerbEnvRead Verb = "env_read"
-	VerbDnsLookup Verb = "dns_lookup"
-	VerbPersistence Verb = "persistence"
-	VerbSudo Verb = "sudo"
-	VerbDeletePosture Verb = "delete_posture"
-	VerbDelegate Verb = "delegate"
-	VerbMcpUnapproved Verb = "mcp_unapproved"
+	VerbNetLocal             Verb = "net_local"
+	VerbNetAllowlisted       Verb = "net_allowlisted"
+	VerbNetExternal          Verb = "net_external"
+	VerbPushOrigin           Verb = "push_origin"
+	VerbPushRemote           Verb = "push_remote"
+	VerbRunEphemeral         Verb = "run_ephemeral"
+	VerbReadRef              Verb = "read_ref"
+	VerbStageWrite           Verb = "stage_write"
+	VerbExecuteDryRun        Verb = "execute_dry_run"
+	VerbDangerousShell       Verb = "dangerous_shell"
+	VerbRunTests             Verb = "run_tests"
+	VerbCommit               Verb = "commit"
+	VerbListFiles            Verb = "list_files"
+	VerbSearchCode           Verb = "search_code"
+	VerbEnvRead              Verb = "env_read"
+	VerbDnsLookup            Verb = "dns_lookup"
+	VerbPersistence          Verb = "persistence"
+	VerbSudo                 Verb = "sudo"
+	VerbDeletePosture        Verb = "delete_posture"
+	VerbDelegate             Verb = "delegate"
+	VerbMcpUnapproved        Verb = "mcp_unapproved"
 	VerbMcpNetworkUnapproved Verb = "mcp_network_unapproved"
-	VerbMcpOnboarding Verb = "mcp_onboarding"
-	VerbMcpBinaryDrift Verb = "mcp_binary_drift"
-	VerbMcpCredentialLeak Verb = "mcp_credential_leak" // #nosec G101 -- generated verb identifier, not a credential
+	VerbMcpOnboarding        Verb = "mcp_onboarding"
+	VerbMcpBinaryDrift       Verb = "mcp_binary_drift"
+	VerbMcpCredentialLeak    Verb = "mcp_credential_leak" // #nosec G101 -- generated verb identifier, not a credential
 	VerbMcpInjectionDetected Verb = "mcp_injection_detected"
-	VerbCredentialDetected Verb = "credential_detected" // #nosec G101 -- generated verb identifier, not a credential
-	VerbElicitationHarvest Verb = "elicitation_harvest"
-	VerbSirSelf Verb = "sir_self"
+	VerbCredentialDetected   Verb = "credential_detected" // #nosec G101 -- generated verb identifier, not a credential
+	VerbElicitationHarvest   Verb = "elicitation_harvest"
+	VerbSirSelf              Verb = "sir_self"
 )
 
 var AllVerbs = []Verb{
@@ -45,6 +46,7 @@ var AllVerbs = []Verb{
 	VerbReadRef,
 	VerbStageWrite,
 	VerbExecuteDryRun,
+	VerbDangerousShell,
 	VerbRunTests,
 	VerbCommit,
 	VerbListFiles,
@@ -73,7 +75,7 @@ func (v Verb) String() string {
 func ParseVerb(s string) (Verb, bool) {
 	v := Verb(s)
 	switch v {
-	case VerbNetLocal, VerbNetAllowlisted, VerbNetExternal, VerbPushOrigin, VerbPushRemote, VerbRunEphemeral, VerbReadRef, VerbStageWrite, VerbExecuteDryRun, VerbRunTests, VerbCommit, VerbListFiles, VerbSearchCode, VerbEnvRead, VerbDnsLookup, VerbPersistence, VerbSudo, VerbDeletePosture, VerbDelegate, VerbMcpUnapproved, VerbMcpNetworkUnapproved, VerbMcpOnboarding, VerbMcpBinaryDrift, VerbMcpCredentialLeak, VerbMcpInjectionDetected, VerbCredentialDetected, VerbElicitationHarvest, VerbSirSelf:
+	case VerbNetLocal, VerbNetAllowlisted, VerbNetExternal, VerbPushOrigin, VerbPushRemote, VerbRunEphemeral, VerbReadRef, VerbStageWrite, VerbExecuteDryRun, VerbDangerousShell, VerbRunTests, VerbCommit, VerbListFiles, VerbSearchCode, VerbEnvRead, VerbDnsLookup, VerbPersistence, VerbSudo, VerbDeletePosture, VerbDelegate, VerbMcpUnapproved, VerbMcpNetworkUnapproved, VerbMcpOnboarding, VerbMcpBinaryDrift, VerbMcpCredentialLeak, VerbMcpInjectionDetected, VerbCredentialDetected, VerbElicitationHarvest, VerbSirSelf:
 		return v, true
 	default:
 		return Verb(""), false
@@ -84,8 +86,8 @@ type Verdict string
 
 const (
 	VerdictAllow Verdict = "allow"
-	VerdictDeny Verdict = "deny"
-	VerdictAsk Verdict = "ask"
+	VerdictDeny  Verdict = "deny"
+	VerdictAsk   Verdict = "ask"
 )
 
 var AllVerdicts = []Verdict{
@@ -111,7 +113,7 @@ func ParseVerdict(s string) (Verdict, bool) {
 type PostureState string
 
 const (
-	PostureStateNormal PostureState = "normal"
+	PostureStateNormal   PostureState = "normal"
 	PostureStateElevated PostureState = "elevated"
 	PostureStateCritical PostureState = "critical"
 )
@@ -140,7 +142,7 @@ type ApprovalScope string
 
 const (
 	ApprovalScopeSession ApprovalScope = "session"
-	ApprovalScopeTurn ApprovalScope = "turn"
+	ApprovalScopeTurn    ApprovalScope = "turn"
 )
 
 var AllApprovalScopes = []ApprovalScope{
