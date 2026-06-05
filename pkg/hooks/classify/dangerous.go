@@ -237,12 +237,30 @@ func isDangerousGitCommand(cmd string, fields []string) bool {
 		return false
 	}
 	if GitSubcommandIs(cmd, "clean") {
+		// Accumulate the short-flag letters across every `-`-prefixed token so
+		// that separated flags (`git clean -f -d -x`) are treated the same as a
+		// combined token (`git clean -fdx`). Both wipe untracked AND ignored
+		// files, so requiring f+d+x in a single token would let the equivalent
+		// separated form slip past as an ordinary execute_dry_run.
+		var hasF, hasD, hasX bool
 		for _, f := range fields[1:] {
 			tok := cleanLowerToken(f)
-			if strings.HasPrefix(tok, "-") && strings.Contains(tok, "f") && strings.Contains(tok, "d") &&
-				(strings.Contains(tok, "x") || strings.Contains(tok, "X")) {
-				return true
+			switch {
+			case strings.HasPrefix(tok, "--"):
+				// Long forms: --force (f), --d is not valid; -x has no long alias.
+				switch tok {
+				case "--force":
+					hasF = true
+				}
+			case strings.HasPrefix(tok, "-"):
+				// Short cluster, e.g. -f, -fd, -fdx.
+				hasF = hasF || strings.Contains(tok, "f")
+				hasD = hasD || strings.Contains(tok, "d")
+				hasX = hasX || strings.Contains(tok, "x")
 			}
+		}
+		if hasF && hasD && hasX {
+			return true
 		}
 	}
 	if GitSubcommandIs(cmd, "reset") && containsAnyToken(fields[1:], "--hard") {
@@ -343,7 +361,10 @@ func hasRecursiveFlag(fields []string) bool {
 func containsWorldWritableMode(fields []string) bool {
 	for _, f := range fields {
 		switch cleanLowerToken(f) {
-		case "777", "0777", "a+w", "ugo+w":
+		// Symbolic modes that grant write to "other" (or everyone), and the
+		// numeric modes whose last digit has the world-write bit set. `o+w`
+		// and `666` are as dangerous as the previously-covered `a+w`/`777`.
+		case "777", "0777", "666", "0666", "a+w", "ugo+w", "o+w", "+w":
 			return true
 		}
 	}

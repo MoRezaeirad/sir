@@ -38,6 +38,12 @@ func TestIsDangerousShellCommand(t *testing.T) {
 		{"fork bomb", ":(){ :|:& };:"},
 		{"kill all", "kill -9 -1"},
 		{"redirect to disk", "yes > /dev/sda"},
+		{"git clean separated flags", "git clean -f -d -x"},
+		{"git clean separated reordered", "git clean -x -f -d"},
+		{"git clean long force separated", "git clean --force -d -x"},
+		{"chmod recursive other-writable", "chmod -R o+w ."},
+		{"chmod recursive plus-write", "chmod -R +w ."},
+		{"chmod recursive 666", "chmod -R 666 ."},
 	}
 
 	for _, tc := range dangerous {
