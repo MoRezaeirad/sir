@@ -23,7 +23,15 @@ func formatDenyReason(originalReason string, intent Intent, state *session.State
 	case policy.VerbNetExternal:
 		return FormatBlockNetExternal(agentName, intent.Target, secretSince)
 	case policy.VerbPushRemote:
-		if !state.SecretSession {
+		// FormatBlockPush suggests `sir allow-remote <remote>`, which only makes
+		// sense for a real git remote. Forge-publish CLIs (gh/glab/hub/tea) carry
+		// a synthetic RemoteName like "github-cli" that is never a git remote and
+		// is excluded from remote auto-approval, so that hint is a dead end for
+		// them in any session. Route forge publishes — and all non-secret push
+		// denials — to the generic block, which surfaces the real reason plus
+		// `sir doctor`/`sir why`. Only a secret-session deny on a genuine git
+		// remote reaches FormatBlockPush.
+		if !state.SecretSession || intent.IsForgePublish {
 			return FormatBlock(
 				fmt.Sprintf("%s: %s", intent.Verb, intent.Target),
 				originalReason,

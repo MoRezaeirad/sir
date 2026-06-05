@@ -96,7 +96,16 @@ func derivedLabelsForIntent(projectRoot string, payload *HookPayload, intent Int
 		return coreLabelsFromLineage(state.DerivedLabelsForPaths(gitStagedPaths(projectRoot)))
 	case "push_origin", "push_remote":
 		paths := gitOutgoingPaths(projectRoot, pushRemoteName(intent))
-		if payload != nil && payload.ToolName == "Bash" {
+		// Forge-publish CLIs (gh/glab/hub/tea) carry the published payload as a
+		// command-line file argument (`--body-file leak.txt`, `-F body=@file`,
+		// `file://…`) rather than as files in the outgoing commits, so we must
+		// scan the command tokens to label them. Native `git push`, by contrast,
+		// only carries git-ref arguments on the command line (remote names,
+		// branches, refspecs) — never file paths — so scanning its tokens would
+		// only manufacture false positives when a derived file's basename happens
+		// to collide with a ref token (e.g. a tainted `cmd/main` vs branch `main`).
+		// Restrict the token scan to forge publishes to keep plain pushes quiet.
+		if payload != nil && payload.ToolName == "Bash" && intent.IsForgePublish {
 			paths = appendUniquePaths(paths, derivedPathsMentionedInCommand(projectRoot, state, intent.Target))
 		}
 		return coreLabelsFromLineage(state.DerivedLabelsForPaths(paths))

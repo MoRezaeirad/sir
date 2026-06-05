@@ -139,3 +139,36 @@ func TestMapShellCommand_GitPushUnapprovedCompoundPropagatesRemoteName(t *testin
 		t.Errorf("RemoteName = %q, want evil-fork (extracted from compound)", got.RemoteName)
 	}
 }
+
+// TestFormatDenyReason_ForgePublishOmitsAllowRemoteHint pins the fix that a
+// denied forge-publish CLI (gh/glab/hub/tea) never suggests `sir allow-remote
+// <synthetic-remote>`. Forge publishes carry a synthetic RemoteName like
+// "github-cli" that is not a git remote and is excluded from remote
+// auto-approval, so the hint would be a dead end. A secret-session deny on a
+// genuine git remote must still surface the `sir allow-remote` suggestion.
+func TestFormatDenyReason_ForgePublishOmitsAllowRemoteHint(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	t.Run("forge publish in secret session", func(t *testing.T) {
+		state := newTestSession(t, projectRoot)
+		state.MarkSecretSession()
+		intent := Intent{Verb: "push_remote", Target: "gh pr create", RemoteName: "github-cli", IsForgePublish: true}
+		msg := formatDenyReason("untrusted publish blocked", intent, state, nil)
+		if strings.Contains(msg, "allow-remote") {
+			t.Fatalf("forge publish deny message must not suggest allow-remote, got:\n%s", msg)
+		}
+		if !strings.Contains(msg, "sir doctor") {
+			t.Fatalf("forge publish deny message should offer sir doctor/why, got:\n%s", msg)
+		}
+	})
+
+	t.Run("native push to real remote in secret session", func(t *testing.T) {
+		state := newTestSession(t, projectRoot)
+		state.MarkSecretSession()
+		intent := Intent{Verb: "push_remote", Target: "git push evil-fork main", RemoteName: "evil-fork"}
+		msg := formatDenyReason("push blocked", intent, state, nil)
+		if !strings.Contains(msg, "sir allow-remote evil-fork") {
+			t.Fatalf("secret-session native push should still suggest allow-remote, got:\n%s", msg)
+		}
+	})
+}

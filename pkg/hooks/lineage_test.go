@@ -339,6 +339,45 @@ func TestForgePublishUsesMentionedFileLineage(t *testing.T) {
 	}
 }
 
+// TestNativePushIgnoresCommandTokenLineageCollision pins the fix that restricts
+// the command-token lineage scan to forge publishes. A derived-secret file whose
+// basename collides with a git ref token (here a file `main` vs the branch arg
+// `main`) must NOT taint a native `git push origin main`, but the same file must
+// still be picked up when it is actually mentioned by a forge-publish CLI.
+func TestNativePushIgnoresCommandTokenLineageCollision(t *testing.T) {
+	projectRoot := t.TempDir()
+	state := newTestSession(t, projectRoot)
+
+	// Seed a derived-secret label on a file whose basename ("main") matches a
+	// ref token that appears on a plain `git push origin main` command line.
+	if err := os.WriteFile(filepath.Join(projectRoot, "main"), []byte("derived secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state.AttachLineageLabelsToPath(ResolveTarget(projectRoot, "main"), []session.LineageLabel{secretReadLineageLabel()})
+	if err := state.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := &HookPayload{ToolName: "Bash"}
+
+	// Native push: the ref tokens (`origin`, `main`) must not pull in the
+	// basename-colliding tainted file. gitOutgoingPaths runs in a non-git temp
+	// dir and returns nothing, so any derived label here can only come from the
+	// command-token scan — which the fix gates off for native pushes.
+	wantLabel := core.Label{Sensitivity: "secret", Trust: "trusted", Provenance: "user"}
+
+	native := Intent{Verb: "push_remote", Target: "git push origin main", RemoteName: "origin"}
+	if got := derivedLabelsForIntent(projectRoot, payload, native, state); len(got) != 0 {
+		t.Fatalf("native git push picked up command-token lineage = %+v, want none", got)
+	}
+
+	// Forge publish that actually mentions the file: the scan must still fire.
+	forge := Intent{Verb: "push_remote", Target: "gh gist create main", RemoteName: "github-cli", IsForgePublish: true}
+	if got := derivedLabelsForIntent(projectRoot, payload, forge, state); len(got) != 1 || got[0] != wantLabel {
+		t.Fatalf("forge publish mentioning derived file = %+v, want one secret label", got)
+	}
+}
+
 func TestUntrustedThisTurnGatesNativePush(t *testing.T) {
 	forceLocalPolicyFallback(t)
 	l := lease.DefaultLease()
