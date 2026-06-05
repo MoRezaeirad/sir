@@ -1,0 +1,17 @@
+schema_version: sir.provider.v0
+name: opa-authoritative
+kind: policy_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true   # authority is an operator act (`sir provider authoritative`), never a wire claim
+  policy_engine: opa
+  transport: http-warm-sidecar
+  decision_url: http://127.0.0.1:8181/v1/data/sir/policy/decision
+fixtures:
+  - fixtures/grant-ephemeral-clean.json
+  - fixtures/deny-agent-credential-read.json
+  - fixtures/floor-secret-egress.json

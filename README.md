@@ -116,6 +116,8 @@ make contributor-check
 
 [Getting Started](docs/getting-started.md) · [Architecture](docs/architecture.md) · [Competitive Analysis](docs/competitive-analysis.md) · [API](docs/api.md) · [SDK](docs/sdk.md) · [Providers](docs/providers.md) · [Policy](docs/policy.md) · [Observability](docs/observability.md) · [Security](docs/security.md)
 
+**Policy as code for AI coding agents (authoritative PDP)** — wire OPA/Cedar/Rego as the *decision point* (grant, restrict, re-implement floors, fail-closed). Tested end-to-end: [OPA](docs/opa-policy-provider.md) · [Cedar](docs/cedar-policy-provider.md) · [PDP design](docs/research/pdp-provider-delegation.md)
+
 > [!WARNING]
 > SIR is experimental and in active development on the `sir-v2` branch. Test on your own machine, not shared infrastructure. Run `sir doctor` if anything breaks. [Report issues](https://github.com/somoore/sir/issues).
 

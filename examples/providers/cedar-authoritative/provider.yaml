@@ -1,0 +1,16 @@
+schema_version: sir.provider.v0
+name: cedar-authoritative
+kind: policy_provider
+version: 0.1.0
+protocol: stdio-json
+entrypoint: ./provider.py
+platforms: [macos, linux]
+capabilities:
+  verdict_types: [allow, ask, deny]
+  is_advisory: true   # authority is an operator act (`sir provider authoritative`), never a wire claim
+  policy_engine: cedar
+  policy_file: ./policies/sir.cedar
+fixtures:
+  - fixtures/grant-ephemeral-clean.json
+  - fixtures/deny-agent-credential-read.json
+  - fixtures/floor-secret-egress.json

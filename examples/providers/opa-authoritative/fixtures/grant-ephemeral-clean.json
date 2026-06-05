@@ -1,0 +1,11 @@
+{
+  "op": "evaluate",
+  "schema_version": "sir.policy_request.v0",
+  "action": "run_ephemeral",
+  "target": "npx cowsay hello",
+  "resolved_actor": "ai_coding_agent",
+  "attribution_confidence": "high",
+  "taint": [],
+  "enforceability": "enforces",
+  "mode": "guard"
+}

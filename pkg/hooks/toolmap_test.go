@@ -119,6 +119,41 @@ func TestMapToolToIntentVerbs(t *testing.T) {
 	}
 }
 
+// TestDelegateTargetCarriesSubagentIdentity is the regression guard for the
+// dropped-subagent-target gap: the Agent (subagent) tool carries its identity in
+// subagent_type/name/description/prompt, none of which the generic extractTarget
+// reads — so the delegate intent's Target was empty, silently defeating any
+// policy that gates on WHICH subagent/skill is spawned (e.g. a denylisted-skill
+// rule that substring-matches the target). Without a non-empty target, an
+// authoritative policy can never see the skill name and the deny is unreachable.
+func TestDelegateTargetCarriesSubagentIdentity(t *testing.T) {
+	l := lease.DefaultLease()
+	cases := []struct {
+		name  string
+		input map[string]interface{}
+		want  string
+	}{
+		{"subagent_type wins", map[string]interface{}{"subagent_type": "data-exfil", "description": "d", "prompt": "p"}, "data-exfil"},
+		{"name fallback", map[string]interface{}{"name": "shell-runner", "prompt": "p"}, "shell-runner"},
+		// description/prompt are deliberately NOT used as the target: they are
+		// free-form and would leak the full delegation prompt to an external
+		// policy provider. An identity-less delegation yields an empty target.
+		{"description NOT used (prompt-leak guard)", map[string]interface{}{"description": "deploy to prod", "prompt": "secret instructions"}, ""},
+		{"prompt NOT used (prompt-leak guard)", map[string]interface{}{"prompt": "do the secret thing"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			intent := MapToolToIntent("Agent", c.input, l)
+			if string(intent.Verb) != "delegate" {
+				t.Fatalf("expected delegate verb, got %q", intent.Verb)
+			}
+			if intent.Target != c.want {
+				t.Errorf("delegate target = %q, want %q (empty target makes skill-denylist policies unreachable)", intent.Target, c.want)
+			}
+		})
+	}
+}
+
 func TestExtractNetworkDest(t *testing.T) {
 	tests := []struct {
 		cmd      string

@@ -323,10 +323,12 @@ func referenceDocAllowlist() []string {
 	return []string{
 		"docs/api.md",
 		"docs/architecture.md",
+		"docs/cedar-policy-provider.md",
 		"docs/competitive-analysis.md",
 		"docs/contributing.md",
 		"docs/getting-started.md",
 		"docs/observability.md",
+		"docs/opa-policy-provider.md",
 		"docs/policy.md",
 		"docs/providers.md",
 		"docs/sdk.md",

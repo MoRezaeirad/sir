@@ -992,11 +992,11 @@ func testEffectFixture(entrypoint string, requestData []byte) error {
 	input := `{"op":"capabilities"}` + "\n" + string(compact) + "\n"
 	cmd := newProviderCommand(entrypoint)
 	cmd.Stdin = strings.NewReader(input)
-	pythonPath := "sdk/python"
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		pythonPath = pythonPath + ":" + existing
-	}
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	// Resolve sir_sdk import via the shared absolute-path resolver (provider dir
+	// first, then bundled SDK), so the install/health handshake works from any
+	// working directory — not just the repo root. Matches the evaluate-time spawn
+	// in pkg/provider; see sdk.SDKPythonPath.
+	cmd.Env = append(os.Environ(), sdk.SDKPythonPath(entrypoint))
 	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("provider exited with error: %w", err)
@@ -1084,11 +1084,11 @@ func roundTripProvider(entrypoint string, requestData []byte) (string, error) {
 	input := `{"op":"capabilities"}` + "\n" + string(compact) + "\n"
 	cmd := newProviderCommand(entrypoint)
 	cmd.Stdin = strings.NewReader(input)
-	pythonPath := "sdk/python"
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		pythonPath = pythonPath + ":" + existing
-	}
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	// Resolve sir_sdk import via the shared absolute-path resolver (provider dir
+	// first, then bundled SDK), so the install/health handshake works from any
+	// working directory — not just the repo root. Matches the evaluate-time spawn
+	// in pkg/provider; see sdk.SDKPythonPath.
+	cmd.Env = append(os.Environ(), sdk.SDKPythonPath(entrypoint))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("provider exited with error: %w", err)
@@ -1137,11 +1137,11 @@ func testSignalFixture(entrypoint string, eventData []byte, fixLabel string, m *
 	input := `{"op":"capabilities"}` + "\n" + string(compact) + "\n"
 	cmd := newProviderCommand(entrypoint)
 	cmd.Stdin = strings.NewReader(input)
-	pythonPath := "sdk/python"
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		pythonPath = pythonPath + ":" + existing
-	}
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	// Resolve sir_sdk import via the shared absolute-path resolver (provider dir
+	// first, then bundled SDK), so the install/health handshake works from any
+	// working directory — not just the repo root. Matches the evaluate-time spawn
+	// in pkg/provider; see sdk.SDKPythonPath.
+	cmd.Env = append(os.Environ(), sdk.SDKPythonPath(entrypoint))
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -1261,11 +1261,11 @@ func queryProviderCapabilities(entrypoint string) ([]byte, error) {
 	cmd := newProviderCommand(entrypoint)
 	cmd.Stdin = strings.NewReader(`{"op":"capabilities"}` + "\n")
 	// Inject sdk/python into PYTHONPATH so providers can do: import sir_sdk
-	pythonPath := "sdk/python"
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		pythonPath = pythonPath + ":" + existing
-	}
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	// Resolve sir_sdk import via the shared absolute-path resolver (provider dir
+	// first, then bundled SDK), so the install/health handshake works from any
+	// working directory — not just the repo root. Matches the evaluate-time spawn
+	// in pkg/provider; see sdk.SDKPythonPath.
+	cmd.Env = append(os.Environ(), sdk.SDKPythonPath(entrypoint))
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err

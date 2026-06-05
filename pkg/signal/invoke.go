@@ -25,7 +25,7 @@ func invokeSignalProvider(entrypoint string, eventJSON []byte) ([]sdk.Signal, er
 
 	cmd := exec.CommandContext(ctx, entrypoint)
 	cmd.Stdin = strings.NewReader(string(eventJSON) + "\n")
-	cmd.Env = append(os.Environ(), sdkPythonPath())
+	cmd.Env = append(os.Environ(), sdkPythonPath(entrypoint))
 
 	out, err := cmd.Output()
 	if err != nil {
@@ -61,9 +61,9 @@ func parseSignalOutput(out []byte) ([]sdk.Signal, error) {
 	return []sdk.Signal{sig}, nil
 }
 
-func sdkPythonPath() string {
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		return "PYTHONPATH=sdk/python:" + existing
-	}
-	return "PYTHONPATH=sdk/python"
+// sdkPythonPath delegates to the shared resolver so signal providers get the
+// same absolute, vendored-beside-entrypoint PYTHONPATH as policy providers. See
+// sdk.SDKPythonPath.
+func sdkPythonPath(entrypoint string) string {
+	return sdk.SDKPythonPath(entrypoint)
 }

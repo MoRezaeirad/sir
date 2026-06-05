@@ -114,8 +114,31 @@ func mapGrep(toolInput map[string]interface{}, l *lease.Lease) Intent {
 func mapAgent(toolInput map[string]interface{}, l *lease.Lease) Intent {
 	return Intent{
 		Verb:   policy.VerbDelegate,
-		Target: extractTarget(toolInput),
+		Target: extractDelegateTarget(toolInput),
 	}
+}
+
+// extractDelegateTarget builds the target identifier for a delegation (the
+// Agent/subagent tool). The generic extractTarget only knows file/command/url
+// keys — none of which the Agent tool carries — so the subagent identity was
+// being dropped, leaving Target empty. That silently defeated any policy that
+// gates on WHICH subagent/skill is being spawned (e.g. a denylisted-skill rule
+// substring-matching the target).
+//
+// We use ONLY the stable subagent identity fields — subagent_type then name.
+// Deliberately NOT description/prompt: those are free-form (the prompt is the
+// entire subagent instruction), they cannot meaningfully match a skill denylist,
+// and intent.Target flows verbatim to an external policy_provider over the wire
+// (evaluate_policy.go sets Target: intent.Target). Including the prompt would leak
+// the full delegation text to that process for no policy benefit. An empty target
+// for an identity-less delegation is the correct minimal-disclosure outcome.
+func extractDelegateTarget(toolInput map[string]interface{}) string {
+	for _, key := range []string{"subagent_type", "name"} {
+		if v, ok := toolInput[key].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func mapWebFetch(toolInput map[string]interface{}, l *lease.Lease) Intent {

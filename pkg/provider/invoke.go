@@ -381,7 +381,7 @@ func runProvider(ctx context.Context, entrypoint string, payload []byte) ([]byte
 func runProviderWithStderr(ctx context.Context, entrypoint string, payload []byte) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, entrypoint)
 	cmd.Stdin = strings.NewReader(string(payload) + "\n")
-	cmd.Env = append(os.Environ(), sdkPythonPath())
+	cmd.Env = append(os.Environ(), sdkPythonPath(entrypoint))
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -410,14 +410,11 @@ func emptyOutputProviderError(stderr []byte) error {
 }
 
 // sdkPythonPath returns the PYTHONPATH env entry that makes Python providers
-// able to `import sir_sdk` without any pip install.
-func sdkPythonPath() string {
-	// Try to resolve relative to the binary's directory first, then CWD.
-	sdkPath := "sdk/python"
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		return "PYTHONPATH=" + sdkPath + ":" + existing
-	}
-	return "PYTHONPATH=" + sdkPath
+// able to `import sir_sdk` without any pip install or manual PYTHONPATH. See
+// sdk.SDKPythonPath for the resolution model (absolute paths, vendored-beside-
+// entrypoint first); shared so the signal-provider spawn path stays in sync.
+func sdkPythonPath(entrypoint string) string {
+	return sdk.SDKPythonPath(entrypoint)
 }
 
 // toVerdicts normalizes raw provider responses into canonical PolicyVerdicts.
